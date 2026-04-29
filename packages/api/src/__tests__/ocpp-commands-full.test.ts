@@ -21,8 +21,12 @@ const {
     ref.current = cb;
     return { unsubscribe: unsub };
   });
-  const validate21 = Object.assign(vi.fn().mockReturnValue(true), { errors: null as unknown });
-  const validate16 = Object.assign(vi.fn().mockReturnValue(true), { errors: null as unknown });
+  const validate21 = Object.assign(vi.fn().mockReturnValue(true), {
+    errors: null as Array<{ message: string }> | null,
+  });
+  const validate16 = Object.assign(vi.fn().mockReturnValue(true), {
+    errors: null as Array<{ message: string }> | null,
+  });
   return {
     mockSubscribeCallbackRef: ref,
     mockUnsubscribe: unsub,

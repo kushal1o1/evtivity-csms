@@ -176,13 +176,13 @@ describe('guest-session.service', () => {
 
   describe('startGuestSessionListener', () => {
     it('returns a stop function', () => {
-      const stop = startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      const stop = startGuestSessionListener(mockPubSub, mockLogger as never);
       expect(typeof stop).toBe('function');
       stop();
     });
 
     it('stop function calls end() on connection', async () => {
-      const stop = startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      const stop = startGuestSessionListener(mockPubSub, mockLogger as never);
       stop();
       await tick();
       expect(mockEnd).toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('guest-session.service', () => {
 
   describe('TransactionStarted', () => {
     it('links guest session when matching session exists', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       // DB call 1: find guest session by token -> found
@@ -215,7 +215,7 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no matching guest session exists', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       setupDbResults([]);
@@ -234,7 +234,7 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no idToken present', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       fireEvent({ type: 'TransactionStarted', sessionId: 'session-1' });
@@ -249,7 +249,7 @@ describe('guest-session.service', () => {
 
   describe('TransactionEnded', () => {
     it('captures payment when guest session has positive cost', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       // DB call 1: find guest session (id, guestEmail, stationOcppId)
@@ -277,7 +277,7 @@ describe('guest-session.service', () => {
     });
 
     it('cancels payment intent when cost is zero', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       setupDbResults(
@@ -300,7 +300,7 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no guest session linked', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       setupDbResults([]);
@@ -313,7 +313,7 @@ describe('guest-session.service', () => {
     });
 
     it('completes free session when no payment record exists', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       // DB call 1: find guest session
@@ -333,7 +333,7 @@ describe('guest-session.service', () => {
     });
 
     it('sends receipt notification when guest provided email', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       // DB call 1: find guest session with email
@@ -371,7 +371,7 @@ describe('guest-session.service', () => {
     });
 
     it('sets status to failed when stripe error occurs', async () => {
-      startGuestSessionListener(mockPubSub as never, mockLogger as never);
+      startGuestSessionListener(mockPubSub, mockLogger as never);
       await tick();
 
       mockCapturePayment.mockRejectedValueOnce(new Error('Stripe API error'));

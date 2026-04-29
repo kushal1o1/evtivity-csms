@@ -192,7 +192,7 @@ export function Reservations(): React.JSX.Element {
                 </div>
                 <div className="text-right space-y-1">
                   <Badge variant={statusVariant(reservation.status)}>
-                    {t(`reservations.${reservation.status}` as 'reservations.active')}
+                    {t(`reservations.${reservation.status}`)}
                   </Badge>
                   {(reservation.status === 'active' || reservation.status === 'scheduled') && (
                     <div>

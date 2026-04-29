@@ -22,7 +22,7 @@ import { getOutboundToken } from '../lib/outbound-token.js';
 import { OcpiClient } from '../lib/ocpi-client.js';
 import { config } from '../lib/config.js';
 import { transformCdr } from '../transformers/cdr.transformer.js';
-import type { OcpiVersion, OcpiCdr, OcpiTariff } from '../types/ocpi.js';
+import type { OcpiCdr, OcpiTariff } from '../types/ocpi.js';
 
 const logger = createLogger('ocpi-cdr');
 
@@ -163,7 +163,7 @@ export async function generateCdr(
     cdrInput.tariff = ocpiTariff;
   }
 
-  const cdr = transformCdr(cdrInput, '2.2.1' as OcpiVersion);
+  const cdr = transformCdr(cdrInput, '2.2.1');
 
   // Store the CDR
   await db.insert(ocpiCdrs).values({

@@ -727,7 +727,7 @@ export class StationSimulator {
       if (startSampledValues.length > 0) {
         startedOpts.meterValue = [
           { timestamp: new Date().toISOString(), sampledValue: startSampledValues },
-        ] as unknown as Array<Record<string, unknown>>;
+        ];
       }
       await this.sendTransactionEvent(evseId, 'Started', startedOpts);
       // Follow up with Charging state (energy transfer begins)
@@ -840,7 +840,7 @@ export class StationSimulator {
       if (endSampledValues.length > 0) {
         endedOpts.meterValue = [
           { timestamp: new Date().toISOString(), sampledValue: endSampledValues },
-        ] as unknown as Array<Record<string, unknown>>;
+        ];
       }
       await this.sendTransactionEvent(evseId, 'Ended', endedOpts);
     }
@@ -2164,9 +2164,7 @@ export class StationSimulator {
           transactionId: txId,
           chargingState: this.evseChargingState.get(firstEvse.evseId) ?? 'Charging',
           seqNo,
-          meterValue: [
-            { timestamp: new Date().toISOString(), sampledValue: sampledValues },
-          ] as unknown as Array<Record<string, unknown>>,
+          meterValue: [{ timestamp: new Date().toISOString(), sampledValue: sampledValues }],
         }).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
           if (
@@ -2415,7 +2413,7 @@ export class StationSimulator {
       }
 
       case 'RemoteStopTransaction': {
-        const stopTxId16 = String(payload['transactionId'] as number);
+        const stopTxId16 = String(payload['transactionId']);
         const evseId16 = await this.findEvseForTransaction(stopTxId16);
         if (evseId16 != null) {
           await this.stopCharging(evseId16, 'Remote');
@@ -4056,8 +4054,10 @@ export class StationSimulator {
             ['OcppVersion', connData['ocppVersion'] as string | undefined],
             [
               'MessageTimeout',
-              connData['messageTimeout'] != null
-                ? String(connData['messageTimeout'] as number)
+              typeof connData['messageTimeout'] === 'string' ||
+              typeof connData['messageTimeout'] === 'number' ||
+              typeof connData['messageTimeout'] === 'boolean'
+                ? String(connData['messageTimeout'])
                 : undefined,
             ],
             ['SecurityProfile', newSecProfile != null ? String(newSecProfile) : undefined],
@@ -4481,7 +4481,7 @@ export class StationSimulator {
         return {
           status: 'Accepted',
           vatNumber: payload['vatNumber'] as string,
-          evseId: (payload['evseId'] as number | undefined) ?? 1,
+          evseId: payload['evseId'] ?? 1,
           company: {
             name: 'Simulated Company B.V.',
             address1: '123 Charging Street',
@@ -5385,7 +5385,7 @@ export class StationSimulator {
               timestamp: new Date().toISOString(),
               sampledValue: periodicValues,
             },
-          ] as unknown as Array<Record<string, unknown>>,
+          ],
         }).catch(() => {});
       } else {
         void this.sendMeterValues(

@@ -238,7 +238,7 @@ export async function handleRegistration(
       endpoints.map((ep) => ({
         partnerId,
         module: ep.identifier,
-        interfaceRole: ep.role as 'SENDER' | 'RECEIVER',
+        interfaceRole: ep.role,
         url: ep.url,
       })),
     );
@@ -306,7 +306,7 @@ export async function handleCredentialUpdate(
       endpoints.map((ep) => ({
         partnerId,
         module: ep.identifier,
-        interfaceRole: ep.role as 'SENDER' | 'RECEIVER',
+        interfaceRole: ep.role,
         url: ep.url,
       })),
     );
@@ -447,7 +447,7 @@ export async function initiateRegistration(
       newEndpoints.map((ep) => ({
         partnerId,
         module: ep.identifier,
-        interfaceRole: ep.role as 'SENDER' | 'RECEIVER',
+        interfaceRole: ep.role,
         url: ep.url,
       })),
     );

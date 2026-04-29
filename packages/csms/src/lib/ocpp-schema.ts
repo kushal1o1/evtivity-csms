@@ -45,7 +45,7 @@ export interface ResolvedField {
 function commandFieldToResolved(field: CommandFieldDef): ResolvedField {
   const resolved: ResolvedField = {
     name: field.name,
-    kind: field.type as FieldKind,
+    kind: field.type,
     required: field.required,
     description: field.description || undefined,
   };
@@ -119,7 +119,7 @@ export function formValuesToPayload(
               }
               return item;
             })
-            .filter((item) => item != null && Object.keys(item as object).length > 0);
+            .filter((item) => item != null && Object.keys(item).length > 0);
           if (items.length > 0) {
             result[field.name] = items;
           }

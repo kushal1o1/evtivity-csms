@@ -22,7 +22,7 @@ import { OcpiClient } from '../lib/ocpi-client.js';
 import { getOutboundToken } from '../lib/outbound-token.js';
 import { config } from '../lib/config.js';
 import { transformLocation } from '../transformers/location.transformer.js';
-import type { OcpiVersion, OcpiSession, OcpiTariff } from '../types/ocpi.js';
+import type { OcpiSession, OcpiTariff } from '../types/ocpi.js';
 
 const logger = createLogger('ocpi-push');
 const CHANNEL = 'ocpi_push';
@@ -187,7 +187,7 @@ async function pushLocationUpdate(siteId: string): Promise<void> {
 
   const location = transformLocation(
     { site, evses: evsesWithConnectors, ocpiLocationId: locationId, countryCode, partyId },
-    '2.2.1' as OcpiVersion,
+    '2.2.1',
   );
 
   // Determine which partners to push to

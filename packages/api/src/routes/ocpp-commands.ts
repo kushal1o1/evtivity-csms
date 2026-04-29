@@ -143,7 +143,7 @@ async function dispatchCommandRaw(
     if (ocppVersion != null) {
       const is16 = ocppVersion === 'ocpp1.6';
       const registry = is16 ? ActionRegistry16 : ActionRegistry;
-      entry = registry[action as ActionName & ActionName16] as typeof entry;
+      entry = registry[action as ActionName & ActionName16];
     } else {
       entry =
         (ActionRegistry as Record<string, typeof entry>)[action] ??
@@ -1154,7 +1154,7 @@ export function ocppCommandRoutes(app: FastifyInstance): void {
           userId,
           stationId,
           'GetVariables',
-          chunkPayload as Record<string, unknown>,
+          chunkPayload,
           'ocpp2.1',
           // Skip validation and site access on subsequent chunks (already checked on first)
           i > 0 ? { skipValidation: true, skipSiteAccess: true } : undefined,

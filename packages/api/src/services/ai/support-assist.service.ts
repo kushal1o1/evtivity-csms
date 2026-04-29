@@ -89,11 +89,9 @@ export async function resolveSupportAiConfig(userId: string): Promise<SupportAiC
     provider,
     apiKey: decryptString(apiKeyEnc, encryptionKey),
     model: (get('supportAi.model') as string) || undefined,
-    temperature: get('supportAi.temperature')
-      ? Number(get('supportAi.temperature') as string)
-      : undefined,
-    topP: get('supportAi.topP') ? Number(get('supportAi.topP') as string) : undefined,
-    topK: get('supportAi.topK') ? Number(get('supportAi.topK') as string) : undefined,
+    temperature: get('supportAi.temperature') ? Number(get('supportAi.temperature')) : undefined,
+    topP: get('supportAi.topP') ? Number(get('supportAi.topP')) : undefined,
+    topK: get('supportAi.topK') ? Number(get('supportAi.topK')) : undefined,
     systemPrompt: (get('supportAi.systemPrompt') as string) || undefined,
     tone: (get('supportAi.tone') as string) || 'professional',
   };

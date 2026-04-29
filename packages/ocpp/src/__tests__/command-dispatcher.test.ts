@@ -92,7 +92,7 @@ describe('CommandDispatcher', () => {
       connectionManager.get.mockReturnValue(conn);
 
       const { translateCommand } = await import('../server/command-translation.js');
-      vi.mocked(translateCommand).mockReturnValueOnce(null as never);
+      vi.mocked(translateCommand).mockReturnValueOnce(null);
 
       await expect(
         dispatcher.sendVersionAwareCommand('CS-001', 'UnsupportedCommand', {}),

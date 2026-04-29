@@ -51,7 +51,7 @@ describe('CommandListener', () => {
   });
 
   async function createAndStart() {
-    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus as never);
+    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus);
     await listener.start();
     return listener;
   }
@@ -316,7 +316,7 @@ describe('CommandListener', () => {
       getInstanceId: vi.fn().mockResolvedValue('instance-2'),
     };
 
-    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus as never, {
+    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus, {
       registry: mockRegistry,
       instanceId: 'instance-1',
     });
@@ -342,7 +342,7 @@ describe('CommandListener', () => {
       getInstanceId: vi.fn().mockResolvedValue('instance-1'),
     };
 
-    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus as never, {
+    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus, {
       registry: mockRegistry,
       instanceId: 'instance-1',
     });

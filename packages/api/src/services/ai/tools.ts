@@ -23820,16 +23820,16 @@ export function buildToolRequest(
       url = url.replace(
         placeholder,
         encodeURIComponent(
-          typeof value === 'object'
-            ? JSON.stringify(value)
-            : String(value as string | number | boolean),
+          typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+            ? String(value)
+            : JSON.stringify(value),
         ),
       );
     } else if (tool.method === 'GET') {
       query[key] =
-        typeof value === 'object'
-          ? JSON.stringify(value)
-          : String(value as string | number | boolean);
+        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : JSON.stringify(value);
     } else {
       body[key] = value;
     }

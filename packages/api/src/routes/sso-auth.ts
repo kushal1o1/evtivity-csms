@@ -94,7 +94,7 @@ export function ssoAuthRoutes(app: FastifyInstance): void {
           await reply.redirect('/login?error=sso_no_email');
           return;
         }
-        profile = result.profile as unknown as Record<string, unknown>;
+        profile = result.profile;
       } catch {
         await reply.redirect('/login?error=sso_config_error');
         return;

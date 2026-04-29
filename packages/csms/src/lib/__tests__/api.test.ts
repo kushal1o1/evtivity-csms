@@ -12,7 +12,7 @@ function createMockResponse(overrides: Partial<Response> & { jsonData?: unknown 
     statusText: 'OK',
     headers: new Headers(),
     redirected: false,
-    type: 'basic' as ResponseType,
+    type: 'basic',
     url: '',
     clone: vi.fn(),
     body: null,
@@ -24,7 +24,7 @@ function createMockResponse(overrides: Partial<Response> & { jsonData?: unknown 
     json: vi.fn().mockResolvedValue(jsonData),
     bytes: vi.fn(),
     ...rest,
-  } as unknown as Response;
+  };
 }
 
 describe('ApiError', () => {

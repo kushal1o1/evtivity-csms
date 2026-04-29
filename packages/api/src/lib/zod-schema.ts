@@ -8,5 +8,5 @@ export function zodSchema(schema: ZodTypeAny): Record<string, unknown> {
   return zodToJsonSchema(schema as Parameters<typeof zodToJsonSchema>[0], {
     target: 'openApi3',
     $refStrategy: 'none',
-  }) as Record<string, unknown>;
+  });
 }

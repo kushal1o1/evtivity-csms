@@ -149,7 +149,7 @@ describe('Event stream routes', () => {
         method: 'GET',
         url: '/events/stream',
         cookies: { csms_token: token },
-        signal: abortController.signal as never,
+        signal: abortController.signal,
       });
       // If inject resolves, check that it was not a 401
       expect(response.statusCode).not.toBe(401);

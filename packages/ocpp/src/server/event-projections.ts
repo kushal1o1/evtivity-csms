@@ -3436,7 +3436,12 @@ export function registerProjections(
 
       for (const attr of variableAttribute) {
         const attrType = (attr.type as string | undefined) ?? 'Actual';
-        const value = attr.value != null ? String(attr.value as string | number) : null;
+        const value =
+          typeof attr.value === 'string' ||
+          typeof attr.value === 'number' ||
+          typeof attr.value === 'boolean'
+            ? String(attr.value)
+            : null;
 
         await sql`
           INSERT INTO station_configurations (station_id, component, instance, evse_id, connector_id, variable, variable_instance, value, attribute_type, source)
@@ -3575,7 +3580,11 @@ export function registerProjections(
 
       const attrType = (result.attributeType as string | undefined) ?? 'Actual';
       const value =
-        result.attributeValue != null ? String(result.attributeValue as string | number) : null;
+        typeof result.attributeValue === 'string' ||
+        typeof result.attributeValue === 'number' ||
+        typeof result.attributeValue === 'boolean'
+          ? String(result.attributeValue)
+          : null;
 
       await sql`
         INSERT INTO station_configurations (station_id, component, instance, evse_id, connector_id, variable, variable_instance, value, attribute_type, source)
@@ -3596,7 +3605,12 @@ export function registerProjections(
 
     for (const configKey of configKeys) {
       const key = (configKey.key as string | undefined) ?? '';
-      const value = configKey.value != null ? String(configKey.value as string | number) : null;
+      const value =
+        typeof configKey.value === 'string' ||
+        typeof configKey.value === 'number' ||
+        typeof configKey.value === 'boolean'
+          ? String(configKey.value)
+          : null;
       if (key === '') continue;
 
       await sql`

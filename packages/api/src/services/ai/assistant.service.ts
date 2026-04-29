@@ -94,11 +94,9 @@ async function resolveConfig(userId: string): Promise<AssistantConfig> {
     provider,
     apiKey: decryptString(apiKeyEnc, encryptionKey),
     model: (get('chatbotAi.model') as string) || undefined,
-    temperature: get('chatbotAi.temperature')
-      ? Number(get('chatbotAi.temperature') as string)
-      : undefined,
-    topP: get('chatbotAi.topP') ? Number(get('chatbotAi.topP') as string) : undefined,
-    topK: get('chatbotAi.topK') ? Number(get('chatbotAi.topK') as string) : undefined,
+    temperature: get('chatbotAi.temperature') ? Number(get('chatbotAi.temperature')) : undefined,
+    topP: get('chatbotAi.topP') ? Number(get('chatbotAi.topP')) : undefined,
+    topK: get('chatbotAi.topK') ? Number(get('chatbotAi.topK')) : undefined,
     systemPrompt: (get('chatbotAi.systemPrompt') as string) || undefined,
   };
 }

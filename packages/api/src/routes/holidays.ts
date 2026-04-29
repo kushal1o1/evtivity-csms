@@ -80,10 +80,7 @@ export function holidayRoutes(app: FastifyInstance): void {
         const [holiday] = await db.insert(pricingHolidays).values(body).returning();
         await reply.status(201).send(holiday);
       } catch (err: unknown) {
-        const pgErr =
-          err != null && typeof err === 'object' && 'cause' in err
-            ? (err as { cause: unknown }).cause
-            : err;
+        const pgErr = err != null && typeof err === 'object' && 'cause' in err ? err.cause : err;
         if (
           pgErr != null &&
           typeof pgErr === 'object' &&

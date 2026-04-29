@@ -79,11 +79,11 @@ export function createGuestSessionWorker(connection: ConnectionOptions): Worker 
       try {
         const data = job.data as Record<string, unknown>;
         if (job.name === 'guest-session-started') {
-          await handleGuestSessionEvent(data.event as CsmsEvent, log as never);
+          await handleGuestSessionEvent(data.event as CsmsEvent, log);
         } else if (job.name === 'guest-session-ended') {
           await handleGuestSessionEvent(
             { type: 'TransactionEnded', sessionId: data.sessionId as string },
-            log as never,
+            log,
           );
         }
         await logJobCompleted(logId, Date.now() - startTime);

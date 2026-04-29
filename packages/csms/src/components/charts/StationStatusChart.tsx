@@ -19,7 +19,7 @@ export function StationStatusChart({ data, info }: StationStatusChartProps): Rea
   const { t } = useTranslation();
   const isDark = useAuth((s) => s.theme) === 'dark';
   const labels: string[] = useMemo(
-    () => data.map((d) => t(`status.${d.status}` as 'status.available', d.status)),
+    () => data.map((d) => t(`status.${d.status}`, d.status)),
     [data, t],
   );
   const values = useMemo(() => data.map((d) => d.count), [data]);

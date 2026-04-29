@@ -284,9 +284,7 @@ export function PaymentSettings({ settings }: PaymentSettingsProps): React.JSX.E
                   if (stripeCurrency !== '') vals['currency'] = stripeCurrency;
                   vals['preAuthAmountCents'] = Number(stripePreAuthCents);
                   vals['platformFeePercent'] = Number(stripePlatformFee);
-                  stripeSaveMutation.mutate(
-                    vals as Parameters<typeof stripeSaveMutation.mutate>[0],
-                  );
+                  stripeSaveMutation.mutate(vals);
                 }}
               />
               <Button

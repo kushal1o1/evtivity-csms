@@ -387,7 +387,7 @@ export function ConnectorStatus({ data, stationId }: ConnectorStatusProps): Reac
                             {conn.isIdling === true && <Pause className="h-3 w-3" />}
                             {conn.isIdling === true
                               ? t('status.idle')
-                              : t(`status.${conn.status}` as 'status.available', conn.status)}
+                              : t(`status.${conn.status}`, conn.status)}
                           </Badge>
                           {!IN_USE_STATUSES.includes(conn.status) && (
                             <RemoveIconButton

@@ -340,8 +340,8 @@ export class SimulatorManager {
         // OCPP 2.1 only actions
         case 'sendTransactionEvent': {
           const txOpts: Record<string, unknown> = {
-            triggerReason: params.triggerReason as string,
-            transactionId: params.transactionId as string,
+            triggerReason: params.triggerReason,
+            transactionId: params.transactionId,
           };
           if (params.chargingState != null) txOpts['chargingState'] = params.chargingState;
           if (params.stoppedReason != null) txOpts['stoppedReason'] = params.stoppedReason;
