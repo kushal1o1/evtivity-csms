@@ -1233,6 +1233,7 @@
     "createPaymentMethod": "Create Payment Method",
     "startSetup": "Set Up Card",
     "setupFailed": "Card setup failed",
+    "stripeNotConfigured": "Payment processing is not available. Configure Stripe in Settings before adding payment methods.",
     "cardBrand": "Brand",
     "cardLast4": "Card Number",
     "default": "Default",

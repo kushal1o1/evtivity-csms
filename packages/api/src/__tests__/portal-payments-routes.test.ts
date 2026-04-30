@@ -92,8 +92,7 @@ import { registerAuth } from '../plugins/auth.js';
 import { portalPaymentRoutes } from '../routes/portal/payments.js';
 import {
   getStripeConfig,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  createSetupIntent as _createSetupIntent,
+  createSetupIntent,
   createCustomer,
   detachPaymentMethod,
 } from '../services/stripe.service.js';
@@ -271,6 +270,60 @@ describe('Portal payment routes - handler logic', () => {
       });
       expect(response.statusCode).toBe(200);
       expect(response.json().customerId).toBe('cus_new_456');
+    });
+
+    it('returns 400 STRIPE_NOT_CONFIGURED when Stripe SDK throws', async () => {
+      setupDbResults(
+        [{ id: DRIVER_ID, email: 'john@example.com', firstName: 'John', lastName: 'Doe' }],
+        [],
+      );
+      vi.mocked(getStripeConfig).mockResolvedValue({
+        stripe: {} as never,
+        publishableKey: 'pk_test_abc',
+        currency: 'USD',
+        preAuthAmountCents: 5000,
+        configId: null,
+        connectedAccountId: null,
+        platformFeePercent: 0,
+      });
+      vi.mocked(createCustomer).mockRejectedValueOnce(new Error('Invalid API Key provided'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/portal/payment-methods/setup-intent',
+        headers: { authorization: `Bearer ${driverToken}` },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().code).toBe('STRIPE_NOT_CONFIGURED');
+      expect(response.json().error).toContain('Invalid API Key provided');
+    });
+
+    it('returns 400 STRIPE_NOT_CONFIGURED when SetupIntent has empty client_secret', async () => {
+      setupDbResults(
+        [{ id: DRIVER_ID, email: 'john@example.com', firstName: 'John', lastName: 'Doe' }],
+        [{ stripeCustomerId: 'cus_existing_123' }],
+      );
+      vi.mocked(getStripeConfig).mockResolvedValue({
+        stripe: {} as never,
+        publishableKey: 'pk_test_abc',
+        currency: 'USD',
+        preAuthAmountCents: 5000,
+        configId: null,
+        connectedAccountId: null,
+        platformFeePercent: 0,
+      });
+      vi.mocked(createSetupIntent).mockResolvedValueOnce({
+        id: 'seti_test',
+        client_secret: null,
+      } as never);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/portal/payment-methods/setup-intent',
+        headers: { authorization: `Bearer ${driverToken}` },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().code).toBe('STRIPE_NOT_CONFIGURED');
     });
   });
 

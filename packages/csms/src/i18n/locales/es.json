@@ -1237,6 +1237,7 @@
     "createPaymentMethod": "Crear metodo de pago",
     "startSetup": "Configurar Tarjeta",
     "setupFailed": "Fallo la configuracion de la tarjeta",
+    "stripeNotConfigured": "El procesamiento de pagos no esta disponible. Configura Stripe en Ajustes antes de anadir metodos de pago.",
     "cardBrand": "Marca",
     "cardLast4": "Numero de Tarjeta",
     "default": "Predeterminado",

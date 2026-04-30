@@ -1233,6 +1233,7 @@
     "createPaymentMethod": "建立支付方式",
     "startSetup": "設定銀行卡",
     "setupFailed": "銀行卡設定失敗",
+    "stripeNotConfigured": "付款處理目前無法使用。新增付款方式前，請先在設定中配置 Stripe。",
     "cardBrand": "卡品牌",
     "cardLast4": "卡號",
     "default": "預設",

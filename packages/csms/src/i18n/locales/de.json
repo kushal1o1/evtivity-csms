@@ -1233,6 +1233,7 @@
     "createPaymentMethod": "Zahlungsmethode erstellen",
     "startSetup": "Karte einrichten",
     "setupFailed": "Karteneinrichtung fehlgeschlagen",
+    "stripeNotConfigured": "Zahlungsabwicklung ist nicht verfügbar. Konfigurieren Sie Stripe in den Einstellungen, bevor Sie Zahlungsmethoden hinzufügen.",
     "cardBrand": "Marke",
     "cardLast4": "Kartennummer",
     "default": "Standard",

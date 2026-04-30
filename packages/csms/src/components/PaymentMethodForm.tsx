@@ -142,6 +142,13 @@ export function PaymentMethodForm({
         `/v1/drivers/${driverId}/payment-methods/setup-intent`,
         {},
       );
+      // Defensive: the backend validates both fields are non-empty before
+      // returning 200, but if the contract is ever violated we'd otherwise
+      // mount Elements with an empty key and the user sees a blank form.
+      if (!data.publishableKey || !data.clientSecret) {
+        setError(t('payments.stripeNotConfigured'));
+        return;
+      }
       setSetupData(data);
       setStripePromise(loadStripe(data.publishableKey));
     } catch (err) {

@@ -64,7 +64,16 @@ async function getPlatformStripeSettings(): Promise<{
   const secretKeyEnc = settingsMap.get('stripe.secretKeyEnc') as string | undefined;
   const publishableKey = settingsMap.get('stripe.publishableKey') as string | undefined;
 
-  if (secretKeyEnc == null || publishableKey == null) return null;
+  // Seed migration writes empty strings as defaults. Treat both null and ''
+  // as not-configured so the rest of the stack can short-circuit cleanly.
+  if (
+    secretKeyEnc == null ||
+    secretKeyEnc === '' ||
+    publishableKey == null ||
+    publishableKey === ''
+  ) {
+    return null;
+  }
 
   return {
     secretKeyEnc,

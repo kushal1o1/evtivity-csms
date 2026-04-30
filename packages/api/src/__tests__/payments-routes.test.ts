@@ -900,6 +900,73 @@ describe('Payment routes - handler logic', () => {
       expect(response.statusCode).toBe(404);
       expect(response.json().code).toBe('DRIVER_NOT_FOUND');
     });
+
+    it('returns 400 STRIPE_NOT_CONFIGURED when Stripe is not configured', async () => {
+      const driver = {
+        id: VALID_DRIVER_ID,
+        email: 'test@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+      };
+      setupDbResults([driver]);
+      const { getStripeConfig } = await import('../services/stripe.service.js');
+      vi.mocked(getStripeConfig).mockResolvedValueOnce(null);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/drivers/${VALID_DRIVER_ID}/payment-methods/setup-intent`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().code).toBe('STRIPE_NOT_CONFIGURED');
+    });
+
+    it('returns 400 STRIPE_NOT_CONFIGURED when Stripe SDK throws (e.g. invalid key)', async () => {
+      const driver = {
+        id: VALID_DRIVER_ID,
+        email: 'test@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+      };
+      setupDbResults([driver], []); // driver found, no existing payment method
+      const { createCustomer } = await import('../services/stripe.service.js');
+      vi.mocked(createCustomer).mockRejectedValueOnce(new Error('Invalid API Key provided'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/drivers/${VALID_DRIVER_ID}/payment-methods/setup-intent`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().code).toBe('STRIPE_NOT_CONFIGURED');
+      expect(response.json().error).toContain('Invalid API Key provided');
+    });
+
+    it('returns 400 STRIPE_NOT_CONFIGURED when SetupIntent has empty client_secret', async () => {
+      const driver = {
+        id: VALID_DRIVER_ID,
+        email: 'test@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+      };
+      setupDbResults([driver], [{ stripeCustomerId: 'cus_existing' }]);
+      const { createSetupIntent } = await import('../services/stripe.service.js');
+      vi.mocked(createSetupIntent).mockResolvedValueOnce({
+        id: 'seti_test',
+        client_secret: null,
+      } as never);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/drivers/${VALID_DRIVER_ID}/payment-methods/setup-intent`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().code).toBe('STRIPE_NOT_CONFIGURED');
+    });
   });
 
   // --- POST /v1/settings/stripe/test ---

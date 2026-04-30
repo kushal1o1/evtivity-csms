@@ -148,6 +148,13 @@ export function PaymentMethods(): React.JSX.Element {
         '/v1/portal/payment-methods/setup-intent',
         {},
       );
+      // Defensive: backend validates both are non-empty before returning 200,
+      // but if the contract is ever violated we'd otherwise mount Elements
+      // with an empty key and the user sees a blank card form.
+      if (!data.publishableKey || !data.clientSecret) {
+        setStripeError(t('payments.stripeNotConfigured'));
+        return;
+      }
       setSetupClientSecret(data.clientSecret);
       setSetupCustomerId(data.customerId);
       if (stripePromise == null) {

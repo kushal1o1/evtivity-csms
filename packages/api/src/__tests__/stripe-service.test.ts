@@ -525,6 +525,36 @@ describe('stripe.service', () => {
       expect(config).toBeNull();
     });
 
+    it('returns null when secretKeyEnc is the empty string (seed default)', async () => {
+      setupDbResults([
+        { key: 'stripe.secretKeyEnc', value: '' },
+        { key: 'stripe.publishableKey', value: 'pk_test_123' },
+        { key: 'stripe.currency', value: 'USD' },
+      ]);
+      const config = await getStripeConfig(null);
+      expect(config).toBeNull();
+    });
+
+    it('returns null when publishableKey is the empty string (seed default)', async () => {
+      setupDbResults([
+        { key: 'stripe.secretKeyEnc', value: 'encrypted_key' },
+        { key: 'stripe.publishableKey', value: '' },
+        { key: 'stripe.currency', value: 'USD' },
+      ]);
+      const config = await getStripeConfig(null);
+      expect(config).toBeNull();
+    });
+
+    it('returns null when both keys are empty strings', async () => {
+      setupDbResults([
+        { key: 'stripe.secretKeyEnc', value: '' },
+        { key: 'stripe.publishableKey', value: '' },
+        { key: 'stripe.currency', value: 'USD' },
+      ]);
+      const config = await getStripeConfig(null);
+      expect(config).toBeNull();
+    });
+
     it('throws when SETTINGS_ENCRYPTION_KEY is not set', async () => {
       mockConfig.SETTINGS_ENCRYPTION_KEY = '';
       setupDbResults(platformSettingsRows());

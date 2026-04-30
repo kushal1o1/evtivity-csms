@@ -125,24 +125,41 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
         .where(eq(driverPaymentMethods.driverId, driverId))
         .limit(1);
 
-      let customerId: string;
-      if (existingMethod != null) {
-        customerId = existingMethod.stripeCustomerId;
-      } else {
-        const customer = await createCustomer(
-          config,
-          driver.email ?? '',
-          `${driver.firstName} ${driver.lastName}`,
-        );
-        customerId = customer.id;
-      }
+      try {
+        let customerId: string;
+        if (existingMethod != null) {
+          customerId = existingMethod.stripeCustomerId;
+        } else {
+          const customer = await createCustomer(
+            config,
+            driver.email ?? '',
+            `${driver.firstName} ${driver.lastName}`,
+          );
+          customerId = customer.id;
+        }
 
-      const setupIntent = await createSetupIntent(config, customerId);
-      return {
-        clientSecret: setupIntent.client_secret,
-        customerId,
-        publishableKey: config.publishableKey,
-      };
+        const setupIntent = await createSetupIntent(config, customerId);
+        if (setupIntent.client_secret == null || setupIntent.client_secret === '') {
+          await reply.status(400).send({
+            error: 'Stripe returned an empty client secret',
+            code: 'STRIPE_NOT_CONFIGURED',
+          });
+          return;
+        }
+        return {
+          clientSecret: setupIntent.client_secret,
+          customerId,
+          publishableKey: config.publishableKey,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Stripe call failed';
+        request.log.warn({ err: message }, 'Stripe setup-intent failed');
+        await reply.status(400).send({
+          error: `Stripe is configured but the API rejected the request: ${message}`,
+          code: 'STRIPE_NOT_CONFIGURED',
+        });
+        return;
+      }
     },
   );
 

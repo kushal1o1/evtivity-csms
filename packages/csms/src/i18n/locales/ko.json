@@ -1233,6 +1233,7 @@
     "createPaymentMethod": "결제 수단 생성",
     "startSetup": "카드 설정",
     "setupFailed": "카드 설정 실패",
+    "stripeNotConfigured": "결제 처리를 사용할 수 없습니다. 결제 수단을 추가하기 전에 설정에서 Stripe를 구성하세요.",
     "cardBrand": "브랜드",
     "cardLast4": "카드 번호",
     "default": "기본값",
