@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CopyableId } from '@/components/copyable-id';
+import { CreateButton } from '@/components/create-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { SiteLayout } from '@/components/layout/SiteLayout';
@@ -200,8 +201,14 @@ export function SiteDetail(): React.JSX.Element {
 
         <TabsContent value="stations">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>{t('nav.stations')}</CardTitle>
+              <CreateButton
+                label={t('stations.addStation')}
+                onClick={() => {
+                  void navigate(`/stations/new?siteId=${id ?? ''}`);
+                }}
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="overflow-x-auto">

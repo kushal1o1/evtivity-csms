@@ -152,12 +152,15 @@ export function PaymentMethodForm({
       setSetupData(data);
       setStripePromise(loadStripe(data.publishableKey));
     } catch (err) {
+      // Prefer the stable error `code` for translation. Fall back to the
+      // server-provided English `error` text only when the code is unknown.
+      const body =
+        err instanceof ApiError && err.body != null ? (err.body as Record<string, unknown>) : null;
+      const code = typeof body?.['code'] === 'string' ? body['code'] : null;
+      const fallback =
+        typeof body?.['error'] === 'string' ? body['error'] : t('payments.setupFailed');
       const message =
-        err instanceof ApiError &&
-        err.body != null &&
-        typeof (err.body as Record<string, unknown>).error === 'string'
-          ? ((err.body as Record<string, unknown>).error as string)
-          : t('payments.setupFailed');
+        code === 'STRIPE_NOT_CONFIGURED' ? t('payments.stripeNotConfigured') : fallback;
       setError(message);
     }
   }

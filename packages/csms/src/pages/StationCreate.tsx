@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
@@ -31,10 +31,11 @@ interface Site {
 export function StationCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [stationId, setStationId] = useState('');
   const [model, setModel] = useState('');
-  const [siteId, setSiteId] = useState('');
+  const [siteId, setSiteId] = useState(searchParams.get('siteId') ?? '');
   const [securityProfile, setSecurityProfile] = useState('1');
   const [password, setPassword] = useState('');
   const [isSimulator, setIsSimulator] = useState(false);
