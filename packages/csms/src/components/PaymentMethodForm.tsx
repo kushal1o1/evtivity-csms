@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { loadStripe } from '@stripe/stripe-js/pure';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useMutation } from '@tanstack/react-query';
@@ -134,7 +134,14 @@ export function PaymentMethodForm({
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [setupData, setSetupData] = useState<SetupIntentResponse | null>(null);
-  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
+  // Memoize on the publishable key so React Strict Mode's double-invoked
+  // effect (and any future re-render) hands Elements the same Promise
+  // reference. Mounting Elements with a fresh `stripe` prop triggers
+  // "You cannot change the stripe prop after setting it".
+  const stripePromise = useMemo(
+    () => (setupData?.publishableKey ? loadStripe(setupData.publishableKey) : null),
+    [setupData?.publishableKey],
+  );
   async function initSetup(): Promise<void> {
     setError(null);
     try {
@@ -150,7 +157,6 @@ export function PaymentMethodForm({
         return;
       }
       setSetupData(data);
-      setStripePromise(loadStripe(data.publishableKey));
     } catch (err) {
       // Prefer the stable error `code` for translation. Fall back to the
       // server-provided English `error` text only when the code is unknown.
