@@ -66,6 +66,14 @@ export function StationCreate(): React.JSX.Element {
     },
   });
 
+  const errorBody =
+    createMutation.error != null &&
+    typeof createMutation.error === 'object' &&
+    'body' in createMutation.error
+      ? (createMutation.error as { body: { code?: string } }).body
+      : null;
+  const stationIdExistsError = errorBody?.code === 'STATION_ID_EXISTS';
+
   function getValidationErrors(): Record<string, string> {
     const errors: Record<string, string> = {};
     if (!stationId.trim()) errors.stationId = t('validation.required');
@@ -111,10 +119,17 @@ export function StationCreate(): React.JSX.Element {
                 onChange={(e) => {
                   setStationId(e.target.value);
                 }}
-                className={hasSubmitted && errors.stationId ? 'border-destructive' : ''}
+                className={
+                  (hasSubmitted && errors.stationId) || stationIdExistsError
+                    ? 'border-destructive'
+                    : ''
+                }
               />
               {hasSubmitted && errors.stationId && (
                 <p className="text-sm text-destructive">{errors.stationId}</p>
+              )}
+              {stationIdExistsError && (
+                <p className="text-sm text-destructive">{t('errors.STATION_ID_EXISTS')}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -237,7 +252,7 @@ export function StationCreate(): React.JSX.Element {
                 setLongitude(lng);
               }}
             />
-            {createMutation.isError && (
+            {createMutation.isError && !stationIdExistsError && (
               <p className="text-sm text-destructive">{getErrorMessage(createMutation.error, t)}</p>
             )}
             <div className="flex justify-end gap-2">

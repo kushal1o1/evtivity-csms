@@ -17,8 +17,8 @@ export function EditIconButton({
   disabled,
   size = 'md',
 }: EditIconButtonProps): React.JSX.Element {
-  const sizeClass = size === 'sm' ? 'h-6 w-6' : 'h-7 w-7';
-  const iconClass = size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5';
+  const sizeClass = size === 'sm' ? 'h-9 w-9' : 'h-10 w-10';
+  const iconClass = 'h-4 w-4';
   return (
     <span className="group relative inline-flex">
       <Button
