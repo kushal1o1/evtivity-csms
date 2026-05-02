@@ -2283,7 +2283,9 @@
     "actionFailed": "Action failed",
     "tokenUsedBy": "Used by Authorise and Start Charging only.",
     "tokenRequired": "Token is required for this action.",
-    "tokenNotFound": "Token not found in driver tokens. Authorise and Start Charging will be rejected."
+    "tokenNotFound": "Token not found in driver tokens. Authorise and Start Charging will be rejected.",
+    "stationOffline": "Station is offline. Bring it back online first.",
+    "invalidForState": "Not valid for current connector state ({{status}})."
   },
   "loadManagement": {
     "configuration": "Load Management Configuration",

@@ -2283,7 +2283,9 @@
     "actionFailed": "操作失敗",
     "tokenUsedBy": "僅用於授權和開始充電。",
     "tokenRequired": "此操作需要令牌。",
-    "tokenNotFound": "在司機令牌中未找到令牌。授權和開始充電將被拒絕。"
+    "tokenNotFound": "在司機令牌中未找到令牌。授權和開始充電將被拒絕。",
+    "stationOffline": "充電站已離線。請先使其恢復在線。",
+    "invalidForState": "目前連接器狀態（{{status}}）下不可用。"
   },
   "loadManagement": {
     "configuration": "負載管理配置",

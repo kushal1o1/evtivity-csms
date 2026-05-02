@@ -2294,7 +2294,9 @@
     "actionFailed": "操作失败",
     "tokenUsedBy": "仅用于授权和开始充电。",
     "tokenRequired": "此操作需要令牌。",
-    "tokenNotFound": "在司机令牌中未找到令牌。授权和开始充电将被拒绝。"
+    "tokenNotFound": "在司机令牌中未找到令牌。授权和开始充电将被拒绝。",
+    "stationOffline": "充电站已离线。请先使其恢复在线。",
+    "invalidForState": "当前连接器状态（{{status}}）下不可用。"
   },
   "loadManagement": {
     "configuration": "负载管理配置",

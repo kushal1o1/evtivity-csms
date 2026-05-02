@@ -934,6 +934,14 @@ export class StationSimulator {
 
   async unplug(evseId: number): Promise<void> {
     const ctx = this.evseContexts.get(evseId) as EvseContext;
+
+    // No-op if no cable is plugged. Without this guard, repeated unplug calls
+    // resend StatusNotification(Available) which clutters logs and racing the
+    // real connector status during chaos.
+    if (!ctx.cablePlugged && ctx.transactionId == null) {
+      return;
+    }
+
     ctx.cablePlugged = false;
     const connectorId = this.getConnectorId(evseId);
 
@@ -1070,8 +1078,15 @@ export class StationSimulator {
   // ---------------------------------------------------------------------------
 
   async injectFault(evseId: number, errorCode: string): Promise<void> {
-    // Stop active transaction if any
     const faultCtx = this.evseContexts.get(evseId) as EvseContext;
+
+    // No-op if connector is already Faulted. Re-firing would duplicate the
+    // StatusNotification and re-stop a transaction that no longer exists.
+    if (this.evseConnectorStatus.get(evseId) === 'Faulted') {
+      return;
+    }
+
+    // Stop active transaction if any
     if (faultCtx.transactionId != null) {
       await this.stopCharging(evseId, 'Other');
     }
@@ -1083,6 +1098,13 @@ export class StationSimulator {
   }
 
   async clearFault(evseId: number): Promise<void> {
+    // No-op if connector is not currently Faulted. Without this guard,
+    // clearFault on an Available/Charging connector would force it back
+    // to Available and mask the real state.
+    if (this.evseConnectorStatus.get(evseId) !== 'Faulted') {
+      return;
+    }
+
     const connectorId = this.getConnectorId(evseId);
     this.evseConnectorStatus.set(evseId, 'Available');
     const clearCtx = this.evseContexts.get(evseId) as EvseContext;
@@ -1096,12 +1118,22 @@ export class StationSimulator {
   // ---------------------------------------------------------------------------
 
   async goOffline(): Promise<void> {
+    // No-op if already offline. Avoids redundant DB writes and disconnect
+    // calls when chaos repeatedly picks goOffline on the same station.
+    if (this.offlineFlag) {
+      return;
+    }
     this.offlineFlag = true;
     this.client.disconnect();
     await this.updateStationStatus('disconnected');
   }
 
   async comeOnline(): Promise<void> {
+    // No-op if already online. Re-running start() would resend
+    // BootNotification and reset connector state on a healthy station.
+    if (!this.offlineFlag && this.client.isConnected) {
+      return;
+    }
     this.offlineFlag = false;
     this.destroyed = false;
     await this.start();

@@ -20,4 +20,4 @@ COPY tsconfig.base.json tsconfig.json ./
 COPY packages/lib/ packages/lib/
 COPY packages/database/ packages/database/
 RUN npx tsc -b --force packages/lib
-CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate && cd /app && node --import tsx packages/database/src/seed.ts"]
+CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate"]

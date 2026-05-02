@@ -2298,7 +2298,9 @@
     "actionFailed": "La accion fallo",
     "tokenUsedBy": "Usado solo por Autorizar e Iniciar Carga.",
     "tokenRequired": "El token es requerido para esta accion.",
-    "tokenNotFound": "Token no encontrado en tokens de conductor. Autorizar e Iniciar Carga seran rechazados."
+    "tokenNotFound": "Token no encontrado en tokens de conductor. Autorizar e Iniciar Carga seran rechazados.",
+    "stationOffline": "Estacion desconectada. Reconectela primero.",
+    "invalidForState": "No valido para el estado actual del conector ({{status}})."
   },
   "loadManagement": {
     "configuration": "Configuracion de gestion de carga",

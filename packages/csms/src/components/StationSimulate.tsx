@@ -10,12 +10,20 @@ import { Input } from '@/components/ui/input';
 import { ClearableInput } from '@/components/ui/clearable-input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/toast';
+
+interface SimEvse {
+  evseId: number;
+  connectors: Array<{ status: string }>;
+}
 
 interface StationSimulateProps {
   stationId: string;
   evseIds: number[];
+  evses?: SimEvse[] | undefined;
+  isOnline?: boolean | undefined;
 }
 
 interface ActionConfig {
@@ -25,7 +33,61 @@ interface ActionConfig {
   needsToken: boolean;
 }
 
-export function StationSimulate({ stationId, evseIds }: StationSimulateProps): React.JSX.Element {
+// Mirrors the chaos VALID_BY_STATE map, keyed by `connectors.status` (lowercase
+// CSMS form). Notifications are not exposed in the UI, so this list only
+// covers the 9 dashboard-button actions. The simulator's per-action guards are
+// the actual source of truth -- this is a UX hint only.
+function getValidActions(connectorStatus: string): Set<string> {
+  switch (connectorStatus) {
+    case 'available':
+      return new Set(['plugIn', 'authorize', 'goOffline', 'injectFault']);
+    case 'preparing':
+    case 'ev_connected':
+    case 'occupied':
+      return new Set([
+        'plugIn',
+        'unplug',
+        'authorize',
+        'startCharging',
+        'goOffline',
+        'injectFault',
+      ]);
+    case 'charging':
+    case 'discharging':
+    case 'suspended_ev':
+    case 'suspended_evse':
+    case 'idle':
+      return new Set(['stopCharging', 'unplug', 'injectFault', 'goOffline']);
+    case 'finishing':
+      return new Set(['unplug', 'injectFault', 'goOffline']);
+    case 'reserved':
+      return new Set(['plugIn', 'authorize', 'goOffline', 'injectFault']);
+    case 'faulted':
+      return new Set(['clearFault', 'goOffline']);
+    case 'unavailable':
+      return new Set(['comeOnline', 'goOffline']);
+    default:
+      // Unknown status: don't gate. The simulator will no-op invalid actions.
+      return new Set([
+        'plugIn',
+        'unplug',
+        'authorize',
+        'startCharging',
+        'stopCharging',
+        'injectFault',
+        'clearFault',
+        'goOffline',
+        'comeOnline',
+      ]);
+  }
+}
+
+export function StationSimulate({
+  stationId,
+  evseIds,
+  evses,
+  isOnline,
+}: StationSimulateProps): React.JSX.Element {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [selectedEvse, setSelectedEvse] = useState<number>(evseIds[0] ?? 1);
@@ -54,6 +116,23 @@ export function StationSimulate({ stationId, evseIds }: StationSimulateProps): R
     { action: 'goOffline', label: t('simulate.goOffline'), needsEvse: false, needsToken: false },
     { action: 'comeOnline', label: t('simulate.comeOnline'), needsEvse: false, needsToken: false },
   ];
+
+  const selectedConnectorStatus =
+    evses?.find((e) => e.evseId === selectedEvse)?.connectors[0]?.status ?? null;
+
+  // Build the valid-action set. When isOnline is explicitly false, only
+  // comeOnline is allowed. When evses data is missing, allow everything.
+  let validActions: Set<string>;
+  let invalidReason: string | null = null;
+  if (isOnline === false) {
+    validActions = new Set(['comeOnline']);
+    invalidReason = t('simulate.stationOffline');
+  } else if (selectedConnectorStatus != null) {
+    validActions = getValidActions(selectedConnectorStatus);
+    invalidReason = t('simulate.invalidForState', { status: selectedConnectorStatus });
+  } else {
+    validActions = new Set(actions.map((a) => a.action));
+  }
 
   const actionMutation = useMutation({
     mutationFn: async ({ action, body }: { action: string; body: Record<string, unknown> }) => {
@@ -164,19 +243,30 @@ export function StationSimulate({ stationId, evseIds }: StationSimulateProps): R
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {actions.map((config) => {
             const isLoading = activeAction === config.action && actionMutation.isPending;
-            return (
+            const isInvalidForState = !validActions.has(config.action);
+            const disabled = actionMutation.isPending || isInvalidForState;
+            const button = (
               <Button
                 key={config.action}
                 variant="outline"
-                disabled={actionMutation.isPending}
+                disabled={disabled}
                 onClick={() => {
                   void handleAction(config);
                 }}
+                className="w-full"
               >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 {config.label}
               </Button>
             );
+            if (isInvalidForState && invalidReason != null) {
+              return (
+                <Tooltip key={config.action} content={invalidReason}>
+                  {button}
+                </Tooltip>
+              );
+            }
+            return <div key={config.action}>{button}</div>;
           })}
         </div>
       </CardContent>

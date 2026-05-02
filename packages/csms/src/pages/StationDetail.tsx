@@ -367,6 +367,8 @@ export function StationDetail(): React.JSX.Element {
             <StationSimulate
               stationId={station.stationId}
               evseIds={connectorsData?.map((e) => e.evseId) ?? [1]}
+              evses={connectorsData}
+              isOnline={station.isOnline}
             />
           </TabsContent>
         )}

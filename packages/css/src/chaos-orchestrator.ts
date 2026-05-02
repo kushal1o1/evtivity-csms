@@ -20,6 +20,68 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
+export type CssStationStatus =
+  | 'disconnected'
+  | 'booting'
+  | 'available'
+  | 'charging'
+  | 'faulted'
+  | 'unavailable';
+
+// Action names that mutate connector/transaction/connectivity state. Anything
+// not in this set (notifications like sendHeartbeat, sendMeterValues) is safe
+// to fire whenever the station is connected.
+const CHAOS_STATE_MUTATING: ReadonlySet<string> = new Set([
+  'plugIn',
+  'unplug',
+  'authorize',
+  'startCharging',
+  'stopCharging',
+  'injectFault',
+  'clearFault',
+  'comeOnline',
+  'goOffline',
+  'sendStatusNotification',
+  'sendBootNotification',
+]);
+
+const CHAOS_VALID_BY_STATE: Readonly<Record<CssStationStatus, ReadonlySet<string>>> = {
+  disconnected: new Set(['comeOnline']),
+  booting: new Set([]),
+  available: new Set(['plugIn', 'authorize', 'goOffline', 'injectFault', 'sendStatusNotification']),
+  charging: new Set(['stopCharging', 'unplug', 'injectFault', 'goOffline']),
+  faulted: new Set(['clearFault', 'goOffline']),
+  unavailable: new Set(['comeOnline', 'sendStatusNotification']),
+};
+
+// css_evses.status values that mean "cable plugged but not yet charging".
+const CHAOS_PLUGGED_STATUSES: ReadonlySet<string> = new Set([
+  'Preparing',
+  'Occupied',
+  'EVConnected',
+  'SuspendedEV',
+  'SuspendedEVSE',
+]);
+
+/**
+ * Filter chaos actions to those valid for the given station/connector state.
+ * Pure function exposed for unit testing; chaos uses it to skip ticks that
+ * would no-op at the simulator. The simulator's per-action guards remain the
+ * source of truth -- this is an optimization, not a correctness mechanism.
+ */
+export function filterChaosActions<T extends { name: string }>(
+  actions: T[],
+  state: CssStationStatus,
+  connectorStatus: string,
+): T[] {
+  const stateActions = new Set(CHAOS_VALID_BY_STATE[state]);
+  if (state === 'available' && CHAOS_PLUGGED_STATUSES.has(connectorStatus)) {
+    stateActions.add('startCharging');
+    stateActions.add('unplug');
+  }
+  return actions.filter((a) => !CHAOS_STATE_MUTATING.has(a.name) || stateActions.has(a.name));
+}
+
 // Actions available for all OCPP versions
 const GLOBAL_ACTIONS: Array<{
   name: string;
@@ -565,39 +627,49 @@ export class ChaosOrchestrator {
       actions = [...actions, ...OCPP16_ACTIONS];
     }
 
-    // Filter out actions that would corrupt the connector/transaction state
-    // when the station already has an active charging session. Chaos exists
-    // to exercise the system, not to break in-flight transactions tested
-    // manually via the dashboard or guest portal.
-    //
-    // The local `chargingStations` set only tracks chaos-initiated charges.
-    // Sessions started by the dashboard or guest portal are not in the set,
-    // so we also check the DB for any active css_transaction on this station.
-    let stationIsCharging = this.chargingStations.has(stationId);
-    if (!stationIsCharging) {
-      try {
-        const rows = await this.sql<Array<{ exists: boolean }>>`
-          SELECT EXISTS (
-            SELECT 1 FROM css_transactions t
-            JOIN css_stations s ON s.id = t.css_station_id
-            WHERE s.station_id = ${stationId} AND t.status = 'active'
-          ) AS exists
-        `;
-        stationIsCharging = rows[0]?.exists === true;
-      } catch {
-        // Best-effort: if DB unavailable, assume not charging.
+    // State-aware action filter. Read css_stations.status, the connector
+    // status, and active-transaction existence in one query, then call the
+    // pure filterChaosActions() helper. The simulator's per-action guards are
+    // the correctness floor; this filter just stops chaos from wasting ticks
+    // on actions that would no-op.
+    let stationStatus: CssStationStatus = 'available';
+    let connectorStatus = 'Available';
+    let hasActiveTx = this.chargingStations.has(stationId);
+    try {
+      const rows = await this.sql<
+        Array<{ status: string; evse_status: string | null; has_tx: boolean }>
+      >`
+        SELECT s.status,
+               e.status AS evse_status,
+               EXISTS (
+                 SELECT 1 FROM css_transactions t
+                 WHERE t.css_station_id = s.id AND t.status = 'active'
+               ) AS has_tx
+        FROM css_stations s
+        LEFT JOIN css_evses e ON e.css_station_id = s.id AND e.evse_id = 1
+        WHERE s.station_id = ${stationId}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (row != null) {
+        stationStatus = row.status as CssStationStatus;
+        connectorStatus = row.evse_status ?? 'Available';
+        hasActiveTx = row.has_tx || hasActiveTx;
       }
+    } catch {
+      // Best-effort: if DB unavailable, fall through with default 'available'.
     }
-    if (stationIsCharging) {
-      const STATEFUL = new Set([
-        'startCharging',
-        'plugIn',
-        'authorize',
-        'sendStatusNotification',
-        'sendBootNotification',
-        'injectFault',
-      ]);
-      actions = actions.filter((a) => !STATEFUL.has(a.name));
+
+    // Treat charging-or-active-transaction as the same effective state.
+    // css_stations.status updates lag for sessions started by the dashboard
+    // or guest portal; the active-tx existence check catches those.
+    const effectiveState: CssStationStatus = hasActiveTx ? 'charging' : stationStatus;
+
+    actions = filterChaosActions(actions, effectiveState, connectorStatus);
+
+    if (actions.length === 0) {
+      // No valid action for this state this tick.
+      return;
     }
 
     const action = pick(actions);

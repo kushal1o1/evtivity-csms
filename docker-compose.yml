@@ -42,7 +42,7 @@ services:
     environment:
       DATABASE_URL: postgres://evtivity:evtivity@postgres:5432/evtivity
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-dev-encryption-key-32chars-long!}
-      SEED_DEMO: ${SEED_DEMO:-true}
+      SEED_DEMO: ${SEED_DEMO:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,7 +105,7 @@ services:
       DATABASE_URL: postgres://evtivity:evtivity@postgres:5432/evtivity
       REDIS_URL: redis://redis:6379
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-dev-encryption-key-32chars-long!}
-      NODE_INSPECT: ${NODE_INSPECT:---inspect=0.0.0.0:9229}
+      NODE_INSPECT: ${NODE_INSPECT:-}
       OCPP_PORT: ${OCPP_PORT:-7103}
       OCPP_HEALTH_PORT: 8081
       OCPP_MAX_CONNECTIONS_PER_IP: ${OCPP_MAX_CONNECTIONS_PER_IP:-2500}
@@ -195,7 +195,7 @@ services:
       REDIS_URL: redis://redis:6379
       OCPP_SERVER_URL: ws://ocpp:${OCPP_PORT:-7103}
       OCPP_TLS_SERVER_URL: wss://ocpp:8443
-      CSS_MODE: ${CSS_MODE:-chaos}
+      CSS_MODE: ${CSS_MODE:-standby}
       CSS_ACTION_INTERVAL_MS: ${CSS_ACTION_INTERVAL_MS:-3000}
       CSS_STATION_LIMIT: ${CSS_STATION_LIMIT:-0}
       TLS_REJECT_UNAUTHORIZED: ${TLS_REJECT_UNAUTHORIZED:-false}

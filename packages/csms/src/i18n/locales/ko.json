@@ -2283,7 +2283,9 @@
     "actionFailed": "작업 실패",
     "tokenUsedBy": "인증 및 충전 시작에만 사용됩니다.",
     "tokenRequired": "이 작업에는 토큰이 필요합니다.",
-    "tokenNotFound": "드라이버 토큰에서 토큰을 찾을 수 없습니다. 인증 및 충전 시작이 거부됩니다."
+    "tokenNotFound": "드라이버 토큰에서 토큰을 찾을 수 없습니다. 인증 및 충전 시작이 거부됩니다.",
+    "stationOffline": "충전소가 오프라인 상태입니다. 먼저 온라인으로 전환하세요.",
+    "invalidForState": "현재 커넥터 상태({{status}})에서 사용할 수 없습니다."
   },
   "loadManagement": {
     "configuration": "부하 관리 구성",

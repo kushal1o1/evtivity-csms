@@ -2302,7 +2302,9 @@
     "actionFailed": "Aktion fehlgeschlagen",
     "tokenUsedBy": "Nur von Autorisieren und Laden starten verwendet.",
     "tokenRequired": "Token ist für diese Aktion erforderlich.",
-    "tokenNotFound": "Token in Fahrer-Tokens nicht gefunden. Autorisieren und Laden starten werden abgelehnt."
+    "tokenNotFound": "Token in Fahrer-Tokens nicht gefunden. Autorisieren und Laden starten werden abgelehnt.",
+    "stationOffline": "Station ist offline. Bringen Sie sie zuerst wieder online.",
+    "invalidForState": "Im aktuellen Steckerstatus ({{status}}) nicht verfügbar."
   },
   "loadManagement": {
     "configuration": "Lastmanagement-Konfiguration",
