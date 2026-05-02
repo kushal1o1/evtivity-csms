@@ -22,48 +22,43 @@ interface CsmsEvent {
   [key: string]: unknown;
 }
 
-export function startGuestSessionListener(
+export async function startGuestSessionListener(
   pubsub: PubSubClient,
   logger: FastifyBaseLogger,
-): () => void {
+): Promise<() => Promise<void>> {
   let stopped = false;
-  let subscription: Subscription | null = null;
 
-  async function init(): Promise<void> {
+  const subscription: Subscription = await pubsub.subscribe(EVENTS_CHANNEL, (payload: string) => {
+    if (stopped) return;
+
+    let event: CsmsEvent;
     try {
-      subscription = await pubsub.subscribe(EVENTS_CHANNEL, (payload: string) => {
-        if (stopped) return;
-
-        let event: CsmsEvent;
-        try {
-          event = JSON.parse(payload) as CsmsEvent;
-        } catch {
-          return;
-        }
-
-        void handleGuestSessionEvent(event, logger).catch((err: unknown) => {
-          logger.error({ err, event }, 'Guest session event handler error');
-        });
-      });
-
-      if (stopped) {
-        void subscription.unsubscribe().catch(() => {});
-        return;
-      }
-
-      logger.info('Guest session listener started');
-    } catch (err: unknown) {
-      logger.error({ err }, 'Failed to start guest session listener');
+      event = JSON.parse(payload) as CsmsEvent;
+    } catch {
+      return;
     }
-  }
 
-  void init();
+    // Only act on the two events we care about; skip the rest silently to
+    // keep the log noise down on the SSE-shared csms_events channel.
+    if (event.type !== 'TransactionStarted' && event.type !== 'TransactionEnded') {
+      return;
+    }
 
-  return () => {
+    logger.info(
+      { type: event.type, sessionId: event.sessionId, token: event.idToken?.idToken },
+      'Guest session listener received event',
+    );
+
+    void handleGuestSessionEvent(event, logger).catch((err: unknown) => {
+      logger.error({ err, event }, 'Guest session event handler error');
+    });
+  });
+
+  logger.info('Guest session listener started');
+
+  return async () => {
     stopped = true;
-    if (subscription != null) {
-      void subscription.unsubscribe().catch(() => {});
-    }
+    await subscription.unsubscribe().catch(() => {});
   };
 }
 

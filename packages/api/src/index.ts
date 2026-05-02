@@ -21,6 +21,7 @@ import {
   startMetricsCollector,
   stopMetricsCollector,
 } from './services/metrics-collector.service.js';
+import { startGuestSessionListener } from './services/guest-session.service.js';
 
 async function start(): Promise<void> {
   const sentryConfig = await getSentryConfig();
@@ -57,7 +58,15 @@ async function start(): Promise<void> {
   const pubsub = new RedisPubSubClient(config.REDIS_URL);
   setPubSub(pubsub);
 
+  // Subscribe to csms_events so TransactionStarted/Ended links the guest
+  // session to the charging session and finalizes payment. Without this the
+  // portal's "Starting Charger..." page hangs because guest_sessions.charging_session_id
+  // is never set even though the OCPP transaction ran. Awaited so subsequent
+  // OCPP events are guaranteed to find a subscriber.
+  const stopGuestSessionListener = await startGuestSessionListener(pubsub, app.log);
+
   app.addHook('onClose', async () => {
+    await stopGuestSessionListener();
     stopMetricsCollector();
     await stopMetricsServer();
     await pubsub.close();
