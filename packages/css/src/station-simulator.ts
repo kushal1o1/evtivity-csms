@@ -1128,6 +1128,41 @@ export class StationSimulator {
     await this.updateStationStatus('disconnected');
   }
 
+  /**
+   * Re-send BootNotification and, on Accepted, emit StatusNotification for
+   * each EVSE so the CSMS auto-discovers connectors. Used after a station's
+   * onboarding is approved on the server side -- avoids waiting for the next
+   * client-side retry tick. Lighter than simulateReset(): does not stop
+   * active transactions or transition through Unavailable.
+   */
+  async rebootStation(): Promise<void> {
+    if (!this.client.isConnected) {
+      return;
+    }
+    try {
+      await this.sendBootNotification('RemoteReset');
+    } catch {
+      return;
+    }
+    if (this.bootStatus !== 'Accepted') return;
+
+    for (const evse of this.config.evses) {
+      const ctx = this.evseContexts.get(evse.evseId) as EvseContext;
+      // Don't disturb a connector that's mid-transaction.
+      if (ctx.transactionId != null) continue;
+      ctx.state = 'Available';
+      ctx.cablePlugged = false;
+      this.evseConnectorStatus.set(evse.evseId, 'Available');
+      try {
+        await this.sendStatusNotification(evse.evseId, evse.connectorId, 'Available');
+      } catch {
+        // Connection dropped mid-flight; SimulatorManager will retry on reconnect.
+      }
+      await this.updateEvseStatus(evse.evseId, 'Available').catch(() => {});
+    }
+    await this.updateStationStatus('available');
+  }
+
   async comeOnline(): Promise<void> {
     // No-op if already online. Re-running start() would resend
     // BootNotification and reset connector state on a healthy station.

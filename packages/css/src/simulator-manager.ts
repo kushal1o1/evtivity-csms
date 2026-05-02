@@ -305,6 +305,9 @@ export class SimulatorManager {
         case 'comeOnline':
           await sim.comeOnline();
           break;
+        case 'rebootStation':
+          await sim.rebootStation();
+          break;
         case 'sendBootNotification':
           await sim.sendBootNotification(params.reason as string);
           break;

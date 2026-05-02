@@ -65,8 +65,8 @@ function makeChain() {
 const updateChainSpy = vi.fn();
 const insertChainSpy = vi.fn();
 
-vi.mock('@evtivity/database', () => ({
-  db: {
+vi.mock('@evtivity/database', () => {
+  const dbMock: Record<string, unknown> = {
     select: vi.fn(() => makeChain()),
     insert: vi.fn(() => {
       insertChainSpy();
@@ -81,34 +81,40 @@ vi.mock('@evtivity/database', () => ({
     selectDistinctOn: vi.fn(() => makeChain()),
     execute: vi.fn(() => Promise.resolve([])),
     $client: {},
-  },
-  chargingStations: {},
-  evses: {},
-  connectors: {},
-  chargingSessions: {},
-  drivers: {},
-  meterValues: {},
-  sites: {},
-  vendors: { id: 'id', name: 'name' },
-  ocppMessageLogs: {},
-  connectionLogs: {},
-  stationCertificates: {},
-  pricingGroupStations: {},
-  pricingGroups: {},
-  cssStations: { id: 'id', stationId: 'stationId' },
-  cssEvses: {},
-  cssConfigVariables: {},
-  securityEvents: {},
-  stationEvents: {},
-  stationConfigurations: {},
-  firmwareUpdates: {},
-  chargingProfiles: {},
-  evChargingNeeds: {},
-  variableMonitoringRules: {},
-  eventAlerts: {},
-  chargingProfileTemplates: {},
-  configTemplates: {},
-}));
+  };
+  // The route now wraps create/update in db.transaction. Pass the same mocked
+  // db back as the tx so the chained query helpers above are reused inside.
+  dbMock['transaction'] = vi.fn((cb: (tx: unknown) => Promise<unknown>) => cb(dbMock));
+  return {
+    db: dbMock,
+    chargingStations: {},
+    evses: {},
+    connectors: {},
+    chargingSessions: {},
+    drivers: {},
+    meterValues: {},
+    sites: {},
+    vendors: { id: 'id', name: 'name' },
+    ocppMessageLogs: {},
+    connectionLogs: {},
+    stationCertificates: {},
+    pricingGroupStations: {},
+    pricingGroups: {},
+    cssStations: { id: 'id', stationId: 'stationId' },
+    cssEvses: {},
+    cssConfigVariables: {},
+    securityEvents: {},
+    stationEvents: {},
+    stationConfigurations: {},
+    firmwareUpdates: {},
+    chargingProfiles: {},
+    evChargingNeeds: {},
+    variableMonitoringRules: {},
+    eventAlerts: {},
+    chargingProfileTemplates: {},
+    configTemplates: {},
+  };
+});
 
 vi.mock('drizzle-orm', () => {
   const sqlFn = () => ({ as: vi.fn() });
@@ -283,7 +289,9 @@ describe('PATCH /v1/stations/:id isSimulator toggle pairs css_stations', () => {
 
     expect(res.statusCode).toBe(200);
     expect(disableCssPairMock).toHaveBeenCalledTimes(1);
-    expect(disableCssPairMock).toHaveBeenCalledWith(STATION_OCPP_ID);
+    // disableCssPair is now called inside a db.transaction with the tx as the
+    // second argument, so the route can roll the parent update back together.
+    expect(disableCssPairMock).toHaveBeenCalledWith(STATION_OCPP_ID, expect.anything());
     expect(enableCssPairMock).not.toHaveBeenCalled();
   });
 

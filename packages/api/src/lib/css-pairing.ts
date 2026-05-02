@@ -17,25 +17,31 @@ interface PairOptions {
   caCert?: string | null;
 }
 
-export async function enableCssPair(opts: PairOptions): Promise<void> {
+// Executor accepted by enableCssPair / disableCssPair: either the shared db
+// instance or a Drizzle transaction. Both expose the same select/insert/update
+// query builders that this helper needs.
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function enableCssPair(opts: PairOptions, tx?: Executor): Promise<void> {
+  const exec = tx ?? db;
   const requiresTls = opts.securityProfile >= 2;
   const targetUrl = requiresTls ? opts.tlsServerUrl : opts.serverUrl;
 
-  const [existing] = await db
+  const [existing] = await exec
     .select({ id: cssStations.id })
     .from(cssStations)
     .where(eq(cssStations.stationId, opts.stationId));
 
   if (existing != null) {
-    await db
+    await exec
       .update(cssStations)
       .set({ enabled: true, updatedAt: new Date() })
       .where(eq(cssStations.id, existing.id));
     return;
   }
 
-  await db.transaction(async (tx) => {
-    const [created] = await tx
+  const doInserts = async (innerTx: Executor): Promise<void> => {
+    const [created] = await innerTx
       .insert(cssStations)
       .values({
         stationId: opts.stationId,
@@ -52,7 +58,7 @@ export async function enableCssPair(opts: PairOptions): Promise<void> {
     if (created == null) return;
 
     // Default single EVSE so the simulator can boot
-    await tx.insert(cssEvses).values({
+    await innerTx.insert(cssEvses).values({
       cssStationId: created.id,
       evseId: 1,
       connectorId: 1,
@@ -61,13 +67,23 @@ export async function enableCssPair(opts: PairOptions): Promise<void> {
     const defaults =
       opts.ocppProtocol === 'ocpp1.6' ? OCPP16_CONFIG_DEFAULTS : OCPP21_CONFIG_DEFAULTS;
     for (const [key, value] of Object.entries(defaults)) {
-      await tx.insert(cssConfigVariables).values({ cssStationId: created.id, key, value });
+      await innerTx.insert(cssConfigVariables).values({ cssStationId: created.id, key, value });
     }
-  });
+  };
+
+  // When called inside a parent transaction, reuse it so a partial failure
+  // rolls back together with the parent. Otherwise open a local transaction
+  // so the multi-table inserts stay atomic on their own.
+  if (tx != null) {
+    await doInserts(tx);
+  } else {
+    await db.transaction(doInserts);
+  }
 }
 
-export async function disableCssPair(stationId: string): Promise<void> {
-  await db
+export async function disableCssPair(stationId: string, tx?: Executor): Promise<void> {
+  const exec = tx ?? db;
+  await exec
     .update(cssStations)
     .set({ enabled: false, updatedAt: new Date() })
     .where(eq(cssStations.stationId, stationId));

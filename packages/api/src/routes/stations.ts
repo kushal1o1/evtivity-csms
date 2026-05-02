@@ -715,43 +715,53 @@ export function stationRoutes(app: FastifyInstance): void {
 
       const { password, ...insertFields } = body;
       const basicAuthPasswordHash = password != null ? await hash(password) : undefined;
-      const [station] = await db
-        .insert(chargingStations)
-        .values({
-          ...insertFields,
-          ...(basicAuthPasswordHash != null ? { basicAuthPasswordHash } : {}),
-        })
-        .returning({
-          id: chargingStations.id,
-          stationId: chargingStations.stationId,
-          siteId: chargingStations.siteId,
-          vendorId: chargingStations.vendorId,
-          model: chargingStations.model,
-          serialNumber: chargingStations.serialNumber,
-          firmwareVersion: chargingStations.firmwareVersion,
-          availability: chargingStations.availability,
-          onboardingStatus: chargingStations.onboardingStatus,
-          isOnline: chargingStations.isOnline,
-          isSimulator: chargingStations.isSimulator,
-          loadPriority: chargingStations.loadPriority,
-          securityProfile: chargingStations.securityProfile,
-          ocppProtocol: chargingStations.ocppProtocol,
-          createdAt: chargingStations.createdAt,
-          updatedAt: chargingStations.updatedAt,
-        });
 
-      // If created as a simulator, pair the css_stations row so SimulatorManager
-      // picks it up on its next 5s sync. Same logic as the PATCH toggle path.
-      if (station != null && station.isSimulator) {
-        await enableCssPair({
-          stationId: station.stationId,
-          ocppProtocol: station.ocppProtocol === 'ocpp2.1' ? 'ocpp2.1' : 'ocpp1.6',
-          securityProfile: station.securityProfile,
-          serverUrl: process.env['OCPP_SERVER_URL'] ?? 'ws://ocpp:8080',
-          tlsServerUrl: process.env['OCPP_TLS_SERVER_URL'] ?? 'wss://ocpp:8443',
-          password: password ?? null,
-        });
-      }
+      // The chargingStations INSERT and the css_stations pairing must commit
+      // atomically. Without the transaction, a failure inside enableCssPair
+      // leaves an orphan charging_stations row, which then trips the unique
+      // constraint on retry and the operator gets a confusing duplicate error.
+      const station = await db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(chargingStations)
+          .values({
+            ...insertFields,
+            ...(basicAuthPasswordHash != null ? { basicAuthPasswordHash } : {}),
+          })
+          .returning({
+            id: chargingStations.id,
+            stationId: chargingStations.stationId,
+            siteId: chargingStations.siteId,
+            vendorId: chargingStations.vendorId,
+            model: chargingStations.model,
+            serialNumber: chargingStations.serialNumber,
+            firmwareVersion: chargingStations.firmwareVersion,
+            availability: chargingStations.availability,
+            onboardingStatus: chargingStations.onboardingStatus,
+            isOnline: chargingStations.isOnline,
+            isSimulator: chargingStations.isSimulator,
+            loadPriority: chargingStations.loadPriority,
+            securityProfile: chargingStations.securityProfile,
+            ocppProtocol: chargingStations.ocppProtocol,
+            createdAt: chargingStations.createdAt,
+            updatedAt: chargingStations.updatedAt,
+          });
+
+        if (created != null && created.isSimulator) {
+          await enableCssPair(
+            {
+              stationId: created.stationId,
+              ocppProtocol: created.ocppProtocol === 'ocpp2.1' ? 'ocpp2.1' : 'ocpp1.6',
+              securityProfile: created.securityProfile,
+              serverUrl: process.env['OCPP_SERVER_URL'] ?? 'ws://ocpp:8080',
+              tlsServerUrl: process.env['OCPP_TLS_SERVER_URL'] ?? 'wss://ocpp:8443',
+              password: password ?? null,
+            },
+            tx,
+          );
+        }
+
+        return created;
+      });
 
       await reply.status(201).send({ ...station, hasPassword: basicAuthPasswordHash != null });
     },
@@ -837,49 +847,61 @@ export function stationRoutes(app: FastifyInstance): void {
         }
       }
 
-      const [station] = await db
-        .update(chargingStations)
-        .set(updates)
-        .where(eq(chargingStations.id, id))
-        .returning({
-          id: chargingStations.id,
-          stationId: chargingStations.stationId,
-          siteId: chargingStations.siteId,
-          vendorId: chargingStations.vendorId,
-          model: chargingStations.model,
-          serialNumber: chargingStations.serialNumber,
-          firmwareVersion: chargingStations.firmwareVersion,
-          availability: chargingStations.availability,
-          onboardingStatus: chargingStations.onboardingStatus,
-          isOnline: chargingStations.isOnline,
-          isSimulator: chargingStations.isSimulator,
-          loadPriority: chargingStations.loadPriority,
-          securityProfile: chargingStations.securityProfile,
-          ocppProtocol: chargingStations.ocppProtocol,
-          hasPassword: sql<boolean>`${chargingStations.basicAuthPasswordHash} IS NOT NULL`,
-          createdAt: chargingStations.createdAt,
-          updatedAt: chargingStations.updatedAt,
-        });
+      // Run the chargingStations UPDATE and any css_stations sync atomically so
+      // a failure in pairing rolls the parent update back instead of leaving
+      // the two tables out of sync.
+      const station = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(chargingStations)
+          .set(updates)
+          .where(eq(chargingStations.id, id))
+          .returning({
+            id: chargingStations.id,
+            stationId: chargingStations.stationId,
+            siteId: chargingStations.siteId,
+            vendorId: chargingStations.vendorId,
+            model: chargingStations.model,
+            serialNumber: chargingStations.serialNumber,
+            firmwareVersion: chargingStations.firmwareVersion,
+            availability: chargingStations.availability,
+            onboardingStatus: chargingStations.onboardingStatus,
+            isOnline: chargingStations.isOnline,
+            isSimulator: chargingStations.isSimulator,
+            loadPriority: chargingStations.loadPriority,
+            securityProfile: chargingStations.securityProfile,
+            ocppProtocol: chargingStations.ocppProtocol,
+            hasPassword: sql<boolean>`${chargingStations.basicAuthPasswordHash} IS NOT NULL`,
+            createdAt: chargingStations.createdAt,
+            updatedAt: chargingStations.updatedAt,
+          });
+
+        if (updated == null) return null;
+
+        if (body.isSimulator !== undefined) {
+          if (body.isSimulator) {
+            await enableCssPair(
+              {
+                stationId: updated.stationId,
+                ocppProtocol: updated.ocppProtocol === 'ocpp2.1' ? 'ocpp2.1' : 'ocpp1.6',
+                securityProfile: updated.securityProfile,
+                serverUrl: process.env['OCPP_SERVER_URL'] ?? 'ws://ocpp:8080',
+                tlsServerUrl: process.env['OCPP_TLS_SERVER_URL'] ?? 'wss://ocpp:8443',
+                password: password ?? null,
+                // SP3 cert population is out of scope for this task
+              },
+              tx,
+            );
+          } else {
+            await disableCssPair(updated.stationId, tx);
+          }
+        }
+
+        return updated;
+      });
+
       if (station == null) {
         await reply.status(404).send({ error: 'Station not found', code: 'STATION_NOT_FOUND' });
         return;
-      }
-
-      // Sync css_stations when isSimulator changes
-      if (body.isSimulator !== undefined) {
-        if (body.isSimulator) {
-          await enableCssPair({
-            stationId: station.stationId,
-            ocppProtocol: station.ocppProtocol === 'ocpp2.1' ? 'ocpp2.1' : 'ocpp1.6',
-            securityProfile: station.securityProfile,
-            serverUrl: process.env['OCPP_SERVER_URL'] ?? 'ws://ocpp:8080',
-            tlsServerUrl: process.env['OCPP_TLS_SERVER_URL'] ?? 'wss://ocpp:8443',
-            password: password ?? null,
-            // SP3 cert population is out of scope for this task
-          });
-        } else {
-          await disableCssPair(station.stationId);
-        }
       }
 
       // Push security profile change to station via OCPP SetVariables (if online and profile changed)
@@ -2811,7 +2833,11 @@ export function stationRoutes(app: FastifyInstance): void {
         return;
       }
       const [station] = await db
-        .select({ onboardingStatus: chargingStations.onboardingStatus })
+        .select({
+          onboardingStatus: chargingStations.onboardingStatus,
+          stationId: chargingStations.stationId,
+          isSimulator: chargingStations.isSimulator,
+        })
         .from(chargingStations)
         .where(eq(chargingStations.id, id));
 
@@ -2837,6 +2863,27 @@ export function stationRoutes(app: FastifyInstance): void {
         'csms_events',
         JSON.stringify({ eventType: 'station.status', stationId: id }),
       );
+
+      // Nudge a simulator out of a stale Pending boot state. Real stations
+      // re-attempt BootNotification on their own retry interval, so this
+      // only matters for simulators where the SimulatorManager listens on
+      // css_commands and translates the action into a fresh BootNotification.
+      if (station.isSimulator) {
+        try {
+          await pubsub.publish(
+            'css_commands',
+            JSON.stringify({
+              commandId: randomUUID(),
+              stationId: station.stationId,
+              action: 'rebootStation',
+              params: {},
+            }),
+          );
+        } catch {
+          // Pub/sub failure is non-fatal: the simulator's own retry timer
+          // will eventually re-boot. Log and continue.
+        }
+      }
 
       return { success: true };
     },
