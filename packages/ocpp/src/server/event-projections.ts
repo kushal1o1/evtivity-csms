@@ -1218,6 +1218,12 @@ export function registerProjections(
               UPDATE connectors SET status = 'ev_connected', updated_at = now()
               WHERE evse_id = ${startEvseUuid}
             `;
+            // Notify portal SSE: chargingState enrichment changes
+            // connectors.status without sending a StatusNotification, so the
+            // 'session.started' event below is not enough -- the portal SSE
+            // forwarder only relays 'station.status'.
+            const startStationStatusSiteId = await resolveSiteId(stationUuid);
+            await notifyChange('station.status', stationUuid, startStationStatusSiteId);
           }
         }
 
@@ -1500,6 +1506,12 @@ export function registerProjections(
                 UPDATE connectors SET status = ${connectorStatus}, updated_at = now()
                 WHERE evse_id = ${evseUuid}
               `;
+              // Notify portal SSE: chargingState enrichment changes
+              // connectors.status without a StatusNotification, so the
+              // 'session.updated' event below is not enough -- the portal
+              // SSE forwarder only relays 'station.status'.
+              const updatedStationStatusSiteId = await resolveSiteId(stationUuid);
+              await notifyChange('station.status', stationUuid, updatedStationStatusSiteId);
             }
           }
         }

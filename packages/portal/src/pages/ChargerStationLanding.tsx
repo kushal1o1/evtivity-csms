@@ -93,7 +93,13 @@ export function ChargerStationLanding(): React.JSX.Element {
     queryKey: ['station-landing', stationId],
     queryFn: () => api.get<StationInfo>(`/v1/portal/chargers/${stationId ?? ''}`),
     enabled: stationId != null,
-    refetchInterval: 5000,
+    // SSE via useStationEvents is the primary update path -- it invalidates
+    // this query within ~50ms of any 'station.status' event. Polling at 2s
+    // is a defensive fallback for transient SSE drops.
+    refetchInterval: 2000,
+    // Override the global 30s staleTime so re-mount and focus always refetch
+    // the live connector status instead of serving cached state.
+    staleTime: 0,
   });
 
   if (isLoading) {

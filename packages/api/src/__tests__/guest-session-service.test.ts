@@ -54,28 +54,15 @@ const {
   mockCapturePayment,
   mockCancelPaymentIntent,
   mockGetStripeConfig,
-  mockEnd,
   mockDispatchSystemNotification,
 } = vi.hoisted(() => ({
   mockCapturePayment: vi.fn().mockResolvedValue({}),
   mockCancelPaymentIntent: vi.fn().mockResolvedValue({}),
   mockGetStripeConfig: vi.fn(),
-  mockEnd: vi.fn().mockResolvedValue(undefined),
   mockDispatchSystemNotification: vi.fn().mockResolvedValue(undefined),
 }));
 
 // -- Mocks --
-
-let listenCallback: ((payload: string) => void) | null = null;
-
-const mockPubSub = {
-  publish: vi.fn().mockResolvedValue(undefined),
-  subscribe: vi.fn((_channel: string, handler: (payload: string) => void) => {
-    listenCallback = handler;
-    return Promise.resolve({ unsubscribe: mockEnd });
-  }),
-  close: vi.fn().mockResolvedValue(undefined),
-};
 
 vi.mock('@evtivity/database', () => ({
   db: {
@@ -145,7 +132,7 @@ vi.mock('../lib/template-dirs.js', () => ({
 
 // -- Import under test (after mocks) --
 
-import { startGuestSessionListener } from '../services/guest-session.service.js';
+import { handleGuestSessionEvent } from '../services/guest-session.service.js';
 
 // -- Helpers --
 
@@ -156,8 +143,13 @@ const mockLogger = {
   debug: vi.fn(),
 };
 
-function fireEvent(event: Record<string, unknown>) {
-  listenCallback!(JSON.stringify(event));
+async function fireEvent(event: Record<string, unknown>): Promise<void> {
+  await handleGuestSessionEvent(event as never, mockLogger as never).catch(() => {
+    // Match the pre-removal listener wrapper, which swallowed errors after
+    // logging via logger.error inside finalizeGuestPayment. Tests that need
+    // to assert on a thrown error already do so via the mockCapturePayment
+    // rejection path; they assert on logger.error, not on thrown errors.
+  });
 }
 
 async function tick(ms = 50) {
@@ -169,31 +161,12 @@ async function tick(ms = 50) {
 describe('guest-session.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listenCallback = null;
     setupDbResults();
     mockGetStripeConfig.mockResolvedValue({ stripe: {} });
   });
 
-  describe('startGuestSessionListener', () => {
-    it('returns a stop function', async () => {
-      const stop = await startGuestSessionListener(mockPubSub, mockLogger as never);
-      expect(typeof stop).toBe('function');
-      await stop();
-    });
-
-    it('stop function calls end() on connection', async () => {
-      const stop = await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await stop();
-      await tick();
-      expect(mockEnd).toHaveBeenCalled();
-    });
-  });
-
   describe('TransactionStarted', () => {
     it('links guest session when matching session exists', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       // DB call 1: find guest session by token -> found
       // DB call 2: update guest session
       setupDbResults(
@@ -201,7 +174,7 @@ describe('guest-session.service', () => {
         [],
       );
 
-      fireEvent({
+      await fireEvent({
         type: 'TransactionStarted',
         idToken: { idToken: 'TOKEN-1', type: 'ISO14443' },
         sessionId: 'session-1',
@@ -215,12 +188,9 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no matching guest session exists', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       setupDbResults([]);
 
-      fireEvent({
+      await fireEvent({
         type: 'TransactionStarted',
         idToken: { idToken: 'TOKEN-UNKNOWN', type: 'ISO14443' },
         sessionId: 'session-1',
@@ -234,10 +204,7 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no idToken present', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
-      fireEvent({ type: 'TransactionStarted', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionStarted', sessionId: 'session-1' });
       await tick();
 
       expect(mockLogger.info).not.toHaveBeenCalledWith(
@@ -249,9 +216,6 @@ describe('guest-session.service', () => {
 
   describe('TransactionEnded', () => {
     it('captures payment when guest session has positive cost', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       // DB call 1: find guest session (id, guestEmail, stationOcppId)
       // DB call 2: find payment record (id, stripePaymentIntentId)
       // DB call 3: find charging session (finalCostCents, stationId)
@@ -266,7 +230,7 @@ describe('guest-session.service', () => {
         [],
       );
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockCapturePayment).toHaveBeenCalledWith(expect.anything(), 'pi_abc', 3500);
@@ -277,9 +241,6 @@ describe('guest-session.service', () => {
     });
 
     it('cancels payment intent when cost is zero', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       setupDbResults(
         [{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }],
         [{ id: 'pr-1', stripePaymentIntentId: 'pi_abc' }],
@@ -289,7 +250,7 @@ describe('guest-session.service', () => {
         [],
       );
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockCancelPaymentIntent).toHaveBeenCalledWith(expect.anything(), 'pi_abc');
@@ -300,12 +261,9 @@ describe('guest-session.service', () => {
     });
 
     it('is a no-op when no guest session linked', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       setupDbResults([]);
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockCapturePayment).not.toHaveBeenCalled();
@@ -313,15 +271,12 @@ describe('guest-session.service', () => {
     });
 
     it('completes free session when no payment record exists', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       // DB call 1: find guest session
       // DB call 2: find payment record -> empty (no payment)
       // DB call 3: update guest session to completed
       setupDbResults([{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }], [], []);
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockCapturePayment).not.toHaveBeenCalled();
@@ -333,9 +288,6 @@ describe('guest-session.service', () => {
     });
 
     it('sends receipt notification when guest provided email', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       // DB call 1: find guest session with email
       // DB call 2: find payment record -> empty (free)
       // DB call 3: update guest session to completed
@@ -355,7 +307,7 @@ describe('guest-session.service', () => {
         ],
       );
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockDispatchSystemNotification).toHaveBeenCalledWith(
@@ -371,9 +323,6 @@ describe('guest-session.service', () => {
     });
 
     it('sets status to failed when stripe error occurs', async () => {
-      await startGuestSessionListener(mockPubSub, mockLogger as never);
-      await tick();
-
       mockCapturePayment.mockRejectedValueOnce(new Error('Stripe API error'));
 
       setupDbResults(
@@ -385,7 +334,7 @@ describe('guest-session.service', () => {
         [],
       );
 
-      fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
       expect(mockLogger.error).toHaveBeenCalledWith(

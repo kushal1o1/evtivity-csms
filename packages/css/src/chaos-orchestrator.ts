@@ -54,13 +54,29 @@ const CHAOS_VALID_BY_STATE: Readonly<Record<CssStationStatus, ReadonlySet<string
   unavailable: new Set(['comeOnline', 'sendStatusNotification']),
 };
 
-// css_evses.status values that mean "cable plugged but not yet charging".
+// css_evses.status values that mean "cable physically connected".
+// Finishing is included: post-stop the cable is still plugged in until the
+// driver retrieves it.
 const CHAOS_PLUGGED_STATUSES: ReadonlySet<string> = new Set([
   'Preparing',
   'Occupied',
   'EVConnected',
   'SuspendedEV',
   'SuspendedEVSE',
+  'Finishing',
+]);
+
+// Finishing is a transient post-stop state: the session has ended but the
+// cable is still connected. The only spec-plausible chaos actions here are
+// the ones a real driver or operator would do: retrieve the cable (unplug),
+// take the station offline, or simulate a fault. Re-authorizing or plugging
+// in here is non-physical and races with the StatusNotification(Finishing)
+// that's still in flight from stopCharging, producing a charging -> preparing
+// -> finishing visual flash on the portal.
+const CHAOS_FINISHING_ACTIONS: ReadonlySet<string> = new Set([
+  'unplug',
+  'goOffline',
+  'injectFault',
 ]);
 
 /**
@@ -74,6 +90,11 @@ export function filterChaosActions<T extends { name: string }>(
   state: CssStationStatus,
   connectorStatus: string,
 ): T[] {
+  if (connectorStatus === 'Finishing') {
+    return actions.filter(
+      (a) => !CHAOS_STATE_MUTATING.has(a.name) || CHAOS_FINISHING_ACTIONS.has(a.name),
+    );
+  }
   const stateActions = new Set(CHAOS_VALID_BY_STATE[state]);
   if (state === 'available' && CHAOS_PLUGGED_STATUSES.has(connectorStatus)) {
     stateActions.add('startCharging');

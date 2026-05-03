@@ -128,9 +128,13 @@ export function ChargerDetail(): React.JSX.Element {
     queryKey: ['station-detail', stationId],
     queryFn: () => api.get<StationDetail>(`/v1/portal/chargers/${stationId ?? ''}`),
     enabled: stationId != null,
-    // Portal has no SSE -- poll every 5s so connector status transitions
-    // (charging -> finishing after stop) reach the page without a refresh.
-    refetchInterval: 5000,
+    // SSE via useStationEvents is the primary update path -- it invalidates
+    // this query within ~50ms of any 'station.status' event. Polling at 2s
+    // is a defensive fallback for transient SSE drops.
+    refetchInterval: 2000,
+    // Override the global 30s staleTime so re-mount and focus always refetch
+    // the live connector status instead of serving cached state.
+    staleTime: 0,
   });
 
   // Clear stale errors when station data refreshes (e.g., via SSE)

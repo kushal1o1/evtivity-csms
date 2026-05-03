@@ -102,4 +102,22 @@ describe('filterChaosActions', () => {
     const result = names(filterChaosActions(STATE_MUTATING_ACTIONS, 'available', 'Available'));
     expect(result).not.toContain('startCharging');
   });
+
+  it('Finishing connector: only unplug, goOffline, injectFault allowed', () => {
+    const result = names(filterChaosActions(STATE_MUTATING_ACTIONS, 'available', 'Finishing'));
+    expect(result.sort()).toEqual(['unplug', 'goOffline', 'injectFault'].sort());
+  });
+
+  it('Finishing connector: excludes authorize and plugIn (avoids charging->preparing->finishing race)', () => {
+    const result = names(filterChaosActions(STATE_MUTATING_ACTIONS, 'available', 'Finishing'));
+    expect(result).not.toContain('authorize');
+    expect(result).not.toContain('plugIn');
+    expect(result).not.toContain('startCharging');
+    expect(result).not.toContain('sendStatusNotification');
+  });
+
+  it('Finishing connector: notifications still pass through', () => {
+    const result = names(filterChaosActions(NOTIFICATION_ACTIONS, 'available', 'Finishing'));
+    expect(result.sort()).toEqual(names(NOTIFICATION_ACTIONS).sort());
+  });
 });

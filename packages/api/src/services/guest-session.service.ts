@@ -8,10 +8,7 @@ import { getStripeConfig, capturePayment, cancelPaymentIntent } from './stripe.s
 import { chargingStations } from '@evtivity/database';
 import { dispatchSystemNotification } from '@evtivity/lib';
 import type { FastifyBaseLogger } from 'fastify';
-import type { PubSubClient, Subscription } from '@evtivity/lib';
 import { ALL_TEMPLATES_DIRS } from '../lib/template-dirs.js';
-
-const EVENTS_CHANNEL = 'csms_events';
 
 interface CsmsEvent {
   type: string;
@@ -20,46 +17,6 @@ interface CsmsEvent {
   transactionId?: string;
   idToken?: { idToken: string; type: string };
   [key: string]: unknown;
-}
-
-export async function startGuestSessionListener(
-  pubsub: PubSubClient,
-  logger: FastifyBaseLogger,
-): Promise<() => Promise<void>> {
-  let stopped = false;
-
-  const subscription: Subscription = await pubsub.subscribe(EVENTS_CHANNEL, (payload: string) => {
-    if (stopped) return;
-
-    let event: CsmsEvent;
-    try {
-      event = JSON.parse(payload) as CsmsEvent;
-    } catch {
-      return;
-    }
-
-    // Only act on the two events we care about; skip the rest silently to
-    // keep the log noise down on the SSE-shared csms_events channel.
-    if (event.type !== 'TransactionStarted' && event.type !== 'TransactionEnded') {
-      return;
-    }
-
-    logger.info(
-      { type: event.type, sessionId: event.sessionId, token: event.idToken?.idToken },
-      'Guest session listener received event',
-    );
-
-    void handleGuestSessionEvent(event, logger).catch((err: unknown) => {
-      logger.error({ err, event }, 'Guest session event handler error');
-    });
-  });
-
-  logger.info('Guest session listener started');
-
-  return async () => {
-    stopped = true;
-    await subscription.unsubscribe().catch(() => {});
-  };
 }
 
 export async function handleGuestSessionEvent(

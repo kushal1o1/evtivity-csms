@@ -102,10 +102,17 @@ export function ChargerLanding(): React.JSX.Element {
     queryFn: () =>
       api.get<ChargerInfo>(`/v1/portal/chargers/${stationId ?? ''}/evse/${evseId ?? ''}`),
     enabled: stationId != null && evseId != null,
-    // Portal has no SSE -- poll every 5s so connector status transitions
-    // (e.g. charging -> finishing after stop) reach the page without a
-    // manual refresh.
-    refetchInterval: 5000,
+    // SSE via useStationEvents is the primary update path -- it invalidates
+    // this query within ~50ms of any 'station.status' event. Polling at 2s
+    // is a defensive fallback that catches transient SSE drops or events
+    // missed during page transitions. Stays within the 60/min rate limit.
+    refetchInterval: 2000,
+    // Override the global 30s staleTime: connector status must never serve
+    // a stale cached value when the page mounts or the tab regains focus.
+    // Without this, navigating back within 30s would render the last-known
+    // status (e.g. 'preparing' from a prior plug-in) before the next poll
+    // catches up to the current 'finishing'.
+    staleTime: 0,
   });
 
   const { data: guestConfig } = useQuery({
