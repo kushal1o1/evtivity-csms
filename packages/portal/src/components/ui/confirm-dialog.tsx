@@ -14,8 +14,8 @@ interface ConfirmDialogProps {
   // Returning false (or a Promise resolving to false) prevents the dialog
   // from auto-closing -- useful when the caller wants to keep the dialog
   // open with `isPending` until an async side effect completes. Returning
-  // void or true (or any truthy value) auto-closes the dialog.
-  onConfirm: () => boolean | undefined | Promise<boolean | undefined>;
+  // anything else (including no return value) auto-closes the dialog.
+  onConfirm: () => unknown;
   variant?: 'destructive' | 'default';
   isPending?: boolean;
   hideCancel?: boolean;
