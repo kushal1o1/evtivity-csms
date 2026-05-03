@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorCard } from '@/components/ui/error-card';
+import { useToast } from '@/components/ui/toast';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
 import { SessionCharts } from '@/components/SessionCharts';
 import { api } from '@/lib/api';
@@ -104,6 +105,7 @@ export function GuestSession(): React.JSX.Element {
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(true);
   const { companyName, companyLogo, branding } = useAuthBranding();
+  const { toast } = useToast();
 
   const {
     data: session,
@@ -188,6 +190,20 @@ export function GuestSession(): React.JSX.Element {
       setShowStopConfirm(false);
     }
   }, [session?.status, stopping]);
+
+  // Safety timeout. If the station never acks (offline, dropped command, etc.)
+  // clear the spinner and surface a toast so the user can retry.
+  useEffect(() => {
+    if (!stopping) return;
+    const timer = setTimeout(() => {
+      setStopping(false);
+      setShowStopConfirm(false);
+      toast({ variant: 'warning', title: t('guestSession.stopTimeout') });
+    }, 30000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [stopping, toast, t]);
 
   if (isLoading) {
     return (

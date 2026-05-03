@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ErrorCard } from '@/components/ui/error-card';
+import { useToast } from '@/components/ui/toast';
 import { SessionCharts } from '@/components/SessionCharts';
 import { ReportIssue } from '@/components/ReportIssue';
 import { api } from '@/lib/api';
@@ -105,7 +106,9 @@ export function SessionDetail(): React.JSX.Element {
   const timezone = useDriverTimezone();
   const distanceUnit = useAuth((s) => s.driver?.distanceUnit ?? 'miles');
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const { data: session, isLoading } = useQuery({
     queryKey: ['portal-session', id],
@@ -146,7 +149,37 @@ export function SessionDetail(): React.JSX.Element {
       void queryClient.invalidateQueries({ queryKey: ['portal-session', id] });
       void queryClient.invalidateQueries({ queryKey: ['portal-active-sessions'] });
     },
+    onError: () => {
+      setStopping(false);
+      setShowStopConfirm(false);
+      toast({ variant: 'destructive', title: t('sessionDetail.stopFailed') });
+    },
   });
+
+  // Hold the spinner until the polled session.status transitions out of 'active'
+  // (mirrors the guest flow). The mutation only confirms the API accepted the
+  // request; the actual stop happens after the OCPP roundtrip.
+  useEffect(() => {
+    if (!stopping) return;
+    if (session != null && session.status !== 'active') {
+      setStopping(false);
+      setShowStopConfirm(false);
+    }
+  }, [session?.status, stopping]);
+
+  // Safety timeout. If the station never acks (offline, dropped command, etc.)
+  // clear the spinner and surface a toast so the user can retry.
+  useEffect(() => {
+    if (!stopping) return;
+    const timer = setTimeout(() => {
+      setStopping(false);
+      setShowStopConfirm(false);
+      toast({ variant: 'warning', title: t('sessionDetail.stopTimeout') });
+    }, 30000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [stopping, toast, t]);
 
   const elapsed = useElapsedTime(session?.startedAt, isActive);
 
@@ -289,13 +322,13 @@ export function SessionDetail(): React.JSX.Element {
           variant="destructive"
           className="w-full"
           size="lg"
-          disabled={stopMutation.isPending}
+          disabled={stopping}
           onClick={() => {
             setShowStopConfirm(true);
           }}
         >
           <CircleStop className="mr-2 h-5 w-5" />
-          {stopMutation.isPending ? t('sessionDetail.stopping') : t('sessionDetail.stopSession')}
+          {stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopSession')}
         </Button>
       )}
 
@@ -382,15 +415,22 @@ export function SessionDetail(): React.JSX.Element {
       {/* Stop confirmation dialog */}
       <ConfirmDialog
         open={showStopConfirm}
-        onOpenChange={setShowStopConfirm}
+        onOpenChange={(open) => {
+          // Block manual close while waiting for station ack -- effects above
+          // close the dialog when terminal status arrives or the timeout fires.
+          if (stopping && !open) return;
+          setShowStopConfirm(open);
+        }}
         title={t('sessionDetail.stopSession')}
         description={t('sessionDetail.stopConfirmation')}
-        confirmLabel={t('sessionDetail.stopSession')}
+        confirmLabel={stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopSession')}
         onConfirm={() => {
+          setStopping(true);
           stopMutation.mutate();
+          return false;
         }}
         variant="destructive"
-        isPending={stopMutation.isPending}
+        isPending={stopping}
       />
     </div>
   );
