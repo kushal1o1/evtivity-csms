@@ -227,7 +227,7 @@
     "startAnyway": "Start Anyway",
     "proceedAnyway": "Proceed Anyway",
     "simulatorPlugInHint": "Simulator: open the CSMS dashboard, go to this station's Simulate tab, and click Plug In before starting the charge.",
-    "simulatorUnplugHint": "Simulator: open the CSMS dashboard and click Unplug on the station's Simulate tab to clear the Finishing state.",
+    "simulatorUnplugHint": "Simulator: open the CSMS dashboard and click Unplug on the station's Simulate tab to release the connector.",
     "checkingStatus": "Checking...",
     "statusCheckFailed": "Could not check connector status. Try again.",
     "reservedUntil": "Reserved until {{time}}",
@@ -288,6 +288,7 @@
     "stopCharging": "Stop charging",
     "stopping": "Stopping...",
     "receiptMessage": "Your card has been charged. A receipt will be sent to your email.",
+    "receiptMessageFree": "Your charging session is complete.",
     "waitingForCharger": "Waiting for the charger to respond...",
     "sessionError": "Failed to load session. Please try again."
   },

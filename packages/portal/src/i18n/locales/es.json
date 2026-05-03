@@ -227,7 +227,7 @@
     "startAnyway": "Iniciar de Todos Modos",
     "proceedAnyway": "Continuar de Todos Modos",
     "simulatorPlugInHint": "Simulador: abre el panel CSMS, ve a la pestana Simulate de esta estacion y haz clic en Plug In antes de iniciar la carga.",
-    "simulatorUnplugHint": "Simulador: abre el panel CSMS y haz clic en Unplug en la pestana Simulate de la estacion para liberar el estado Finishing.",
+    "simulatorUnplugHint": "Simulador: abre el panel CSMS y haz clic en Unplug en la pestana Simulate de la estacion para liberar el conector.",
     "checkingStatus": "Verificando...",
     "statusCheckFailed": "No se pudo verificar el estado del conector. Intente de nuevo.",
     "reservedUntil": "Reservado hasta {{time}}",
@@ -288,6 +288,7 @@
     "stopCharging": "Detener carga",
     "stopping": "Deteniendo...",
     "receiptMessage": "Se ha cobrado su tarjeta. Se enviara un recibo a su correo electronico.",
+    "receiptMessageFree": "Su sesion de carga ha finalizado.",
     "waitingForCharger": "Esperando respuesta del cargador...",
     "sessionError": "Error al cargar la sesion. Intente de nuevo."
   },

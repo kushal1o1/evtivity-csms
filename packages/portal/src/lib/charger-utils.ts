@@ -10,6 +10,8 @@ export const CABLE_DETECTED_STATUSES = [
   'charging',
   'suspended_ev',
   'suspended_evse',
+  // OCPP 1.6 post-stop state: cable still plugged in. Equivalent to 'occupied' on 2.1.
+  'finishing',
 ];
 
 export function isCableDetected(status: string | null): boolean {

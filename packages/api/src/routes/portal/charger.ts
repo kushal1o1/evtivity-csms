@@ -1185,7 +1185,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .where(eq(connectors.evseId, evse.id))
         .limit(1);
 
-      const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected'];
+      // 'finishing' (OCPP 1.6) means cable is still plugged after a previous
+      // stop; real stations accept a new RemoteStart from this state. The
+      // OCPP 2.1 equivalent is 'occupied' which is already in the set.
+      const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected', 'finishing'];
       if (connector != null && !startableStatuses.includes(connector.status)) {
         await reply.status(400).send({
           error: 'Connector is not available for charging',

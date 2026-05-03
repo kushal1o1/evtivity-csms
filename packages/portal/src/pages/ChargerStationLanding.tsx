@@ -168,7 +168,13 @@ export function ChargerStationLanding(): React.JSX.Element {
               >
                 {station.evses.map((evse) => {
                   const connectorStatus = evse.connectors[0]?.status ?? 'unavailable';
-                  const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected'];
+                  const startableStatuses = [
+                    'available',
+                    'occupied',
+                    'preparing',
+                    'ev_connected',
+                    'finishing',
+                  ];
                   const isAvailable =
                     startableStatuses.includes(connectorStatus) && station.isOnline;
 

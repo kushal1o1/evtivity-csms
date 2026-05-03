@@ -227,7 +227,7 @@
     "startAnyway": "仍然開始",
     "proceedAnyway": "仍然繼續",
     "simulatorPlugInHint": "模擬器：開始充電前，請先打開 CSMS 控制台，進入此充電站的 Simulate 分頁，點擊 Plug In。",
-    "simulatorUnplugHint": "模擬器：打開 CSMS 控制台，在該充電站的 Simulate 分頁點擊 Unplug 以清除 Finishing 狀態。",
+    "simulatorUnplugHint": "模擬器：打開 CSMS 控制台，在該充電站的 Simulate 分頁點擊 Unplug 以釋放連接器。",
     "checkingStatus": "檢查中...",
     "statusCheckFailed": "無法檢查連接器狀態。請重試。",
     "reservedUntil": "預約至 {{time}}",
@@ -288,6 +288,7 @@
     "stopCharging": "停止充電",
     "stopping": "停止中...",
     "receiptMessage": "您的信用卡已扣款。收據將傳送到您的電子郵箱。",
+    "receiptMessageFree": "您的充電工作階段已完成。",
     "waitingForCharger": "等待充電樁回應...",
     "sessionError": "載入會話失敗，請重試。"
   },

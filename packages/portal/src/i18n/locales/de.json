@@ -227,7 +227,7 @@
     "startAnyway": "Trotzdem starten",
     "proceedAnyway": "Trotzdem fortfahren",
     "simulatorPlugInHint": "Simulator: Öffnen Sie das CSMS-Dashboard, gehen Sie zur Simulate-Registerkarte dieser Station und klicken Sie auf Plug In, bevor Sie den Ladevorgang starten.",
-    "simulatorUnplugHint": "Simulator: Öffnen Sie das CSMS-Dashboard und klicken Sie auf Unplug in der Simulate-Registerkarte der Station, um den Finishing-Status zu löschen.",
+    "simulatorUnplugHint": "Simulator: Öffnen Sie das CSMS-Dashboard und klicken Sie auf Unplug in der Simulate-Registerkarte der Station, um den Anschluss freizugeben.",
     "checkingStatus": "Wird geprüft...",
     "statusCheckFailed": "Anschlussstatus konnte nicht geprüft werden. Versuche es erneut.",
     "reservedUntil": "Reserviert bis {{time}}",
@@ -288,6 +288,7 @@
     "stopCharging": "Ladevorgang beenden",
     "stopping": "Wird beendet...",
     "receiptMessage": "Deine Karte wurde belastet. Ein Beleg wird an deine E-Mail-Adresse gesendet.",
+    "receiptMessageFree": "Dein Ladevorgang ist abgeschlossen.",
     "waitingForCharger": "Warten auf Antwort der Ladestation...",
     "sessionError": "Vorgang konnte nicht geladen werden. Bitte versuche es erneut."
   },

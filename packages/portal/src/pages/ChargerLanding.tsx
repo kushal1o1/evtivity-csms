@@ -228,7 +228,10 @@ export function ChargerLanding(): React.JSX.Element {
   }
 
   const connectorStatus = charger.evse.connectors[0]?.status ?? 'unavailable';
-  const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected'];
+  // 'finishing' (OCPP 1.6) means cable is still plugged after a previous stop;
+  // real stations accept a new RemoteStart from this state without an unplug
+  // cycle. The OCPP 2.1 equivalent is 'occupied' which is already in the set.
+  const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected', 'finishing'];
   const isAvailable = startableStatuses.includes(connectorStatus);
   const maxPower = charger.evse.connectors.reduce((max, c) => Math.max(max, c.maxPowerKw ?? 0), 0);
   const maxCurrent = charger.evse.connectors.reduce(

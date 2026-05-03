@@ -429,7 +429,13 @@ export function ChargerDetail(): React.JSX.Element {
         <div className={`grid gap-3 ${station.evses.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {station.evses.map((evse) => {
             const connectorStatus = evse.connectors[0]?.status ?? 'unavailable';
-            const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected'];
+            const startableStatuses = [
+              'available',
+              'occupied',
+              'preparing',
+              'ev_connected',
+              'finishing',
+            ];
             const isAvailable = startableStatuses.includes(connectorStatus) && station.isOnline;
             const isSelected = selectedEvseId === evse.evseId;
 

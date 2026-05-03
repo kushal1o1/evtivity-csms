@@ -4,12 +4,11 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Zap, Clock, DollarSign, StopCircle, AlertCircle, Check, Pause, Info } from 'lucide-react';
+import { Zap, Clock, DollarSign, StopCircle, AlertCircle, Check, Pause } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ErrorCard } from '@/components/ui/error-card';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
 import { SessionCharts } from '@/components/SessionCharts';
@@ -360,21 +359,18 @@ export function GuestSession(): React.JSX.Element {
           onConfirm={async () => handleStop()}
           variant="destructive"
           isPending={stopping}
-        >
-          {session.isSimulator === true && (
-            <Alert variant="info" className="mt-4">
-              <Info className="h-4 w-4" />
-              <AlertDescription>{t('charger.simulatorUnplugHint')}</AlertDescription>
-            </Alert>
-          )}
-        </ConfirmDialog>
+        />
 
         {isDone && (
           <ConfirmDialog
             open={showReceiptDialog}
             onOpenChange={setShowReceiptDialog}
             title={t('status.completed')}
-            description={t('guestSession.receiptMessage')}
+            description={
+              (session.finalCostCents ?? 0) > 0
+                ? t('guestSession.receiptMessage')
+                : t('guestSession.receiptMessageFree')
+            }
             confirmLabel={t('common.ok')}
             onConfirm={() => {
               void navigate(`/charge/${session.stationOcppId}/${String(session.evseId)}`);
