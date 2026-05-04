@@ -781,7 +781,16 @@
     "noMeterValues": "No meter values",
     "freeVend": "Free Vend",
     "co2Avoided": "CO2 Avoided",
-    "co2AvoidedLabel": "CO2 Avoided"
+    "co2AvoidedLabel": "CO2 Avoided",
+    "guestSession": "Guest Session",
+    "guestSessionTab": "Guest Session",
+    "guestSessionToken": "Session Token",
+    "guestPortalLink": "Portal Link",
+    "guestEmail": "Email",
+    "guestPreAuthAmount": "Pre-Auth Amount",
+    "guestStripePaymentIntent": "Stripe PaymentIntent",
+    "guestCreatedAt": "Created",
+    "guestExpiresAt": "Expires"
   },
   "drivers": {
     "title": "Drivers",

@@ -781,7 +781,16 @@
     "noMeterValues": "계량 값 없음",
     "freeVend": "무료 충전",
     "co2Avoided": "CO2 절감량",
-    "co2AvoidedLabel": "CO2 절감량"
+    "co2AvoidedLabel": "CO2 절감량",
+    "guestSession": "게스트 세션",
+    "guestSessionTab": "게스트 세션",
+    "guestSessionToken": "세션 토큰",
+    "guestPortalLink": "포털 링크",
+    "guestEmail": "이메일",
+    "guestPreAuthAmount": "사전 승인 금액",
+    "guestStripePaymentIntent": "Stripe PaymentIntent",
+    "guestCreatedAt": "생성됨",
+    "guestExpiresAt": "만료"
   },
   "drivers": {
     "title": "드라이버",

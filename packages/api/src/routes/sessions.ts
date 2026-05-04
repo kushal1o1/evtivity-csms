@@ -13,6 +13,7 @@ import {
   transactionEvents,
   paymentRecords,
   meterValues,
+  guestSessions,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
@@ -42,6 +43,7 @@ const sessionListItem = z
     finalCostCents: z.number().nullable(),
     currency: z.string().nullable(),
     freeVend: z.boolean(),
+    isGuestSession: z.boolean(),
     createdAt: z.coerce.date(),
   })
   .passthrough();
@@ -92,6 +94,18 @@ const sessionDetail = z
     reservationId: z.string().nullable(),
     freeVend: z.boolean(),
     paymentRecord: paymentRecordItem.nullable(),
+    guestSession: z
+      .object({
+        sessionToken: z.string(),
+        guestEmail: z.string(),
+        status: z.string(),
+        preAuthAmountCents: z.number().nullable(),
+        stripePaymentIntentId: z.string().nullable(),
+        expiresAt: z.coerce.date(),
+        createdAt: z.coerce.date(),
+      })
+      .passthrough()
+      .nullable(),
   })
   .passthrough();
 
@@ -217,6 +231,7 @@ export function sessionRoutes(app: FastifyInstance): void {
           finalCostCents: chargingSessions.finalCostCents,
           currency: chargingSessions.currency,
           freeVend: chargingSessions.freeVend,
+          guestSessionToken: guestSessions.sessionToken,
           createdAt: chargingSessions.createdAt,
           _total: sql<number>`count(*) OVER()`.as('_total'),
         })
@@ -224,14 +239,20 @@ export function sessionRoutes(app: FastifyInstance): void {
         .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
         .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .leftJoin(drivers, eq(chargingSessions.driverId, drivers.id))
+        .leftJoin(guestSessions, eq(guestSessions.chargingSessionId, chargingSessions.id))
         .where(where)
         .orderBy(desc(chargingSessions.createdAt))
         .limit(limit)
         .offset(offset);
 
       const total = rows[0]?._total ?? 0;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const data = rows.map(({ _total: _t, ...rest }) => rest);
+      const data = rows.map(({ _total, guestSessionToken, ...rest }) => {
+        void _total;
+        return {
+          ...rest,
+          isGuestSession: guestSessionToken != null,
+        };
+      });
 
       return { data, total } satisfies PaginatedResponse<(typeof data)[number]>;
     },
@@ -285,12 +306,20 @@ export function sessionRoutes(app: FastifyInstance): void {
           capturedAmountCents: paymentRecords.capturedAmountCents,
           refundedAmountCents: paymentRecords.refundedAmountCents,
           failureReason: paymentRecords.failureReason,
+          guestSessionToken: guestSessions.sessionToken,
+          guestEmail: guestSessions.guestEmail,
+          guestStatus: guestSessions.status,
+          guestPreAuthAmountCents: guestSessions.preAuthAmountCents,
+          guestStripePaymentIntentId: guestSessions.stripePaymentIntentId,
+          guestExpiresAt: guestSessions.expiresAt,
+          guestCreatedAt: guestSessions.createdAt,
         })
         .from(chargingSessions)
         .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
         .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .leftJoin(drivers, eq(chargingSessions.driverId, drivers.id))
         .leftJoin(paymentRecords, eq(paymentRecords.sessionId, chargingSessions.id))
+        .leftJoin(guestSessions, eq(guestSessions.chargingSessionId, chargingSessions.id))
         .where(eq(chargingSessions.id, id));
 
       if (row == null) {
@@ -314,6 +343,13 @@ export function sessionRoutes(app: FastifyInstance): void {
         capturedAmountCents,
         refundedAmountCents,
         failureReason,
+        guestSessionToken,
+        guestEmail,
+        guestStatus,
+        guestPreAuthAmountCents,
+        guestStripePaymentIntentId,
+        guestExpiresAt,
+        guestCreatedAt,
         ...session
       } = row;
 
@@ -330,6 +366,18 @@ export function sessionRoutes(app: FastifyInstance): void {
                 capturedAmountCents,
                 refundedAmountCents: refundedAmountCents ?? 0,
                 failureReason,
+              }
+            : null,
+        guestSession:
+          guestSessionToken != null
+            ? {
+                sessionToken: guestSessionToken,
+                guestEmail: guestEmail ?? '',
+                status: guestStatus ?? '',
+                preAuthAmountCents: guestPreAuthAmountCents,
+                stripePaymentIntentId: guestStripePaymentIntentId,
+                expiresAt: guestExpiresAt as Date,
+                createdAt: guestCreatedAt as Date,
               }
             : null,
       };

@@ -36,6 +36,7 @@ export interface Session {
   finalCostCents: number | null;
   currency: string | null;
   freeVend: boolean | null;
+  isGuestSession?: boolean;
   co2AvoidedKg: number | null;
 }
 
@@ -71,7 +72,7 @@ export const SessionsTable = memo(function SessionsTable({
 }: SessionsTableProps): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const colCount = 9 - (hideStationName ? 1 : 0) - (hideDriverName ? 1 : 0);
+  const colCount = 10 - (hideStationName ? 1 : 0) - (hideDriverName ? 1 : 0);
 
   return (
     <>
@@ -82,6 +83,7 @@ export const SessionsTable = memo(function SessionsTable({
               {!hideStationName && <TableHead>{t('sessions.stationName')}</TableHead>}
               <TableHead>{t('sessions.sessionId')}</TableHead>
               {!hideDriverName && <TableHead>{t('sessions.driverName')}</TableHead>}
+              <TableHead>{t('sessions.guestSession')}</TableHead>
               <TableHead>{t('common.status')}</TableHead>
               <TableHead>{t('sessions.started')}</TableHead>
               <TableHead>{t('sessions.duration')}</TableHead>
@@ -144,6 +146,13 @@ export const SessionsTable = memo(function SessionsTable({
                     )}
                   </TableCell>
                 )}
+                <TableCell>
+                  {session.isGuestSession === true ? (
+                    <Badge variant="info">{t('common.yes')}</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">{t('common.no')}</span>
+                  )}
+                </TableCell>
                 <TableCell data-testid="row-click-target">
                   <Badge
                     variant={sessionStatusVariant(

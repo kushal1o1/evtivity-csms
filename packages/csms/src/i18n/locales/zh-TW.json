@@ -781,7 +781,16 @@
     "noMeterValues": "無電錶資料",
     "freeVend": "免費充電",
     "co2Avoided": "減少的 CO2",
-    "co2AvoidedLabel": "減少的 CO2"
+    "co2AvoidedLabel": "減少的 CO2",
+    "guestSession": "訪客工作階段",
+    "guestSessionTab": "訪客工作階段",
+    "guestSessionToken": "工作階段權杖",
+    "guestPortalLink": "入口網站連結",
+    "guestEmail": "電子郵件",
+    "guestPreAuthAmount": "預授權金額",
+    "guestStripePaymentIntent": "Stripe PaymentIntent",
+    "guestCreatedAt": "建立時間",
+    "guestExpiresAt": "到期時間"
   },
   "drivers": {
     "title": "駕駛員",

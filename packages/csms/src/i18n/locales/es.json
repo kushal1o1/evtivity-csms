@@ -785,7 +785,16 @@
     "noPricingGroupResults": "No se encontraron grupos de precios",
     "freeVend": "Carga Libre",
     "co2Avoided": "CO2 Evitado",
-    "co2AvoidedLabel": "CO2 Evitado"
+    "co2AvoidedLabel": "CO2 Evitado",
+    "guestSession": "Sesion de Invitado",
+    "guestSessionTab": "Sesion de Invitado",
+    "guestSessionToken": "Token de Sesion",
+    "guestPortalLink": "Enlace al Portal",
+    "guestEmail": "Correo",
+    "guestPreAuthAmount": "Monto Pre-Autorizado",
+    "guestStripePaymentIntent": "Stripe PaymentIntent",
+    "guestCreatedAt": "Creado",
+    "guestExpiresAt": "Expira"
   },
   "drivers": {
     "title": "Conductores",

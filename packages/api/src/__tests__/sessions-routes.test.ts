@@ -80,6 +80,7 @@ vi.mock('@evtivity/database', () => ({
   transactionEvents: {},
   paymentRecords: {},
   meterValues: {},
+  guestSessions: {},
 }));
 
 vi.mock('drizzle-orm', () => {
@@ -91,6 +92,7 @@ vi.mock('drizzle-orm', () => {
     or: vi.fn(),
     ilike: vi.fn(),
     isNotNull: vi.fn(),
+    inArray: vi.fn(),
     sql: sqlFn,
     desc: vi.fn(),
     count: vi.fn(),

@@ -781,7 +781,16 @@
     "noMeterValues": "无电表数据",
     "freeVend": "免费充电",
     "co2Avoided": "减少的 CO2",
-    "co2AvoidedLabel": "减少的 CO2"
+    "co2AvoidedLabel": "减少的 CO2",
+    "guestSession": "访客会话",
+    "guestSessionTab": "访客会话",
+    "guestSessionToken": "会话令牌",
+    "guestPortalLink": "门户链接",
+    "guestEmail": "邮箱",
+    "guestPreAuthAmount": "预授权金额",
+    "guestStripePaymentIntent": "Stripe PaymentIntent",
+    "guestCreatedAt": "创建时间",
+    "guestExpiresAt": "过期时间"
   },
   "drivers": {
     "title": "驾驶员",

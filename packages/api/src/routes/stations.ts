@@ -31,6 +31,7 @@ import {
   eventAlerts,
   chargingProfileTemplates,
   configTemplates,
+  guestSessions,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
@@ -352,6 +353,7 @@ const sessionItem = z
     currentCostCents: z.number().nullable(),
     finalCostCents: z.number().nullable(),
     currency: z.string().nullable(),
+    isGuestSession: z.boolean(),
   })
   .passthrough();
 
@@ -2274,11 +2276,13 @@ export function stationRoutes(app: FastifyInstance): void {
             finalCostCents: chargingSessions.finalCostCents,
             currency: chargingSessions.currency,
             freeVend: chargingSessions.freeVend,
+            guestSessionToken: guestSessions.sessionToken,
           })
           .from(chargingSessions)
           .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
           .leftJoin(sites, eq(chargingStations.siteId, sites.id))
           .leftJoin(drivers, eq(chargingSessions.driverId, drivers.id))
+          .leftJoin(guestSessions, eq(guestSessions.chargingSessionId, chargingSessions.id))
           .where(where)
           .orderBy(desc(chargingSessions.startedAt))
           .limit(limit)
@@ -2289,7 +2293,12 @@ export function stationRoutes(app: FastifyInstance): void {
           .where(where),
       ]);
 
-      return { data: rows, total: countRows[0]?.count ?? 0 };
+      const data = rows.map(({ guestSessionToken, ...rest }) => ({
+        ...rest,
+        isGuestSession: guestSessionToken != null,
+      }));
+
+      return { data, total: countRows[0]?.count ?? 0 };
     },
   );
 

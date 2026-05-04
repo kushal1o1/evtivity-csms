@@ -9,6 +9,7 @@ import { BackButton } from '@/components/back-button';
 import { CopyableId } from '@/components/copyable-id';
 import { MeterValuesTable } from '@/components/MeterValuesTable';
 import { SessionDetailsTab } from '@/components/session/SessionDetailsTab';
+import { SessionGuestTab } from '@/components/session/SessionGuestTab';
 import { SessionPaymentTab } from '@/components/session/SessionPaymentTab';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -26,6 +27,16 @@ interface PaymentRecord {
   capturedAmountCents: number | null;
   refundedAmountCents: number;
   failureReason: string | null;
+}
+
+interface GuestSessionInfo {
+  sessionToken: string;
+  guestEmail: string;
+  status: string;
+  preAuthAmountCents: number | null;
+  stripePaymentIntentId: string | null;
+  expiresAt: string;
+  createdAt: string;
 }
 
 interface SessionDetailData {
@@ -49,6 +60,7 @@ interface SessionDetailData {
   freeVend: boolean | null;
   co2AvoidedKg: number | null;
   paymentRecord: PaymentRecord | null;
+  guestSession: GuestSessionInfo | null;
 }
 
 export function SessionDetail(): React.JSX.Element {
@@ -122,6 +134,9 @@ export function SessionDetail(): React.JSX.Element {
           <TabsTrigger value="details">{t('common.details')}</TabsTrigger>
           <TabsTrigger value="meter-values">{t('sessions.meterValuesTab')}</TabsTrigger>
           <TabsTrigger value="payment">{t('sessions.payment')}</TabsTrigger>
+          {session.guestSession != null && (
+            <TabsTrigger value="guest">{t('sessions.guestSessionTab')}</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="details" className="space-y-6">
@@ -151,6 +166,17 @@ export function SessionDetail(): React.JSX.Element {
             formatCents={formatCents}
           />
         </TabsContent>
+
+        {session.guestSession != null && (
+          <TabsContent value="guest">
+            <SessionGuestTab
+              guest={session.guestSession}
+              currency={currency}
+              timezone={timezone}
+              formatCents={formatCents}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
