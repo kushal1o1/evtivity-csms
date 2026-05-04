@@ -141,6 +141,14 @@ vi.mock('../lib/site-access.js', () => ({
   checkStationSiteAccess: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../lib/ocpp-command.js', () => ({
+  sendOcppCommandAndWait: vi.fn().mockResolvedValue({
+    commandId: 'mock-cmd',
+    response: { status: 'Accepted' },
+  }),
+  triggerAndWaitForStatus: vi.fn().mockResolvedValue({ status: 'available' }),
+}));
+
 vi.mock('../middleware/rbac.js', () => ({
   authorize:
     () =>
@@ -685,6 +693,43 @@ describe('Station routes - handler logic', () => {
 
       expect(response.statusCode).toBe(409);
       expect(response.json().code).toBe('CONNECTOR_OCCUPIED');
+    });
+  });
+
+  describe('POST /v1/stations/:id/evses/:evseId/refresh-status', () => {
+    it('triggers StatusNotification and returns the latest status', async () => {
+      setupDbResults(
+        [{ stationId: 'CS-001', isOnline: true, ocppProtocol: 'ocpp2.1' }], // SELECT station
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/stations/${VALID_STATION_ID}/evses/1/refresh-status`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.status).toBe('available');
+    });
+
+    it('returns offline error when station is not connected', async () => {
+      setupDbResults(
+        [{ stationId: 'CS-001', isOnline: false, ocppProtocol: 'ocpp2.1' }], // SELECT station
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/stations/${VALID_STATION_ID}/evses/1/refresh-status`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.status).toBeNull();
+      expect(body.error).toBe('Station is offline');
     });
   });
 

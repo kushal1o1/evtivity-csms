@@ -821,6 +821,72 @@ describe('Event projections', () => {
       );
     });
 
+    it('updates connector status from chargingState in Ended payload (e.g. EVConnected after RemoteStop)', async () => {
+      // Verifies the Ended-handler chargingState mapping that handles OCPP 2.1 stations
+      // which encode the post-stop state in TransactionEvent (Ended) instead of sending a
+      // follow-up StatusNotification. Previously the connector badge stayed on 'charging'.
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationId
+        [], // SELECT payment_records (no failed payment)
+        [], // UPDATE charging_sessions SET status=completed
+        [
+          {
+            id: 'session-1',
+            tariff_id: null,
+            current_cost_cents: 0,
+            started_at: '2024-01-01T00:00:00Z',
+            ended_at: '2024-01-01T01:00:00Z',
+            energy_delivered_wh: 5000,
+            currency: null,
+          },
+        ], // SELECT session row
+        [{ evse_id: 'evs_000000000001' }], // SELECT evse_id (new chargingState path)
+        [], // UPDATE connectors SET status = 'ev_connected'
+        [{ site_id: null }], // resolveSiteId for connector notify
+        [], // pg_notify station.status
+        [], // INSERT transaction_events
+        [{ site_id: null }], // resolveSiteId
+        [], // pg_notify (session.ended)
+        [], // pg_notify (TransactionEnded)
+        [
+          {
+            driver_id: null,
+            energy_delivered_wh: 5000,
+            final_cost_cents: null,
+            currency: null,
+            started_at: '2024-01-01T00:00:00Z',
+            ended_at: '2024-01-01T01:00:00Z',
+          },
+        ],
+      );
+
+      await eventBus.emit(
+        'ocpp.TransactionEvent',
+        makeDomainEvent('ocpp.TransactionEvent', 'CS-001', {
+          eventType: 'Ended',
+          stationId: 'CS-001',
+          transactionId: 'tx-ended-charging-state',
+          seqNo: 16,
+          triggerReason: 'ChargingStateChanged',
+          timestamp: '2024-01-01T01:00:00Z',
+          stoppedReason: 'Remote',
+          chargingState: 'EVConnected',
+        }),
+      );
+
+      const updateConnectorCall = sqlCalls.find((c) => {
+        const joined = c.strings.join('');
+        return (
+          joined.includes('UPDATE connectors') &&
+          joined.includes('status') &&
+          c.values.includes('ev_connected')
+        );
+      });
+      expect(updateConnectorCall).toBeDefined();
+    });
+
     it('completes session and computes cost on Ended', async () => {
       await setup();
 
