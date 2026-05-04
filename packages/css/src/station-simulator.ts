@@ -263,6 +263,10 @@ export class StationSimulator {
     return this.config.stationId;
   }
 
+  get cssStationId(): string {
+    return this.config.id;
+  }
+
   get isConnected(): boolean {
     return this.client.isConnected;
   }
@@ -6221,6 +6225,13 @@ export class StationSimulator {
   }
 
   private async findEvseForTransaction(transactionId: string): Promise<number | null> {
+    // Check in-memory map first. The DB row in css_transactions can be missing
+    // (insert failure, FK skew after a manual css_stations rotation, etc.) but
+    // the in-memory state is what drove the OCPP TransactionEvent the CSMS is
+    // now trying to stop, so it is the authoritative answer here.
+    for (const [evseId, txId] of this.activeTransactionIds) {
+      if (txId === transactionId) return evseId;
+    }
     try {
       const rows = await this.sql`
         SELECT evse_id FROM css_transactions

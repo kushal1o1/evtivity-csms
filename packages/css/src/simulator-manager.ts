@@ -190,8 +190,27 @@ export class SimulatorManager {
       const stationId = row.station_id as string;
       currentStationIds.add(stationId);
 
-      // Skip if already running
-      if (this.simulators.has(stationId)) continue;
+      // If a simulator is already running for this station_id but its cached
+      // css_stations.id no longer matches the row in the database, the row was
+      // deleted and recreated under us (e.g. seed truncate, a manual DELETE).
+      // The simulator's in-memory config.id is now stale and every css_*
+      // INSERT keyed on it will fail with FK violation. Stop the stale
+      // instance so the boot path below recreates it with the fresh id.
+      const existing = this.simulators.get(stationId);
+      if (existing != null) {
+        if (existing.cssStationId === (row.id as string)) continue;
+        console.log(
+          `[simulator-manager] css_stations.id changed for ${stationId} (${existing.cssStationId} -> ${row.id as string}), restarting`,
+        );
+        try {
+          await existing.stop();
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`[simulator-manager] Error stopping stale simulator ${stationId}: ${msg}`);
+        }
+        this.clockAlignedScheduler.unregister(stationId);
+        this.simulators.delete(stationId);
+      }
 
       const targetUrl = row.target_url as string;
 
