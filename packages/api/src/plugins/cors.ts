@@ -31,8 +31,33 @@ export async function registerCors(app: FastifyInstance): Promise<void> {
     throw new Error('CORS_ORIGIN must not be "*" in production. Set explicit origins.');
   }
 
-  // "local" allows any private network / localhost origin dynamically
+  // "local" allows any private network / localhost origin dynamically. Also
+  // allows same-origin requests regardless of network class so the dashboard
+  // works behind port-forwarded public hostnames -- the browser sends the
+  // Origin header even on same-origin fetch+credentials calls. Detect those
+  // by comparing the Origin hostname to the request Host header in an
+  // onRequest hook and clear the Origin so @fastify/cors hits its
+  // null-origin allow branch. @fastify/cors invokes the origin callback
+  // with the fastify instance as `this`, so we cannot read the request
+  // from inside the callback itself; pre-processing the header is the
+  // cleanest hand-off.
   if (raw === 'local') {
+    app.addHook('onRequest', (request, _reply, done) => {
+      const origin = request.headers.origin;
+      const host = request.headers.host;
+      if (typeof origin === 'string' && typeof host === 'string') {
+        try {
+          const url = new URL(origin);
+          if (url.host === host) {
+            delete request.headers.origin;
+          }
+        } catch {
+          // Malformed Origin: leave untouched and let cors plugin reject it.
+        }
+      }
+      done();
+    });
+
     await app.register(cors, {
       origin: (origin, cb) => {
         if (origin == null || isPrivateOrigin(origin)) {
