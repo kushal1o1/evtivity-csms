@@ -106,6 +106,21 @@ export async function processChargingProfilePush(
             } else {
               const response = result.response as { status?: string } | undefined;
               if (response?.status === 'Accepted') {
+                // Auto-refresh station_reported rows on OCPP 2.1 stations
+                // so the CSMS mirror reflects the new on-station profile
+                // set without requiring a manual Refresh. 1.6 has no
+                // GetChargingProfiles command. Fire-and-forget.
+                if (ocppVersion === '2.1') {
+                  void sendOcppCommandAndWait(
+                    station.stationId,
+                    'GetChargingProfiles',
+                    {
+                      requestId: Math.floor(Math.random() * 2147483647),
+                      chargingProfile: {},
+                    },
+                    'ocpp2.1',
+                  ).catch(() => {});
+                }
                 await db
                   .update(chargingProfilePushStations)
                   .set({ status: 'accepted', updatedAt: new Date() })
@@ -218,17 +233,34 @@ export async function processChargingProfileClear(
             // station response, so flag it as failed.
             if (response?.status === 'Accepted') {
               // Mirror the deletion in the CSMS DB so the per-station charging
-              // profiles list reflects the on-station state.
-              await db
-                .delete(chargingProfiles)
-                .where(
-                  and(
-                    eq(chargingProfiles.stationId, station.id),
-                    sql`profile_data->>'chargingProfilePurpose' = ${target.profilePurpose}`,
-                    sql`(profile_data->>'stackLevel')::int = ${target.stackLevel}`,
-                    eq(chargingProfiles.evseId, target.evseId),
-                  ),
-                );
+              // profiles list reflects the on-station state. profile_data is
+              // stored as a single profile object for csms_set rows and as an
+              // array of profile objects for station_reported rows, so the
+              // predicates use jsonb_path_exists to match both shapes.
+              await db.delete(chargingProfiles).where(
+                and(
+                  eq(chargingProfiles.stationId, station.id),
+                  sql`jsonb_path_exists(profile_data, ('$ ? (@.chargingProfilePurpose == "' || ${target.profilePurpose} || '")')::jsonpath)
+                        OR jsonb_path_exists(profile_data, ('$[*] ? (@.chargingProfilePurpose == "' || ${target.profilePurpose} || '")')::jsonpath)`,
+                  sql`jsonb_path_exists(profile_data, ('$ ? (@.stackLevel == ' || ${target.stackLevel}::text || ')')::jsonpath)
+                        OR jsonb_path_exists(profile_data, ('$[*] ? (@.stackLevel == ' || ${target.stackLevel}::text || ')')::jsonpath)`,
+                  eq(chargingProfiles.evseId, target.evseId),
+                ),
+              );
+              // Auto-refresh station_reported rows on OCPP 2.1 stations so the
+              // CSMS mirror reflects the station's new state. 1.6 has no
+              // GetChargingProfiles command (and no ReportChargingProfiles
+              // payload), so the explicit DELETE above is the only mechanism.
+              if (ocppVersion === '2.1') {
+                void sendOcppCommandAndWait(
+                  station.stationId,
+                  'GetChargingProfiles',
+                  { requestId: Math.floor(Math.random() * 2147483647), chargingProfile: {} },
+                  'ocpp2.1',
+                ).catch(() => {
+                  // Best-effort; do not block clear bookkeeping on refresh failure.
+                });
+              }
               await db
                 .update(chargingProfilePushStations)
                 .set({ status: 'accepted', updatedAt: new Date() })

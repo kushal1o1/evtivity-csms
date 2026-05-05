@@ -44,7 +44,7 @@
     "license:fix": "node internal-scripts/add-license-headers.mjs",
     "license:check": "node internal-scripts/add-license-headers.mjs --check",
     "test:e2e": "npx playwright test",
-    "prepare": "husky"
+    "prepare": "husky && tsc -b"
   },
   "license": "BUSL-1.1",
   "engines": {

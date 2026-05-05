@@ -3452,11 +3452,16 @@ export function registerProjections(
     const tbc = (payload.tbc as boolean | undefined) ?? false;
     const chargingProfile = payload.chargingProfile ?? [];
 
-    // Delete existing station-reported profiles for this station+evse to avoid duplicates on refresh
+    // GetChargingProfiles can produce multiple ReportChargingProfiles
+    // messages, each carrying one or more profiles. The first message of a
+    // new request supersedes the prior report; subsequent messages of the
+    // same request must accumulate. Filter the delete by requestId so we
+    // only purge rows from PRIOR refresh cycles, not the current one.
     await sql`
       DELETE FROM charging_profiles
       WHERE station_id = ${stationUuid} AND source = 'station_reported'
         AND COALESCE(evse_id, -1) = COALESCE(${evseId}::int, -1)
+        AND COALESCE(request_id, -1) <> COALESCE(${requestId}::int, -1)
     `;
     await sql`
       INSERT INTO charging_profiles (station_id, source, evse_id, request_id, charging_limit_source, tbc, profile_data, reported_at)

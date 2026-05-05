@@ -3740,28 +3740,52 @@ export function stationRoutes(app: FastifyInstance): void {
       // Mirror the on-station deletion in the CSMS DB. The station's
       // ClearChargingProfile is idempotent — Accepted means the matching
       // profiles are gone (or no match found), so the prior rows in
-      // `charging_profiles` no longer reflect on-station state. Match the
-      // same criteria the station used.
+      // `charging_profiles` no longer reflect on-station state.
+      //
+      // profile_data is stored two shapes: csms_set rows are a single profile
+      // OBJECT, station_reported rows are an ARRAY of profile objects (per
+      // the OCPP ReportChargingProfiles payload). The match predicates need
+      // to handle both — `jsonb_path_exists` searches across either shape.
       const response = result.response as { status?: string } | undefined;
       if (response?.status === 'Accepted') {
         const conditions = [eq(chargingProfiles.stationId, id)];
         if (body.chargingProfileId != null) {
           conditions.push(
-            sql`profile_data ->> 'id' ~ '^-?[0-9]+$' AND (profile_data->>'id')::int = ${body.chargingProfileId}`,
+            sql`jsonb_path_exists(profile_data, ('$ ? (@.id == ' || ${body.chargingProfileId}::text || ')')::jsonpath)
+                OR jsonb_path_exists(profile_data, ('$[*] ? (@.id == ' || ${body.chargingProfileId}::text || ')')::jsonpath)`,
           );
         }
         if (body.chargingProfilePurpose != null) {
           conditions.push(
-            sql`profile_data->>'chargingProfilePurpose' = ${body.chargingProfilePurpose}`,
+            sql`jsonb_path_exists(profile_data, ('$ ? (@.chargingProfilePurpose == "' || ${body.chargingProfilePurpose} || '")')::jsonpath)
+                OR jsonb_path_exists(profile_data, ('$[*] ? (@.chargingProfilePurpose == "' || ${body.chargingProfilePurpose} || '")')::jsonpath)`,
           );
         }
         if (body.stackLevel != null) {
-          conditions.push(sql`(profile_data->>'stackLevel')::int = ${body.stackLevel}`);
+          conditions.push(
+            sql`jsonb_path_exists(profile_data, ('$ ? (@.stackLevel == ' || ${body.stackLevel}::text || ')')::jsonpath)
+                OR jsonb_path_exists(profile_data, ('$[*] ? (@.stackLevel == ' || ${body.stackLevel}::text || ')')::jsonpath)`,
+          );
         }
         if (body.evseId != null) {
           conditions.push(eq(chargingProfiles.evseId, body.evseId));
         }
         await db.delete(chargingProfiles).where(and(...conditions));
+
+        // Auto-refresh station_reported rows on OCPP 2.1 stations. Fire-and-forget
+        // GetChargingProfiles so the projection re-mirrors the station's actual
+        // current state. 1.6 has no equivalent command (and no ReportChargingProfiles
+        // payload), so the explicit DELETE above is the only mechanism for 1.6.
+        if (station.ocppProtocol === '2.1' || station.ocppProtocol === 'ocpp2.1') {
+          void sendOcppCommandAndWait(
+            station.stationId,
+            'GetChargingProfiles',
+            { requestId: Math.floor(Math.random() * 2147483647), chargingProfile: {} },
+            '2.1',
+          ).catch(() => {
+            // Best-effort refresh; don't fail the clear response on transport issues.
+          });
+        }
       }
 
       return result.response ?? { success: true };
@@ -3896,6 +3920,19 @@ export function stationRoutes(app: FastifyInstance): void {
 
       const response = result.response as { status?: string } | undefined;
       const status = response?.status ?? 'Unknown';
+
+      // Auto-refresh station_reported rows on OCPP 2.1 stations so the CSMS
+      // mirror reflects the new on-station profile set without a manual
+      // Refresh click. Fire-and-forget; do not block the push response.
+      if (status === 'Accepted' && version === '2.1') {
+        void sendOcppCommandAndWait(
+          station.stationId,
+          'GetChargingProfiles',
+          { requestId: Math.floor(Math.random() * 2147483647), chargingProfile: {} },
+          '2.1',
+        ).catch(() => {});
+      }
+
       return {
         success: status === 'Accepted',
         status,

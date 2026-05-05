@@ -235,5 +235,51 @@ if (ioVendorId != null) {
   }
 }
 
+// Block-all test templates (2.1 + 1.6). Generic — no target filter — so the
+// operator can push them to any station to verify zero-power gating.
+// stackLevel 7 ensures these win against any other seeded profile (which use
+// stack 0/1) without exceeding the typical station max (8).
+const blockAllDefs = [
+  {
+    name: 'Test: Block All Charging (2.1)',
+    description: 'Testing template that delivers 0W at all times.',
+    ocppVersion: '2.1',
+    profileId: 998,
+  },
+  {
+    name: 'Test: Block All Charging (1.6)',
+    description: 'Testing template that delivers 0W at all times.',
+    ocppVersion: '1.6',
+    profileId: 999,
+  },
+];
+for (const def of blockAllDefs) {
+  const existing = await db
+    .select({ id: chargingProfileTemplates.id })
+    .from(chargingProfileTemplates)
+    .where(eq(chargingProfileTemplates.name, def.name))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(chargingProfileTemplates).values({
+      name: def.name,
+      description: def.description,
+      ocppVersion: def.ocppVersion,
+      profileId: def.profileId,
+      profilePurpose: 'TxDefaultProfile',
+      profileKind: 'Recurring',
+      recurrencyKind: 'Daily',
+      stackLevel: 7,
+      evseId: 0,
+      chargingRateUnit: 'W',
+      schedulePeriods: [{ startPeriod: 0, limit: 0 }],
+      duration: 86400,
+      startSchedule: new Date('2026-01-01T00:00:00Z'),
+    });
+    console.log(`  Created smart charging template: ${def.name}`);
+  } else {
+    console.log(`  Smart charging template already exists: ${def.name}`);
+  }
+}
+
 console.log('Dev station seed complete.');
 await client.end();

@@ -3055,6 +3055,40 @@ async function seed(): Promise<void> {
       duration: null,
       startSchedule: null,
     },
+    // Block-all test profile (2.1). Useful for verifying that pushing a 0W
+    // TxDefaultProfile suspends charging on any active session. Generic — no
+    // target filter so it applies to any station the operator selects.
+    // stackLevel 7 ensures it wins against any other seeded profile (which
+    // use stack 0/1) without exceeding the typical station max (8).
+    {
+      name: 'Test: Block All Charging (2.1)',
+      ocppVersion: '2.1',
+      profilePurpose: 'TxDefaultProfile',
+      profileKind: 'Recurring',
+      recurrencyKind: 'Daily',
+      profileId: 998,
+      stackLevel: 7,
+      evseId: 0,
+      chargingRateUnit: 'W',
+      schedulePeriods: [{ startPeriod: 0, limit: 0 }],
+      duration: 86400,
+      startSchedule: new Date('2026-01-01T00:00:00Z'),
+    },
+    // Block-all test profile (1.6). Same semantics, OCPP 1.6 protocol.
+    {
+      name: 'Test: Block All Charging (1.6)',
+      ocppVersion: '1.6',
+      profilePurpose: 'TxDefaultProfile',
+      profileKind: 'Recurring',
+      recurrencyKind: 'Daily',
+      profileId: 999,
+      stackLevel: 7,
+      evseId: 0,
+      chargingRateUnit: 'W',
+      schedulePeriods: [{ startPeriod: 0, limit: 0 }],
+      duration: 86400,
+      startSchedule: new Date('2026-01-01T00:00:00Z'),
+    },
   ];
 
   const existingProfileTemplates = await db
