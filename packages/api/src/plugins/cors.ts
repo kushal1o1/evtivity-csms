@@ -45,10 +45,24 @@ export async function registerCors(app: FastifyInstance): Promise<void> {
     app.addHook('onRequest', (request, _reply, done) => {
       const origin = request.headers.origin;
       const host = request.headers.host;
-      if (typeof origin === 'string' && typeof host === 'string') {
+      const xfHost = request.headers['x-forwarded-host'];
+      if (typeof origin === 'string' && (typeof host === 'string' || typeof xfHost === 'string')) {
         try {
           const url = new URL(origin);
-          if (url.host === host) {
+          // Compare against host AND x-forwarded-host since reverse proxies
+          // and NAT port-forwarders sometimes rewrite the Host header (strip
+          // or replace the port). Also accept when only the hostname matches
+          // -- a port-forward at port 80/443 routing to internal port 7100
+          // produces an Origin port that the API never sees in its Host.
+          const candidates: string[] = [];
+          if (typeof host === 'string') candidates.push(host);
+          if (typeof xfHost === 'string') candidates.push(xfHost);
+          const originHost = url.host;
+          const originHostname = url.hostname;
+          const matches = candidates.some(
+            (h) => h === originHost || h === originHostname || h.split(':')[0] === originHostname,
+          );
+          if (matches) {
             delete request.headers.origin;
           }
         } catch {
