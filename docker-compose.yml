@@ -139,7 +139,7 @@ services:
       context: .
       dockerfile: packages/csms/Dockerfile.dev
       args:
-        VITE_CSMS_AUTO_LOGIN: ${CSMS_LOGIN:-}
+        VITE_CSMS_AUTO_LOGIN: ${VITE_CSMS_AUTO_LOGIN:-}
     ports:
       - '${BIND_IP:-0.0.0.0}:${CSMS_PORT:-7100}:${CSMS_PORT:-7100}'
     mem_limit: 1g
@@ -162,7 +162,7 @@ services:
       context: .
       dockerfile: packages/portal/Dockerfile.dev
       args:
-        VITE_PORTAL_AUTO_LOGIN: ${PORTAL_LOGIN:-}
+        VITE_PORTAL_AUTO_LOGIN: ${VITE_PORTAL_AUTO_LOGIN:-}
     ports:
       - '${BIND_IP:-0.0.0.0}:${PORTAL_PORT:-7101}:${PORTAL_PORT:-7101}'
     mem_limit: 1g

@@ -74,12 +74,9 @@ while lsof -i :8443 >/dev/null 2>&1; do sleep 1; done
 # boot, and a subsequent `npm run db:seed` TRUNCATE wipes those rows out from
 # under it, leaving the in-memory config.id stale and every css_transactions
 # INSERT failing with FK violation.
-# Auto-login defaults are forced here (not pulled from .env) because the
-# public-repo sync expects these specific dev creds. CSS_MODE / CSS_STATION_LIMIT
-# are NOT overridden -- compose reads them from .env, falling back to its own
-# defaults in docker-compose.yml.
-CSMS_LOGIN=admin@evtivity.local \
-PORTAL_LOGIN=driver@evtivity.local \
+# All env vars (auto-login, CSS_MODE, CSS_STATION_LIMIT, etc.) are read from
+# .env via docker-compose's automatic .env loading. To enable dev auto-login,
+# set VITE_CSMS_AUTO_LOGIN / VITE_PORTAL_AUTO_LOGIN in .env.
 docker compose up -d --build postgres redis
 
 # Wait for postgres to be healthy before running migrations and seeds. The
@@ -107,8 +104,6 @@ npm run db:seed:dev
 # the DB.
 echo ""
 echo "Starting application services..."
-CSMS_LOGIN=admin@evtivity.local \
-PORTAL_LOGIN=driver@evtivity.local \
 docker compose ${PROFILES[@]+"${PROFILES[@]}"} up -d --build
 
 echo ""
