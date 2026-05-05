@@ -125,7 +125,7 @@
     "timeElapsed": "时长",
     "power": "功率",
     "details": "详情",
-    "stopSession": "停止充电",
+    "stopCharging": "停止充电",
     "stopping": "停止中...",
     "stopConfirmation": "确定要停止此充电会话吗?",
     "stopFailed": "无法停止会话。",

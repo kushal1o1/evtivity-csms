@@ -125,7 +125,7 @@
     "timeElapsed": "Duracion",
     "power": "Potencia",
     "details": "Detalles",
-    "stopSession": "Detener sesion",
+    "stopCharging": "Detener carga",
     "stopping": "Deteniendo...",
     "stopConfirmation": "Seguro que desea detener esta sesion de carga?",
     "stopFailed": "No se pudo detener la sesion.",

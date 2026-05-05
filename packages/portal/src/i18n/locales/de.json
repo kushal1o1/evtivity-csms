@@ -125,7 +125,7 @@
     "timeElapsed": "Dauer",
     "power": "Leistung",
     "details": "Details",
-    "stopSession": "Vorgang beenden",
+    "stopCharging": "Ladevorgang beenden",
     "stopping": "Wird beendet...",
     "stopConfirmation": "Möchtest du diesen Ladevorgang wirklich beenden?",
     "lastUpdated": "Aktualisiert {{time}}",

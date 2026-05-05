@@ -125,7 +125,7 @@
     "timeElapsed": "소요 시간",
     "power": "전력",
     "details": "상세 정보",
-    "stopSession": "세션 중지",
+    "stopCharging": "충전 중지",
     "stopping": "중지 중...",
     "stopConfirmation": "이 충전 세션을 중지하시겠습니까?",
     "stopFailed": "세션을 중지하지 못했습니다.",

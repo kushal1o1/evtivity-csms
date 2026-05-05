@@ -125,7 +125,7 @@
     "timeElapsed": "Duration",
     "power": "Power",
     "details": "Details",
-    "stopSession": "Stop Session",
+    "stopCharging": "Stop Charging",
     "stopping": "Stopping...",
     "stopConfirmation": "Are you sure you want to stop this charging session?",
     "stopFailed": "Failed to stop session.",
@@ -287,7 +287,7 @@
     "estimatedCost": "Estimated cost",
     "started": "Started",
     "ended": "Ended",
-    "stopCharging": "Stop charging",
+    "stopCharging": "Stop Charging",
     "stopping": "Stopping...",
     "stopTimeout": "Stop request timed out. The station may be offline.",
     "receiptMessage": "Your card has been charged. A receipt will be sent to your email.",
@@ -329,7 +329,7 @@
   "activeSessions": {
     "title": "Active sessions",
     "noActiveSessions": "No active sessions.",
-    "stopCharging": "Stop charging",
+    "stopCharging": "Stop Charging",
     "stopping": "Stopping...",
     "stopFailed": "Failed to stop session."
   },

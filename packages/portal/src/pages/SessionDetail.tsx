@@ -328,7 +328,7 @@ export function SessionDetail(): React.JSX.Element {
           }}
         >
           <CircleStop className="mr-2 h-5 w-5" />
-          {stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopSession')}
+          {stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopCharging')}
         </Button>
       )}
 
@@ -421,9 +421,9 @@ export function SessionDetail(): React.JSX.Element {
           if (stopping && !open) return;
           setShowStopConfirm(open);
         }}
-        title={t('sessionDetail.stopSession')}
+        title={t('sessionDetail.stopCharging')}
         description={t('sessionDetail.stopConfirmation')}
-        confirmLabel={stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopSession')}
+        confirmLabel={stopping ? t('sessionDetail.stopping') : t('sessionDetail.stopCharging')}
         onConfirm={() => {
           setStopping(true);
           stopMutation.mutate();
