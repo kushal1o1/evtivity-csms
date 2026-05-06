@@ -708,10 +708,11 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
                 }}
               />
             </div>
-            {reservationMaxHours > 0 && (
-              <InfoNote>{t('reservations.maxHoursHint', { hours: reservationMaxHours })}</InfoNote>
-            )}
-            <InfoNote>{t('reservations.noShowFeeNote')}</InfoNote>
+            <InfoNote>
+              {reservationMaxHours > 0
+                ? `${t('reservations.maxHoursHint', { hours: reservationMaxHours })} ${t('reservations.noShowFeeNote')}`
+                : t('reservations.noShowFeeNote')}
+            </InfoNote>
             {!hasDefaultPaymentMethod && paymentMethods != null && (
               <Alert variant="warning">
                 <AlertCircle className="h-4 w-4" />

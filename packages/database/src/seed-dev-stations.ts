@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // docker-build.sh dev fixture (npm run db:seed:dev). Runs after `db:seed` and
-// adds 1 site + 3 stations (IOCHARGER-001 OCPP 2.1, CS-0001 OCPP 2.1, CS-1001
-// OCPP 1.6) so a fresh Docker stack has something to exercise without the full
-// 2000-station demo dataset. Idempotent; no-op when those station IDs already
-// exist (e.g. when SEED_DEMO=true already created them).
+// adds 1 site + 4 stations (IOCHARGER-001 / IOCHARGER-002 OCPP 2.1 real,
+// CS-0001 OCPP 1.6 simulator, CS-0002 OCPP 2.1 simulator) so a fresh Docker
+// stack has something to exercise without the full 2000-station demo dataset.
+// Idempotent; no-op when those station IDs already exist (e.g. when
+// SEED_DEMO=true already created them).
 
 import argon2 from 'argon2';
 import { eq } from 'drizzle-orm';
@@ -19,6 +20,7 @@ import {
   cssStations,
   cssEvses,
   drivers,
+  driverPaymentMethods,
   chargingProfileTemplates,
 } from './schema/index.js';
 
@@ -85,16 +87,16 @@ const stationDefs = [
     vendorId: null,
     model: 'DCFC-150',
     serialNumber: 'SN-2026-0001',
-    ocppProtocol: 'ocpp2.1',
+    ocppProtocol: 'ocpp1.6',
     isSimulator: true,
     connector: { type: 'CCS2', power: '150', amps: 375 },
   },
   {
-    stationId: 'CS-1001',
-    vendorId: ioVendorId,
+    stationId: 'CS-0002',
+    vendorId: null,
     model: 'DCFC-150',
-    serialNumber: 'SN-2026-1001',
-    ocppProtocol: 'ocpp1.6',
+    serialNumber: 'SN-2026-0002',
+    ocppProtocol: 'ocpp2.1',
     isSimulator: true,
     connector: { type: 'CCS2', power: '150', amps: 375 },
   },
@@ -181,20 +183,54 @@ const existingDriver = await db
   .from(drivers)
   .where(eq(drivers.email, 'driver@evtivity.local'))
   .limit(1);
+let devDriverId: string;
 if (existingDriver.length === 0) {
   const driverPasswordHash = await argon2.hash('driver123');
-  await db.insert(drivers).values({
-    firstName: 'Dev',
-    lastName: 'Driver',
-    email: 'driver@evtivity.local',
-    passwordHash: driverPasswordHash,
-    registrationSource: 'portal',
-    emailVerified: true,
-    isActive: true,
-  });
+  const [created] = await db
+    .insert(drivers)
+    .values({
+      firstName: 'Dev',
+      lastName: 'Driver',
+      email: 'driver@evtivity.local',
+      passwordHash: driverPasswordHash,
+      registrationSource: 'portal',
+      emailVerified: true,
+      isActive: true,
+    })
+    .returning({ id: drivers.id });
+  if (created == null) throw new Error('Failed to create dev driver');
+  devDriverId = created.id;
   console.log('  Dev driver created (driver@evtivity.local / driver123).');
 } else {
+  const found = existingDriver[0];
+  if (found == null) throw new Error('Failed to read existing dev driver');
+  devDriverId = found.id;
   console.log('  Dev driver already exists.');
+}
+
+// Default payment method for the dev driver. Uses Stripe placeholder IDs
+// (cus_dev_/pm_dev_) so the row shape is correct without requiring a live
+// Stripe call at seed time. Card 4222 2222 2222 2222 is a Stripe test card
+// (Visa, last4 2222). Real Stripe API calls (PaymentIntent, capture) will
+// reject these placeholder IDs, but the portal UI and reservation flow rely
+// only on the row's existence.
+const existingPaymentMethod = await db
+  .select({ id: driverPaymentMethods.id })
+  .from(driverPaymentMethods)
+  .where(eq(driverPaymentMethods.driverId, devDriverId))
+  .limit(1);
+if (existingPaymentMethod.length === 0) {
+  await db.insert(driverPaymentMethods).values({
+    driverId: devDriverId,
+    stripeCustomerId: 'cus_dev_driver',
+    stripePaymentMethodId: 'pm_dev_driver_visa_2222',
+    cardBrand: 'visa',
+    cardLast4: '2222',
+    isDefault: true,
+  });
+  console.log('  Dev driver payment method created (Visa **** 2222).');
+} else {
+  console.log('  Dev driver payment method already exists.');
 }
 
 // Smart charging template: restrict IoCharger stations to off-peak window

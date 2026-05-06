@@ -301,9 +301,11 @@ export function ReservationCreate(): React.JSX.Element {
                 )}
               </div>
             </div>
-            {maxHours > 0 && (
-              <InfoNote>{t('reservations.maxHoursHint', { hours: maxHours })}</InfoNote>
-            )}
+            <InfoNote>
+              {maxHours > 0
+                ? `${t('reservations.maxHoursHint', { hours: maxHours })} ${t('reservations.noShowFeeNote')}`
+                : t('reservations.noShowFeeNote')}
+            </InfoNote>
             {isStartInFuture && <InfoNote>{t('reservations.scheduledNote')}</InfoNote>}
             <div className="space-y-2">
               <Label>{t('reservations.driver')}</Label>
@@ -314,7 +316,6 @@ export function ReservationCreate(): React.JSX.Element {
                 </p>
               )}
             </div>
-            <InfoNote>{t('reservations.noShowFeeNote')}</InfoNote>
             {createMutation.isError && (
               <p className="text-sm text-destructive">{getErrorMessage(createMutation.error, t)}</p>
             )}
