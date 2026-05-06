@@ -856,6 +856,8 @@
     "searchHint": "按定价组 ID、名称或描述搜索",
     "idleFee": "闲置费 / 分钟",
     "idleFeePricePerMinute": "闲置费(每分钟)",
+    "reservationFeePerMinute": "预约保留费（每分钟）",
+    "reservationFeeHelper": "按预约开始至充电会话开始之间的时长收取。",
     "taxRate": "税率",
     "status": "状态",
     "active": "活跃",

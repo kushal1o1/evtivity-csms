@@ -856,6 +856,8 @@
     "searchHint": "요금 그룹 ID, 이름 또는 설명으로 검색",
     "idleFee": "유휴 요금 / 분",
     "idleFeePricePerMinute": "유휴 요금 (분당)",
+    "reservationFeePerMinute": "예약 요금 (분당)",
+    "reservationFeeHelper": "예약 시작부터 세션 시작까지의 시간에 대해 청구됩니다.",
     "taxRate": "세율",
     "status": "상태",
     "active": "활성",

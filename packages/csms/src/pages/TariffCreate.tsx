@@ -25,6 +25,7 @@ interface Tariff {
   pricePerSession: string | null;
   isActive: boolean;
   idleFeePricePerMinute: string | null;
+  reservationFeePerMinute: string | null;
   taxRate: string | null;
   restrictions: Record<string, unknown> | null;
   priority: number;
@@ -42,6 +43,7 @@ export function TariffCreate(): React.JSX.Element {
   const [pricePerMinute, setPricePerMinute] = useState('');
   const [pricePerSession, setPricePerSession] = useState('');
   const [idleFeePricePerMinute, setIdleFeePricePerMinute] = useState('');
+  const [reservationFeePerMinute, setReservationFeePerMinute] = useState('');
   const [taxRate, setTaxRate] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
@@ -72,6 +74,7 @@ export function TariffCreate(): React.JSX.Element {
       pricePerMinute?: string;
       pricePerSession?: string;
       idleFeePricePerMinute?: string;
+      reservationFeePerMinute?: string;
       taxRate?: string;
       restrictions?: Record<string, unknown> | null;
       isDefault?: boolean;
@@ -137,6 +140,7 @@ export function TariffCreate(): React.JSX.Element {
       pricePerMinute?: string;
       pricePerSession?: string;
       idleFeePricePerMinute?: string;
+      reservationFeePerMinute?: string;
       taxRate?: string;
       restrictions?: Record<string, unknown> | null;
       isDefault?: boolean;
@@ -145,6 +149,8 @@ export function TariffCreate(): React.JSX.Element {
     if (pricePerMinute.trim() !== '') body.pricePerMinute = pricePerMinute;
     if (pricePerSession.trim() !== '') body.pricePerSession = pricePerSession;
     if (idleFeePricePerMinute.trim() !== '') body.idleFeePricePerMinute = idleFeePricePerMinute;
+    if (reservationFeePerMinute.trim() !== '')
+      body.reservationFeePerMinute = reservationFeePerMinute;
     if (taxRate.trim() !== '') body.taxRate = taxRate;
     const { restrictions, isDefault } = buildRestrictions();
     body.restrictions = restrictions;
@@ -240,6 +246,18 @@ export function TariffCreate(): React.JSX.Element {
                 }}
                 placeholder="0.10"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tariff-reservation-fee">{t('pricing.reservationFeePerMinute')}</Label>
+              <Input
+                id="tariff-reservation-fee"
+                value={reservationFeePerMinute}
+                onChange={(e) => {
+                  setReservationFeePerMinute(e.target.value);
+                }}
+                placeholder="0.05"
+              />
+              <p className="text-xs text-muted-foreground">{t('pricing.reservationFeeHelper')}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="tariff-tax-rate">{t('pricing.taxRate')}</Label>

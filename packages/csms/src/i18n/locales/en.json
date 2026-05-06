@@ -856,6 +856,8 @@
     "searchHint": "Search by pricing group ID, name, or description",
     "idleFee": "Idle Fee / Min",
     "idleFeePricePerMinute": "Idle Fee (Per Min)",
+    "reservationFeePerMinute": "Reservation Fee (Per Min)",
+    "reservationFeeHelper": "Charged for the time between reservation start and session start.",
     "taxRate": "Tax Rate",
     "status": "Status",
     "active": "Active",

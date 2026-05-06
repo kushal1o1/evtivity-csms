@@ -74,6 +74,25 @@ interface PaymentMethod {
   isDefault: boolean;
 }
 
+function formatDateTimeLocal(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getDefaultStartsAt(): string {
+  const d = new Date(Date.now() + 5 * 60 * 1000);
+  d.setSeconds(0, 0);
+  const remainder = d.getMinutes() % 5;
+  if (remainder !== 0) d.setMinutes(d.getMinutes() + (5 - remainder));
+  return formatDateTimeLocal(d);
+}
+
+function getDefaultExpiresAt(startsAtLocal: string): string {
+  const start = new Date(startsAtLocal);
+  if (!Number.isFinite(start.getTime())) return '';
+  return formatDateTimeLocal(new Date(start.getTime() + 60 * 60 * 1000));
+}
+
 function connectorStatusVariant(): 'secondary' {
   return 'secondary';
 }
@@ -135,11 +154,14 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [showEvWarning, setShowEvWarning] = useState(false);
 
-  // Reserve-mode-only state. Default expires = startsAt + 1h, recalculated
-  // when the user changes startsAt. Both stored as datetime-local strings so
+  // Reserve-mode defaults: startsAt = now + 5 min rounded up to the next
+  // 5-minute boundary (always future, even after a few seconds of form-fill);
+  // expiresAt = startsAt + 1 hour. Both stored as datetime-local strings so
   // they round-trip through the input control without timezone surprises.
-  const [reserveStartsAt, setReserveStartsAt] = useState('');
-  const [reserveExpiresAt, setReserveExpiresAt] = useState('');
+  const [reserveStartsAt, setReserveStartsAt] = useState(getDefaultStartsAt);
+  const [reserveExpiresAt, setReserveExpiresAt] = useState(() =>
+    getDefaultExpiresAt(getDefaultStartsAt()),
+  );
   const [isReserving, setIsReserving] = useState(false);
 
   const {
@@ -264,7 +286,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
   // list, which re-fetches via query invalidation in Reservations.tsx (the
   // user lands on the new entry without an extra step).
   async function handleReserve(): Promise<void> {
-    if (stationId == null || reserveExpiresAt === '') return;
+    if (stationId == null || reserveStartsAt === '' || reserveExpiresAt === '') return;
     setError('');
     // datetime-local strings without TZ parse as local time. Browsers vary on
     // whether an unparsable value yields NaN or throws on toISOString -- guard
@@ -631,7 +653,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
           <CardContent className="p-4 pt-0 space-y-3">
             <div>
               <label className="text-sm font-medium" htmlFor="reserveStartsAt">
-                {t('reservations.startsAt')} ({t('reservations.evseIdOptional')})
+                {t('reservations.startsAt')}
               </label>
               <Input
                 id="reserveStartsAt"
@@ -674,7 +696,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
             <Button
               className="w-full gap-2"
               size="lg"
-              disabled={isReserving || reserveExpiresAt === ''}
+              disabled={isReserving || reserveStartsAt === '' || reserveExpiresAt === ''}
               onClick={() => void handleReserve()}
             >
               <CalendarClock className="h-5 w-5" />

@@ -582,25 +582,54 @@ export function reservationRoutes(app: FastifyInstance): void {
         return;
       }
 
+      // Validate driverId references a real row before INSERT so we surface a
+      // 400 instead of letting Postgres raise an FK violation (which the
+      // generic error handler would mask as "Internal server error").
+      if (body.driverId != null) {
+        const [driverRow] = await db
+          .select({ id: drivers.id })
+          .from(drivers)
+          .where(eq(drivers.id, body.driverId));
+        if (driverRow == null) {
+          await reply.status(400).send({ error: 'Driver not found', code: 'DRIVER_NOT_FOUND' });
+          return;
+        }
+      }
+
       const reservationId = await getNextReservationId();
 
       // Determine if this is a future-scheduled reservation
       const isFutureScheduled =
         body.startsAt != null && new Date(body.startsAt).getTime() > Date.now();
 
-      // Insert reservation row
-      const [reservation] = await db
-        .insert(reservations)
-        .values({
-          reservationId,
-          stationId: station.id,
-          evseId: resolvedEvseId,
-          driverId: body.driverId ?? null,
-          status: isFutureScheduled ? 'scheduled' : 'active',
-          expiresAt: new Date(body.expiresAt),
-          ...(body.startsAt != null ? { startsAt: new Date(body.startsAt) } : {}),
-        })
-        .returning();
+      // Insert reservation row. Wrap in try/catch so unexpected DB errors
+      // (e.g. unique-constraint races on reservation_id) bubble back as a
+      // structured 500 with the actual message instead of the generic
+      // "Internal server error" from the global Fastify handler.
+      let reservation: typeof reservations.$inferSelect | undefined;
+      try {
+        const inserted = await db
+          .insert(reservations)
+          .values({
+            reservationId,
+            stationId: station.id,
+            evseId: resolvedEvseId,
+            driverId: body.driverId ?? null,
+            status: isFutureScheduled ? 'scheduled' : 'active',
+            expiresAt: new Date(body.expiresAt),
+            ...(body.startsAt != null ? { startsAt: new Date(body.startsAt) } : {}),
+          })
+          .returning();
+        reservation = inserted[0];
+      } catch (err) {
+        request.log.error(
+          { err, stationId: body.stationId, driverId: body.driverId },
+          'Reservation INSERT failed',
+        );
+        const message = err instanceof Error ? err.message : 'Failed to create reservation';
+        await reply.status(500).send({ error: message, code: 'RESERVATION_CREATE_FAILED' });
+        return;
+      }
 
       if (reservation == null) {
         await reply

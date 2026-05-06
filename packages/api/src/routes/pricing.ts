@@ -119,6 +119,11 @@ const createTariffBody = z.object({
   idleFeePricePerMinute: nonNegativePrice
     .optional()
     .describe('Idle fee per minute as a decimal string'),
+  reservationFeePerMinute: nonNegativePrice
+    .optional()
+    .describe(
+      'Reservation holding fee per minute as a decimal string. Charged for the time between reservation start and session start.',
+    ),
   taxRate: nonNegativePrice.optional().describe('Tax rate as a decimal (e.g. 0.08 for 8%)'),
   restrictions: z
     .record(z.unknown())
@@ -146,6 +151,9 @@ const updateTariffBody = z.object({
   idleFeePricePerMinute: nullableNonNegativePrice
     .optional()
     .describe('Idle fee per minute; null to clear'),
+  reservationFeePerMinute: nullableNonNegativePrice
+    .optional()
+    .describe('Reservation holding fee per minute; null to clear'),
   taxRate: nullableNonNegativePrice.optional().describe('Tax rate; null to clear'),
   restrictions: z
     .record(z.unknown())
@@ -439,6 +447,7 @@ export function pricingRoutes(app: FastifyInstance): void {
           pricePerSession: body.pricePerSession,
           isActive: body.isActive,
           idleFeePricePerMinute: body.idleFeePricePerMinute,
+          reservationFeePerMinute: body.reservationFeePerMinute,
           taxRate: body.taxRate,
           restrictions: restrictions ?? null,
           priority,
@@ -550,6 +559,8 @@ export function pricingRoutes(app: FastifyInstance): void {
       if (body.isActive !== undefined) updateData['isActive'] = body.isActive;
       if (body.idleFeePricePerMinute !== undefined)
         updateData['idleFeePricePerMinute'] = body.idleFeePricePerMinute;
+      if (body.reservationFeePerMinute !== undefined)
+        updateData['reservationFeePerMinute'] = body.reservationFeePerMinute;
       if (body.taxRate !== undefined) updateData['taxRate'] = body.taxRate;
       if (body.restrictions !== undefined) {
         updateData['restrictions'] = body.restrictions;

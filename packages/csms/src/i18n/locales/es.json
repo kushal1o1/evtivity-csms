@@ -860,6 +860,8 @@
     "searchHint": "Buscar por ID de grupo, nombre o descripcion",
     "idleFee": "Tarifa inactiva / min",
     "idleFeePricePerMinute": "Tarifa inactiva (por min)",
+    "reservationFeePerMinute": "Tarifa de reserva (por min)",
+    "reservationFeeHelper": "Se cobra por el tiempo entre el inicio de la reserva y el inicio de la sesion.",
     "taxRate": "Tasa impositiva",
     "status": "Estado",
     "active": "Activo",

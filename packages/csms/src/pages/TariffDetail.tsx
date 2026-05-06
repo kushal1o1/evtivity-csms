@@ -40,6 +40,7 @@ interface Tariff {
   pricePerSession: string | null;
   isActive: boolean;
   idleFeePricePerMinute: string | null;
+  reservationFeePerMinute: string | null;
   taxRate: string | null;
   restrictions: TariffRestrictions | null;
   priority: number;
@@ -71,6 +72,7 @@ export function TariffDetail(): React.JSX.Element {
   const [pricePerMinute, setPricePerMinute] = useState('');
   const [pricePerSession, setPricePerSession] = useState('');
   const [idleFeePricePerMinute, setIdleFeePricePerMinute] = useState('');
+  const [reservationFeePerMinute, setReservationFeePerMinute] = useState('');
   const [taxRate, setTaxRate] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [hasSubmitted, setHasSubmitted] = useState(false);
@@ -108,6 +110,7 @@ export function TariffDetail(): React.JSX.Element {
       pricePerMinute?: string | null;
       pricePerSession?: string | null;
       idleFeePricePerMinute?: string | null;
+      reservationFeePerMinute?: string | null;
       taxRate?: string | null;
       isActive?: boolean;
       restrictions?: Record<string, unknown> | null;
@@ -173,6 +176,7 @@ export function TariffDetail(): React.JSX.Element {
     setPricePerMinute(tariff.pricePerMinute ?? '');
     setPricePerSession(tariff.pricePerSession ?? '');
     setIdleFeePricePerMinute(tariff.idleFeePricePerMinute ?? '');
+    setReservationFeePerMinute(tariff.reservationFeePerMinute ?? '');
     setTaxRate(tariff.taxRate ?? '');
     setIsActive(tariff.isActive);
 
@@ -230,6 +234,8 @@ export function TariffDetail(): React.JSX.Element {
       pricePerMinute: pricePerMinute.trim() !== '' ? pricePerMinute : null,
       pricePerSession: pricePerSession.trim() !== '' ? pricePerSession : null,
       idleFeePricePerMinute: idleFeePricePerMinute.trim() !== '' ? idleFeePricePerMinute : null,
+      reservationFeePerMinute:
+        reservationFeePerMinute.trim() !== '' ? reservationFeePerMinute : null,
       taxRate: taxRate.trim() !== '' ? taxRate : null,
       isActive,
       restrictions,
@@ -370,6 +376,18 @@ export function TariffDetail(): React.JSX.Element {
                   }}
                   placeholder="0.10"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-reservation-fee">{t('pricing.reservationFeePerMinute')}</Label>
+                <Input
+                  id="edit-reservation-fee"
+                  value={reservationFeePerMinute}
+                  onChange={(e) => {
+                    setReservationFeePerMinute(e.target.value);
+                  }}
+                  placeholder="0.05"
+                />
+                <p className="text-xs text-muted-foreground">{t('pricing.reservationFeeHelper')}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-tax-rate">{t('pricing.taxRate')}</Label>
@@ -566,6 +584,10 @@ export function TariffDetail(): React.JSX.Element {
               <div>
                 <dt className="text-muted-foreground">{t('pricing.idleFeePricePerMinute')}</dt>
                 <dd className="font-medium">{tariff.idleFeePricePerMinute ?? '--'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">{t('pricing.reservationFeePerMinute')}</dt>
+                <dd className="font-medium">{tariff.reservationFeePerMinute ?? '--'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.taxRate')}</dt>

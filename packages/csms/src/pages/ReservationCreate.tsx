@@ -40,22 +40,28 @@ interface Site {
   name: string;
 }
 
-function getEndOfDay(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${String(year)}-${month}-${day}T23:59`;
+function formatDateTimeLocal(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function getCurrentDateTime(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  return `${String(year)}-${month}-${day}T${hours}:${minutes}`;
+// Default startsAt: now + 5 min, rounded UP to the next 5-minute boundary.
+// Always lands in the future even after a few seconds of form-fill, and
+// aligns to a tidy clock minute. Prevents the previous foot-gun where the
+// pre-filled "now" became a past timestamp by the time the user hit Save.
+function getDefaultStartsAt(): string {
+  const d = new Date(Date.now() + 5 * 60 * 1000);
+  d.setSeconds(0, 0);
+  const remainder = d.getMinutes() % 5;
+  if (remainder !== 0) d.setMinutes(d.getMinutes() + (5 - remainder));
+  return formatDateTimeLocal(d);
+}
+
+// Default reservation length: 1 hour after startsAt.
+function getDefaultExpiresAt(startsAtLocal: string): string {
+  const start = new Date(startsAtLocal);
+  if (!Number.isFinite(start.getTime())) return '';
+  return formatDateTimeLocal(new Date(start.getTime() + 60 * 60 * 1000));
 }
 
 export function ReservationCreate(): React.JSX.Element {
@@ -66,8 +72,8 @@ export function ReservationCreate(): React.JSX.Element {
   const [selectedStation, setSelectedStation] = useState<StationSelection | null>(null);
   const [selectedConnectorKey, setSelectedConnectorKey] = useState('');
   const [selectedDriver, setSelectedDriver] = useState<{ id: string; name: string } | null>(null);
-  const [startsAt, setStartsAt] = useState(getCurrentDateTime);
-  const [expiresAt, setExpiresAt] = useState(getEndOfDay);
+  const [startsAt, setStartsAt] = useState(getDefaultStartsAt);
+  const [expiresAt, setExpiresAt] = useState(() => getDefaultExpiresAt(getDefaultStartsAt()));
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Fetch sites for the site dropdown
@@ -132,6 +138,7 @@ export function ReservationCreate(): React.JSX.Element {
   function getValidationErrors(): Record<string, string> {
     const errors: Record<string, string> = {};
     if (selectedStation == null) errors.stationId = t('validation.required');
+    if (startsAt.trim() === '') errors.startsAt = t('validation.required');
     if (expiresAt.trim() === '') errors.expiresAt = t('validation.required');
     return errors;
   }
