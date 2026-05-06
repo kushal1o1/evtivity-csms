@@ -7,6 +7,7 @@
     "save": "Speichern",
     "saving": "Wird gespeichert...",
     "cancel": "Abbrechen",
+    "keep": "Behalten",
     "back": "Zurück",
     "previous": "Vorherige",
     "next": "Weiter",
@@ -131,7 +132,9 @@
     "lastUpdated": "Aktualisiert {{time}}",
     "free": "Kostenlos",
     "battery": "Batterie",
-    "collectingData": "Daten werden gesammelt..."
+    "collectingData": "Daten werden gesammelt...",
+    "fromReservation": "Aus Reservierung",
+    "fromReservationHint": "Reservierung anzeigen, die diese Sitzung gestartet hat"
   },
   "payments": {
     "title": "Zahlungsmethoden",
@@ -343,15 +346,35 @@
     "cancelled": "Storniert",
     "used": "Verwendet",
     "expiresAt": "Läuft ab um",
+    "startsAt": "Beginnt um",
     "newReservation": "Neue Reservierung",
+    "findStation": "Station zum Reservieren finden",
+    "searchPlaceholder": "Nach Stations-ID oder Standortname suchen",
+    "reserveConnector": "Anschluss reservieren",
     "stationId": "Stations-ID",
-    "evseId": "EVSE-Nummer (Anschluss)",
+    "stationSearchPlaceholder": "Nach Stations-ID oder Standort suchen...",
+    "selectStation": "Station auswählen",
+    "connector": "Anschluss",
+    "anyConnector": "Beliebiger Anschluss",
+    "evseId": "Anschluss",
     "evseIdOptional": "Optional",
     "creating": "Wird erstellt...",
     "cancelSuccess": "Reservierung storniert.",
     "cancelFailed": "Reservierung konnte nicht storniert werden.",
     "createSuccess": "Reservierung erstellt.",
-    "createFailed": "Reservierung konnte nicht erstellt werden."
+    "createFailed": "Reservierung konnte nicht erstellt werden.",
+    "confirmCancelTitle": "Diese Reservierung stornieren?",
+    "confirmCancelDescription": "Reservierung an {{station}}, die am {{time}} ablauft, stornieren? Dies kann nicht ruckgangig gemacht werden.",
+    "confirmCancelScheduledDescription": "Reservierung an {{station}} mit Beginn am {{startsTime}} (Ablauf {{expiresTime}}) stornieren? Dies kann nicht ruckgangig gemacht werden."
+  },
+  "reservationDetail": {
+    "title": "Reservierung",
+    "notFound": "Reservierung nicht gefunden.",
+    "station": "Ladestation",
+    "schedule": "Zeitplan",
+    "createdAt": "Erstellt",
+    "viewSession": "Ladesitzung anzeigen",
+    "viewSessionHint": "Sitzung anzeigen, die diese Reservierung verwendet hat"
   },
   "supportCases": {
     "title": "Support",

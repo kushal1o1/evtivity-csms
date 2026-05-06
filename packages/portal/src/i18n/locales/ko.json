@@ -7,6 +7,7 @@
     "save": "저장",
     "saving": "저장 중...",
     "cancel": "취소",
+    "keep": "유지",
     "back": "뒤로",
     "previous": "이전",
     "next": "다음",
@@ -133,7 +134,9 @@
     "lastUpdated": "{{time}} 업데이트됨",
     "free": "무료",
     "battery": "배터리",
-    "collectingData": "데이터 수집 중..."
+    "collectingData": "데이터 수집 중...",
+    "fromReservation": "예약에서 시작",
+    "fromReservationHint": "이 세션을 시작한 예약 보기"
   },
   "payments": {
     "title": "결제 수단",
@@ -346,15 +349,35 @@
     "cancelled": "취소됨",
     "used": "사용됨",
     "expiresAt": "만료 시간",
+    "startsAt": "시작 시간",
     "newReservation": "새 예약",
+    "findStation": "예약할 충전소 찾기",
+    "searchPlaceholder": "충전소 ID 또는 위치 이름으로 검색",
+    "reserveConnector": "커넥터 예약",
     "stationId": "충전소 ID",
-    "evseId": "EVSE (포트) 번호",
+    "stationSearchPlaceholder": "충전소 ID 또는 위치로 검색...",
+    "selectStation": "충전소 선택",
+    "connector": "커넥터",
+    "anyConnector": "모든 커넥터",
+    "evseId": "커넥터",
     "evseIdOptional": "선택 사항",
     "creating": "생성 중...",
     "cancelSuccess": "예약이 취소되었습니다.",
     "cancelFailed": "예약 취소에 실패했습니다.",
     "createSuccess": "예약이 생성되었습니다.",
-    "createFailed": "예약 생성에 실패했습니다."
+    "createFailed": "예약 생성에 실패했습니다.",
+    "confirmCancelTitle": "이 예약을 취소하시겠습니까?",
+    "confirmCancelDescription": "{{time}}에 만료되는 {{station}} 예약을 취소하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "confirmCancelScheduledDescription": "{{startsTime}}에 시작하는 {{station}} 예약(만료: {{expiresTime}})을 취소하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+  },
+  "reservationDetail": {
+    "title": "예약",
+    "notFound": "예약을 찾을 수 없습니다.",
+    "station": "충전소",
+    "schedule": "일정",
+    "createdAt": "생성됨",
+    "viewSession": "충전 세션 보기",
+    "viewSessionHint": "이 예약을 사용한 세션 보기"
   },
   "supportCases": {
     "title": "지원",

@@ -16,6 +16,8 @@ import {
   AlertCircle,
   Check,
   Leaf,
+  CalendarClock,
+  ChevronRight,
 } from 'lucide-react';
 import { CopyableId } from '@/components/copyable-id';
 import { Button } from '@/components/ui/button';
@@ -59,6 +61,12 @@ interface SessionDetailData {
     capturedAmountCents: number | null;
     currency: string;
   } | null;
+  reservationId: string | null;
+}
+
+interface PortalFeatures {
+  reservationEnabled: boolean;
+  supportEnabled: boolean;
 }
 
 interface PowerHistoryResponse {
@@ -141,6 +149,12 @@ export function SessionDetail(): React.JSX.Element {
   const { data: vehicleEfficiency } = useQuery({
     queryKey: ['portal-vehicle-efficiency'],
     queryFn: () => api.get<VehicleEfficiency>('/v1/portal/vehicles/efficiency'),
+  });
+
+  const { data: features } = useQuery({
+    queryKey: ['portal-features'],
+    queryFn: () => api.get<PortalFeatures>('/v1/portal/features'),
+    staleTime: 5 * 60_000,
   });
 
   const stopMutation = useMutation({
@@ -353,6 +367,29 @@ export function SessionDetail(): React.JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      {/* Reservation link (hidden when reservations disabled system-wide) */}
+      {session.reservationId != null && features?.reservationEnabled !== false && (
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            void navigate(`/reservations/${session.reservationId ?? ''}`);
+          }}
+        >
+          <CardContent className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <CalendarClock className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-sm font-medium">{t('sessionDetail.fromReservation')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('sessionDetail.fromReservationHint')}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Session details (completed/all sessions) */}
       <Card>

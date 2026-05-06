@@ -36,6 +36,7 @@ const portalSessionListItem = z
     siteAddress: z.string().nullable(),
     siteCity: z.string().nullable(),
     siteState: z.string().nullable(),
+    reservationId: z.string().nullable(),
   })
   .passthrough();
 
@@ -171,6 +172,7 @@ export function portalSessionRoutes(app: FastifyInstance): void {
             siteAddress: sites.address,
             siteCity: sites.city,
             siteState: sites.state,
+            reservationId: chargingSessions.reservationId,
           })
           .from(chargingSessions)
           .leftJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
@@ -342,6 +344,7 @@ export function portalSessionRoutes(app: FastifyInstance): void {
           driverId: chargingSessions.driverId,
           updatedAt: chargingSessions.updatedAt,
           idleStartedAt: chargingSessions.idleStartedAt,
+          reservationId: chargingSessions.reservationId,
         })
         .from(chargingSessions)
         .leftJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))

@@ -7,6 +7,7 @@
     "save": "保存",
     "saving": "保存中...",
     "cancel": "取消",
+    "keep": "保留",
     "back": "返回",
     "previous": "上一页",
     "next": "下一页",
@@ -133,7 +134,9 @@
     "lastUpdated": "更新于 {{time}}",
     "free": "免费",
     "battery": "电池电量",
-    "collectingData": "正在收集数据..."
+    "collectingData": "正在收集数据...",
+    "fromReservation": "来自预约",
+    "fromReservationHint": "查看启动此会话的预约"
   },
   "payments": {
     "title": "支付方式",
@@ -346,15 +349,35 @@
     "cancelled": "已取消",
     "used": "已使用",
     "expiresAt": "到期时间",
+    "startsAt": "开始时间",
     "newReservation": "新预约",
+    "findStation": "查找要预约的站点",
+    "searchPlaceholder": "按站点 ID 或位置名称搜索",
+    "reserveConnector": "预约充电接口",
     "stationId": "站点ID",
-    "evseId": "EVSE (端口) 编号",
+    "stationSearchPlaceholder": "按站点 ID 或位置搜索...",
+    "selectStation": "选择站点",
+    "connector": "充电接口",
+    "anyConnector": "任意充电接口",
+    "evseId": "充电接口",
     "evseIdOptional": "可选",
     "creating": "创建中...",
     "cancelSuccess": "预约已取消。",
     "cancelFailed": "取消预约失败。",
     "createSuccess": "预约已创建。",
-    "createFailed": "创建预约失败。"
+    "createFailed": "创建预约失败。",
+    "confirmCancelTitle": "取消此预约？",
+    "confirmCancelDescription": "取消您在 {{station}} 的预约（到期时间 {{time}}）？此操作无法撤销。",
+    "confirmCancelScheduledDescription": "取消您在 {{station}} 的预约（开始时间 {{startsTime}}，到期时间 {{expiresTime}}）？此操作无法撤销。"
+  },
+  "reservationDetail": {
+    "title": "预约",
+    "notFound": "未找到预约。",
+    "station": "充电站",
+    "schedule": "时间安排",
+    "createdAt": "创建时间",
+    "viewSession": "查看充电会话",
+    "viewSessionHint": "查看使用此预约的会话"
   },
   "supportCases": {
     "title": "客服支持",

@@ -79,6 +79,20 @@ const CHAOS_FINISHING_ACTIONS: ReadonlySet<string> = new Set([
   'injectFault',
 ]);
 
+// Reserved is a connector state where the station is holding the slot for a
+// specific reservation. Chaos must NOT randomly fire `sendStatusNotification`
+// here -- the random status clobbers the Reserved state with Available the
+// moment a reservation is made, breaking the reservation gate end-to-end.
+// Allow only off-station actions (offline, faults) and the holder's own
+// physical actions (plugIn, authorize) which are how a real holder would
+// transition out of Reserved.
+const CHAOS_RESERVED_ACTIONS: ReadonlySet<string> = new Set([
+  'plugIn',
+  'authorize',
+  'goOffline',
+  'injectFault',
+]);
+
 /**
  * Filter chaos actions to those valid for the given station/connector state.
  * Pure function exposed for unit testing; chaos uses it to skip ticks that
@@ -93,6 +107,11 @@ export function filterChaosActions<T extends { name: string }>(
   if (connectorStatus === 'Finishing') {
     return actions.filter(
       (a) => !CHAOS_STATE_MUTATING.has(a.name) || CHAOS_FINISHING_ACTIONS.has(a.name),
+    );
+  }
+  if (connectorStatus === 'Reserved') {
+    return actions.filter(
+      (a) => !CHAOS_STATE_MUTATING.has(a.name) || CHAOS_RESERVED_ACTIONS.has(a.name),
     );
   }
   const stateActions = new Set(CHAOS_VALID_BY_STATE[state]);

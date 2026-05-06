@@ -333,7 +333,12 @@ export function portalGuestRoutes(app: FastifyInstance): void {
           and(
             eq(reservations.stationId, station.id),
             or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
-            eq(reservations.status, 'active'),
+            or(eq(reservations.status, 'active'), eq(reservations.status, 'scheduled')),
+            // Window-current only: a scheduled reservation for the future must
+            // not block guest checkout today. Captures the worker-activation-lag
+            // window where status is still 'scheduled' past startsAt.
+            sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) <= NOW()`,
+            sql`${reservations.expiresAt} > NOW()`,
           ),
         )
         .limit(1);

@@ -683,6 +683,7 @@ describe('Portal charger routes - handler logic', () => {
           reservationId: 1,
           stationOcppId: 'CS-001',
           status: 'active',
+          startsAt: null,
           expiresAt: '2025-01-01',
           createdAt: '2024-12-01',
         },

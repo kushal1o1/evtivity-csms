@@ -7,6 +7,7 @@
     "save": "Guardar",
     "saving": "Guardando...",
     "cancel": "Cancelar",
+    "keep": "Mantener",
     "back": "Volver",
     "previous": "Anterior",
     "next": "Siguiente",
@@ -133,7 +134,9 @@
     "lastUpdated": "Actualizado {{time}}",
     "free": "Gratis",
     "battery": "Bateria",
-    "collectingData": "Recopilando datos..."
+    "collectingData": "Recopilando datos...",
+    "fromReservation": "Desde la reserva",
+    "fromReservationHint": "Ver la reserva que inicio esta sesion"
   },
   "payments": {
     "title": "Metodos de Pago",
@@ -346,15 +349,35 @@
     "cancelled": "Cancelada",
     "used": "Usada",
     "expiresAt": "Expira",
+    "startsAt": "Comienza",
     "newReservation": "Nueva reserva",
+    "findStation": "Encontrar una estacion para reservar",
+    "searchPlaceholder": "Buscar por ID de estacion o nombre del sitio",
+    "reserveConnector": "Reservar conector",
     "stationId": "ID de estacion",
-    "evseId": "Numero de EVSE (puerto)",
+    "stationSearchPlaceholder": "Buscar por ID de estacion o sitio...",
+    "selectStation": "Seleccione una estacion",
+    "connector": "Conector",
+    "anyConnector": "Cualquier conector",
+    "evseId": "Conector",
     "evseIdOptional": "Opcional",
     "creating": "Creando...",
     "cancelSuccess": "Reserva cancelada.",
     "cancelFailed": "Error al cancelar reserva.",
     "createSuccess": "Reserva creada.",
-    "createFailed": "Error al crear reserva."
+    "createFailed": "Error al crear reserva.",
+    "confirmCancelTitle": "Cancelar esta reserva?",
+    "confirmCancelDescription": "Cancelar tu reserva en {{station}} que expira el {{time}}? Esta accion no se puede deshacer.",
+    "confirmCancelScheduledDescription": "Cancelar tu reserva en {{station}} que empieza el {{startsTime}} (expira {{expiresTime}})? Esta accion no se puede deshacer."
+  },
+  "reservationDetail": {
+    "title": "Reserva",
+    "notFound": "Reserva no encontrada.",
+    "station": "Estacion",
+    "schedule": "Horario",
+    "createdAt": "Creada",
+    "viewSession": "Ver sesion de carga",
+    "viewSessionHint": "Ver la sesion que utilizo esta reserva"
   },
   "supportCases": {
     "title": "Soporte",

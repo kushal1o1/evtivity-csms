@@ -7,6 +7,7 @@
     "save": "Save",
     "saving": "Saving...",
     "cancel": "Cancel",
+    "keep": "Keep",
     "back": "Back",
     "previous": "Previous",
     "next": "Next",
@@ -133,7 +134,9 @@
     "lastUpdated": "Updated {{time}}",
     "free": "Free",
     "battery": "Battery",
-    "collectingData": "Collecting data..."
+    "collectingData": "Collecting data...",
+    "fromReservation": "From Reservation",
+    "fromReservationHint": "View the reservation that started this session"
   },
   "payments": {
     "title": "Payment Methods",
@@ -346,15 +349,35 @@
     "cancelled": "Cancelled",
     "used": "Used",
     "expiresAt": "Expires at",
+    "startsAt": "Starts at",
     "newReservation": "New reservation",
+    "findStation": "Find a station to reserve",
+    "searchPlaceholder": "Search by station ID or site name",
+    "reserveConnector": "Reserve Connector",
     "stationId": "Station ID",
-    "evseId": "EVSE (port) number",
+    "stationSearchPlaceholder": "Search by station ID or site...",
+    "selectStation": "Select a station",
+    "connector": "Connector",
+    "anyConnector": "Any connector",
+    "evseId": "Connector",
     "evseIdOptional": "Optional",
     "creating": "Creating...",
     "cancelSuccess": "Reservation cancelled.",
     "cancelFailed": "Failed to cancel reservation.",
     "createSuccess": "Reservation created.",
-    "createFailed": "Failed to create reservation."
+    "createFailed": "Failed to create reservation.",
+    "confirmCancelTitle": "Cancel this reservation?",
+    "confirmCancelDescription": "Cancel your reservation at {{station}} expiring {{time}}? This cannot be undone.",
+    "confirmCancelScheduledDescription": "Cancel your reservation at {{station}} starting {{startsTime}} (expires {{expiresTime}})? This cannot be undone."
+  },
+  "reservationDetail": {
+    "title": "Reservation",
+    "notFound": "Reservation not found.",
+    "station": "Station",
+    "schedule": "Schedule",
+    "createdAt": "Created",
+    "viewSession": "View Charging Session",
+    "viewSessionHint": "See the session that used this reservation"
   },
   "supportCases": {
     "title": "Support",

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   ArrowLeft,
+  CalendarClock,
   Info,
   Mail,
   MapPin,
@@ -20,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ReportIssue } from '@/components/ReportIssue';
@@ -102,7 +104,19 @@ function connectorStatusClassName(status: string): string {
   }
 }
 
-export function ChargerDetail(): React.JSX.Element {
+interface ChargerDetailProps {
+  /**
+   * Charge mode (default) presents the Start Charging flow: payment method
+   * picker, Stripe pre-auth, RequestStartTransaction. Reserve mode swaps the
+   * action for a Reserve Connector flow with start/expire pickers and posts
+   * to /v1/portal/reservations. Reused on both routes (`/start/:stationId`
+   * and `/reservations/new/:stationId`) so the connector grid, status,
+   * favorites, and EV-warning logic stay in one place.
+   */
+  mode?: 'charge' | 'reserve';
+}
+
+export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): React.JSX.Element {
   const { t } = useTranslation();
   const { stationId } = useParams<{ stationId: string }>();
   const navigate = useNavigate();
@@ -120,6 +134,13 @@ export function ChargerDetail(): React.JSX.Element {
   const [isStarting, setIsStarting] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [showEvWarning, setShowEvWarning] = useState(false);
+
+  // Reserve-mode-only state. Default expires = startsAt + 1h, recalculated
+  // when the user changes startsAt. Both stored as datetime-local strings so
+  // they round-trip through the input control without timezone surprises.
+  const [reserveStartsAt, setReserveStartsAt] = useState('');
+  const [reserveExpiresAt, setReserveExpiresAt] = useState('');
+  const [isReserving, setIsReserving] = useState(false);
 
   const {
     data: station,
@@ -238,6 +259,61 @@ export function ChargerDetail(): React.JSX.Element {
     }
   }
 
+  // Reserve-mode submit. Posts to the same /v1/portal/reservations endpoint
+  // the old inline form used; on success navigates back to the reservations
+  // list, which re-fetches via query invalidation in Reservations.tsx (the
+  // user lands on the new entry without an extra step).
+  async function handleReserve(): Promise<void> {
+    if (stationId == null || reserveExpiresAt === '') return;
+    setError('');
+    // datetime-local strings without TZ parse as local time. Browsers vary on
+    // whether an unparsable value yields NaN or throws on toISOString -- guard
+    // explicitly so we never POST a malformed body.
+    const expiresDate = new Date(reserveExpiresAt);
+    if (!Number.isFinite(expiresDate.getTime())) {
+      setError(t('reservations.createFailed'));
+      return;
+    }
+    let startsIso: string | undefined;
+    if (reserveStartsAt !== '') {
+      const startsDate = new Date(reserveStartsAt);
+      if (!Number.isFinite(startsDate.getTime())) {
+        setError(t('reservations.createFailed'));
+        return;
+      }
+      startsIso = startsDate.toISOString();
+    }
+    setIsReserving(true);
+    try {
+      const body: {
+        stationId: string;
+        evseId?: number;
+        startsAt?: string;
+        expiresAt: string;
+      } = {
+        stationId,
+        expiresAt: expiresDate.toISOString(),
+      };
+      if (selectedEvseId != null) body.evseId = selectedEvseId;
+      if (startsIso != null) body.startsAt = startsIso;
+      await api.post('/v1/portal/reservations', body);
+      // Mark the list cache stale so Reservations.tsx refetches on mount.
+      // Without this, navigating back to the list shows the cached page
+      // (without the new entry) until the user manually refreshes.
+      await queryClient.invalidateQueries({ queryKey: ['portal-reservations'] });
+      void navigate('/reservations');
+    } catch (err: unknown) {
+      if (err != null && typeof err === 'object' && 'body' in err) {
+        const body = (err as { body: { error?: string } }).body;
+        setError(body.error ?? t('reservations.createFailed'));
+      } else {
+        setError(t('reservations.createFailed'));
+      }
+    } finally {
+      setIsReserving(false);
+    }
+  }
+
   async function handleStart(): Promise<void> {
     if (selectedEvseId == null) return;
     setError('');
@@ -293,16 +369,24 @@ export function ChargerDetail(): React.JSX.Element {
     );
   }
 
+  // Charge-mode payment + start gating only -- reserve mode never needs
+  // payment-method selection or active-session checks.
   const showPaymentSection =
+    mode === 'charge' &&
     selectedEvseId != null &&
     station.paymentEnabled &&
     !isFree &&
     isAuthenticated &&
     !hasActiveSession;
   const showStartButton =
+    mode === 'charge' &&
     selectedEvseId != null &&
     (isFree || !station.paymentEnabled || selectedPm != null) &&
     !hasActiveSession;
+  // Reserve mode shows the time pickers + Reserve button as soon as the
+  // user lands on the page so they can pick a connector OR leave it null.
+  // Reserve allows null evseId (station-level "any connector" reservation).
+  const showReserveSection = mode === 'reserve' && station.isOnline;
 
   return (
     <div className="space-y-4">
@@ -448,10 +532,16 @@ export function ChargerDetail(): React.JSX.Element {
               evse.reservationDriverId != null && evse.reservationDriverId !== currentDriverId;
             const reservedForMe =
               evse.reservationDriverId != null && evse.reservationDriverId === currentDriverId;
+            // Reserve mode: any online connector that doesn't already have an
+            // active reservation is selectable for a future-window reservation
+            // (the backend's time-overlap check will reject a true conflict).
+            // Charge mode keeps the existing startable + reserved-for-me gate.
             const isAvailable =
-              station.isOnline &&
-              !reservedByOther &&
-              (startableStatuses.includes(connectorStatus) || reservedForMe);
+              mode === 'reserve'
+                ? station.isOnline && evse.reservationDriverId == null
+                : station.isOnline &&
+                  !reservedByOther &&
+                  (startableStatuses.includes(connectorStatus) || reservedForMe);
             const isSelected = selectedEvseId === evse.evseId;
 
             const connectorTypes = [
@@ -530,6 +620,68 @@ export function ChargerDetail(): React.JSX.Element {
             );
           })}
         </div>
+      )}
+
+      {/* Reservation time pickers + Reserve button (reserve mode) */}
+      {showReserveSection && (
+        <Card>
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-base">{t('reservations.reserveConnector')}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0 space-y-3">
+            <div>
+              <label className="text-sm font-medium" htmlFor="reserveStartsAt">
+                {t('reservations.startsAt')} ({t('reservations.evseIdOptional')})
+              </label>
+              <Input
+                id="reserveStartsAt"
+                type="datetime-local"
+                value={reserveStartsAt}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setReserveStartsAt(next);
+                  // Auto-suggest expires = starts + 1h, but ONLY when the
+                  // expires field is still empty. We don't try to detect and
+                  // overwrite a previous auto-suggested value -- if the user
+                  // already has a value there, we leave it alone.
+                  if (next !== '' && reserveExpiresAt === '') {
+                    const start = new Date(next);
+                    if (!Number.isNaN(start.getTime())) {
+                      const oneHourLater = new Date(start.getTime() + 60 * 60 * 1000);
+                      // datetime-local format: YYYY-MM-DDTHH:mm
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      const formatted = `${String(oneHourLater.getFullYear())}-${pad(oneHourLater.getMonth() + 1)}-${pad(oneHourLater.getDate())}T${pad(oneHourLater.getHours())}:${pad(oneHourLater.getMinutes())}`;
+                      setReserveExpiresAt(formatted);
+                    }
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium" htmlFor="reserveExpiresAt">
+                {t('reservations.expiresAt')}
+              </label>
+              <Input
+                id="reserveExpiresAt"
+                type="datetime-local"
+                value={reserveExpiresAt}
+                onChange={(e) => {
+                  setReserveExpiresAt(e.target.value);
+                }}
+              />
+            </div>
+            {error !== '' && <p className="text-sm text-destructive">{error}</p>}
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              disabled={isReserving || reserveExpiresAt === ''}
+              onClick={() => void handleReserve()}
+            >
+              <CalendarClock className="h-5 w-5" />
+              {isReserving ? t('reservations.creating') : t('reservations.reserveConnector')}
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {/* Payment method selection */}

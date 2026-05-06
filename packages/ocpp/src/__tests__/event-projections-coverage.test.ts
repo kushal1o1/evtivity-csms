@@ -124,12 +124,6 @@ vi.mock('../services/pki/certificate-projections.js', () => ({
   handleInstallCertificateResult: mockHandleInstallCertificateResult,
 }));
 
-const mockStartExpirationMonitor = vi.fn();
-
-vi.mock('../services/pki/expiration-monitor.js', () => ({
-  startExpirationMonitor: mockStartExpirationMonitor,
-}));
-
 const mockComputeAndSendChargingProfile = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../services/charging-profile-computer.js', () => ({
@@ -3828,20 +3822,6 @@ describe('Event projections - coverage expansion', () => {
       await eventBus.emit('ocpp.DataTransfer', event);
 
       expect(mockDispatchOcpp).toHaveBeenCalledWith(expect.anything(), event);
-    });
-  });
-
-  // ---- expiration monitor ----
-
-  describe('Certificate expiration monitor', () => {
-    it('imports and starts the expiration monitor', async () => {
-      await setup();
-
-      // The dynamic import + startExpirationMonitor call happens asynchronously
-      // We need to wait for the promise to resolve
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(mockStartExpirationMonitor).toHaveBeenCalledWith(expect.anything(), mockPubSub);
     });
   });
 

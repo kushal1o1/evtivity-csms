@@ -57,6 +57,12 @@ const ChargerDetail = lazy(() =>
 const Reservations = lazy(() =>
   import('@/pages/Reservations').then((m) => ({ default: m.Reservations })),
 );
+const ReservationDetail = lazy(() =>
+  import('@/pages/ReservationDetail').then((m) => ({ default: m.ReservationDetail })),
+);
+const ReservationSearch = lazy(() =>
+  import('@/pages/ReservationSearch').then((m) => ({ default: m.ReservationSearch })),
+);
 const RfidCards = lazy(() => import('@/pages/RfidCards').then((m) => ({ default: m.RfidCards })));
 const Vehicles = lazy(() => import('@/pages/Vehicles').then((m) => ({ default: m.Vehicles })));
 const Favorites = lazy(() => import('@/pages/Favorites').then((m) => ({ default: m.Favorites })));
@@ -143,6 +149,12 @@ export function App(): React.JSX.Element {
                   <Route path="sessions" element={<Sessions />} />
                   <Route path="sessions/:id" element={<SessionDetail />} />
                   <Route path="reservations" element={<Reservations />} />
+                  <Route path="reservations/new" element={<ReservationSearch />} />
+                  <Route
+                    path="reservations/new/:stationId"
+                    element={<ChargerDetail mode="reserve" />}
+                  />
+                  <Route path="reservations/:id" element={<ReservationDetail />} />
                   <Route path="support" element={<SupportCases />} />
                   <Route path="support/new" element={<NewSupportCase />} />
                   <Route path="support/:id" element={<SupportCaseDetail />} />

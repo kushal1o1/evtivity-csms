@@ -173,9 +173,9 @@ export function ReservationDetailsTab({
       setReassignConnectorKey('');
       toast({ title: t('reservations.reassignSuccess'), variant: 'success' });
     },
-    onError: (error) => {
-      toast({ title: getErrorMessage(error, t), variant: 'destructive' });
-    },
+    // Errors are rendered inline inside the Reassign dialog; no toast here to
+    // avoid showing the same message twice (and especially not stacking it on
+    // every retry click).
   });
 
   const reassignConnectorsQuery = useQuery({

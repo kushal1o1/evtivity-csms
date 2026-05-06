@@ -1988,6 +1988,13 @@ export class StationSimulator {
     reservationId: number,
     reservationUpdateStatus: string,
   ): Promise<Record<string, unknown>> {
+    // ReservationStatusUpdate is OCPP 2.1 only. On 1.6 the CSMS replies with
+    // NotImplemented, which the simulator otherwise logs as an error per
+    // call attempt. 1.6 stations communicate reservation expiry implicitly
+    // via StatusNotification(Available) when the timer fires.
+    if (this.is16) {
+      return { status: 'Accepted' };
+    }
     return this.client.sendCall('ReservationStatusUpdate', {
       reservationId,
       reservationUpdateStatus,

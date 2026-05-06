@@ -89,9 +89,6 @@ export function registerProjections(
 ): void {
   const registry = options?.registry ?? null;
   const instanceId = options?.instanceId ?? null;
-  // Only the primary pod runs periodic cleanup tasks to avoid duplicate work.
-  // No instanceId (single-pod mode) or instanceId ending in '-0' is primary.
-  const isPrimary = instanceId == null || instanceId.endsWith('-0');
   const sql = postgres(databaseUrl);
   const logger = createLogger('event-projections');
 
@@ -3298,71 +3295,6 @@ export function registerProjections(
     });
   }
 
-  // --- Reservation expiry check (every 60s) ---
-
-  const RESERVATION_CHECK_INTERVAL_MS = 60_000;
-  const EXPIRY_WARNING_MINUTES = 15;
-
-  async function checkReservationExpiry(): Promise<void> {
-    try {
-      // Expire active reservations past their expiresAt
-      const expired = await sql`
-        UPDATE reservations
-        SET status = 'expired', updated_at = now()
-        WHERE status = 'active' AND expires_at < now()
-        RETURNING id, driver_id
-      `;
-
-      for (const row of expired) {
-        if (row.driver_id != null) {
-          void dispatchDriverNotification(
-            sql,
-            'reservation.Expired',
-            row.driver_id as string,
-            {
-              reservationId: row.id as string,
-            },
-            ALL_TEMPLATES_DIRS,
-            pubsub,
-          );
-        }
-      }
-
-      // Warn about reservations expiring within the warning window
-      const warningThreshold = new Date(Date.now() + EXPIRY_WARNING_MINUTES * 60 * 1000);
-      const expiringSoon = await sql`
-        SELECT id, driver_id, expires_at FROM reservations
-        WHERE status = 'active'
-          AND expires_at > now()
-          AND expires_at <= ${warningThreshold}
-      `;
-
-      for (const row of expiringSoon) {
-        if (row.driver_id != null) {
-          void dispatchDriverNotification(
-            sql,
-            'reservation.Expiring',
-            row.driver_id as string,
-            {
-              reservationId: row.id as string,
-              expiresAt: (row.expires_at as Date).toISOString(),
-            },
-            ALL_TEMPLATES_DIRS,
-            pubsub,
-          );
-        }
-      }
-    } catch (err) {
-      logger.error({ err }, 'Reservation expiry check failed');
-    }
-  }
-
-  if (isPrimary) {
-    setInterval(() => {
-      void checkReservationExpiry();
-    }, RESERVATION_CHECK_INTERVAL_MS);
-  }
-
   // ---- OCPP Operational Data Projections ----
 
   safeSubscribe('ocpp.NotifyEvent', async (event: DomainEvent) => {
@@ -3840,21 +3772,6 @@ export function registerProjections(
     `;
   });
 
-  // Periodic expiry cleanup for offline command queue (every 5 minutes)
-  if (isPrimary) {
-    setInterval(
-      () => {
-        void sql`
-        UPDATE offline_command_queue SET status = 'expired'
-        WHERE status = 'pending' AND expires_at <= now()
-      `.catch(() => {
-          // Non-critical cleanup
-        });
-      },
-      5 * 60 * 1000,
-    );
-  }
-
   // ---- OCPP 2.1 Stub Persistence ----
 
   safeSubscribe('ocpp.BatterySwap', async (event: DomainEvent) => {
@@ -3987,11 +3904,4 @@ export function registerProjections(
       VALUES (${stationUuid}, ${requestId}, ${seqNo}, ${tbc}, ${derControl != null ? sql.json(asJson(derControl)) : null})
     `;
   });
-
-  // --- Certificate Expiration Monitor ---
-  if (isPrimary) {
-    void import('../services/pki/expiration-monitor.js').then(({ startExpirationMonitor }) => {
-      startExpirationMonitor(sql, pubsub);
-    });
-  }
 }

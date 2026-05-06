@@ -16,6 +16,9 @@ import { chargingProfileReconciliationHandler } from './handlers/charging-profil
 import { configDriftDetectionHandler } from './handlers/config-drift-detection.js';
 import { staleSessionCleanupHandler } from './handlers/stale-session-cleanup.js';
 import { dashboardSnapshotHandler } from './handlers/dashboard-snapshot.js';
+import { reservationExpiryCheckHandler } from './handlers/reservation-expiry-check.js';
+import { offlineCommandCleanupHandler } from './handlers/offline-command-cleanup.js';
+import { certificateExpirationCheckHandler } from './handlers/certificate-expiration-check.js';
 
 const log = createLogger('cron-worker');
 
@@ -30,6 +33,11 @@ const JOB_HANDLERS = new Map<string, JobHandlerFn>([
   ['config-drift-detection', configDriftDetectionHandler],
   ['stale-session-cleanup', staleSessionCleanupHandler],
   ['dashboard-snapshot', dashboardSnapshotHandler],
+  // Migrated from OCPP server event-projections setIntervals so they actually
+  // run under Helm Deployment (where pod names don't end in '-0').
+  ['reservation-expiry-check', reservationExpiryCheckHandler],
+  ['offline-command-cleanup', offlineCommandCleanupHandler],
+  ['certificate-expiration-check', certificateExpirationCheckHandler],
 ]);
 
 export function createCronWorker(connection: ConnectionOptions): Worker {

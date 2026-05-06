@@ -59,6 +59,17 @@ export function Home(): React.JSX.Element {
     refetchInterval: 5000,
   });
 
+  // Public feature flags drive whether the Support quick-action is rendered.
+  // Default to enabled while loading so the card doesn't flash in/out on
+  // page mount. Cached for 5 minutes; toggling the system setting is rare.
+  const { data: features } = useQuery({
+    queryKey: ['portal-features'],
+    queryFn: () =>
+      api.get<{ reservationEnabled: boolean; supportEnabled: boolean }>('/v1/portal/features'),
+    staleTime: 5 * 60_000,
+  });
+  const supportEnabled = features?.supportEnabled ?? true;
+
   return (
     <div className="space-y-6">
       <div>
@@ -125,17 +136,19 @@ export function Home(): React.JSX.Element {
             <span className="text-sm font-medium">{t('home.vehicles')}</span>
           </CardContent>
         </Card>
-        <Card
-          className="cursor-pointer hover:bg-accent/50 transition-colors"
-          onClick={() => {
-            void navigate('/support');
-          }}
-        >
-          <CardContent className="flex flex-col items-center gap-2 p-4">
-            <HelpCircle className="h-8 w-8 text-primary" />
-            <span className="text-sm font-medium">{t('home.supportCases')}</span>
-          </CardContent>
-        </Card>
+        {supportEnabled && (
+          <Card
+            className="cursor-pointer hover:bg-accent/50 transition-colors"
+            onClick={() => {
+              void navigate('/support');
+            }}
+          >
+            <CardContent className="flex flex-col items-center gap-2 p-4">
+              <HelpCircle className="h-8 w-8 text-primary" />
+              <span className="text-sm font-medium">{t('home.supportCases')}</span>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Recent sessions */}

@@ -133,8 +133,28 @@ const reservationItem = z
     reservationId: z.number(),
     stationOcppId: z.string(),
     status: z.string(),
+    startsAt: z.coerce.date().nullable(),
     expiresAt: z.coerce.date(),
     createdAt: z.coerce.date(),
+  })
+  .passthrough();
+
+const reservationDetail = z
+  .object({
+    id: z.string(),
+    reservationId: z.number(),
+    stationOcppId: z.string(),
+    siteName: z.string().nullable(),
+    siteAddress: z.string().nullable(),
+    siteCity: z.string().nullable(),
+    siteState: z.string().nullable(),
+    evseId: z.number().nullable(),
+    status: z.string(),
+    startsAt: z.coerce.date().nullable(),
+    expiresAt: z.coerce.date(),
+    createdAt: z.coerce.date(),
+    updatedAt: z.coerce.date(),
+    sessionId: z.string().nullable(),
   })
   .passthrough();
 
@@ -309,7 +329,13 @@ export function portalChargerRoutes(app: FastifyInstance): void {
             and(
               eq(reservations.stationId, station.id),
               or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
-              eq(reservations.status, 'active'),
+              or(eq(reservations.status, 'active'), eq(reservations.status, 'scheduled')),
+              // Window-current only: scheduled reservations whose start is in the
+              // future should not surface as "reserved" yet. This also handles
+              // the worker-activation-lag case where status is still 'scheduled'
+              // past startsAt -- those should be treated as live.
+              sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) <= NOW()`,
+              sql`${reservations.expiresAt} > NOW()`,
             ),
           )
           .orderBy(asc(reservations.expiresAt))
@@ -991,7 +1017,14 @@ export function portalChargerRoutes(app: FastifyInstance): void {
             driverId: reservations.driverId,
           })
           .from(reservations)
-          .where(and(eq(reservations.stationId, station.id), eq(reservations.status, 'active')))
+          .where(
+            and(
+              eq(reservations.stationId, station.id),
+              or(eq(reservations.status, 'active'), eq(reservations.status, 'scheduled')),
+              sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) <= NOW()`,
+              sql`${reservations.expiresAt} > NOW()`,
+            ),
+          )
           .orderBy(asc(reservations.expiresAt));
 
         for (const res of activeReservations) {
@@ -1213,7 +1246,11 @@ export function portalChargerRoutes(app: FastifyInstance): void {
           and(
             eq(reservations.stationId, station.id),
             or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
-            eq(reservations.status, 'active'),
+            or(eq(reservations.status, 'active'), eq(reservations.status, 'scheduled')),
+            // Block holder/non-holder only when the reservation window is current.
+            // A scheduled reservation for tomorrow must not block other drivers today.
+            sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) <= NOW()`,
+            sql`${reservations.expiresAt} > NOW()`,
           ),
         )
         .orderBy(asc(reservations.expiresAt))
@@ -1602,6 +1639,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
           reservationId: reservations.reservationId,
           stationOcppId: chargingStations.stationId,
           status: reservations.status,
+          startsAt: reservations.startsAt,
           expiresAt: reservations.expiresAt,
           createdAt: reservations.createdAt,
         })
@@ -1612,6 +1650,96 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .limit(50);
 
       return { data };
+    },
+  );
+
+  app.get(
+    '/portal/reservations/:id',
+    {
+      onRequest: [app.authenticateDriver],
+      schema: {
+        tags: ['Portal Chargers'],
+        summary: 'Get a reservation by id with linked session for used reservations',
+        operationId: 'portalGetReservation',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(reservationIdParams),
+        response: {
+          200: itemResponse(reservationDetail),
+          404: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { driverId } = request.user as DriverJwtPayload;
+      const { id } = request.params as z.infer<typeof reservationIdParams>;
+
+      const [reservation] = await db
+        .select({
+          id: reservations.id,
+          reservationId: reservations.reservationId,
+          stationOcppId: chargingStations.stationId,
+          siteName: sites.name,
+          siteAddress: sites.address,
+          siteCity: sites.city,
+          siteState: sites.state,
+          evseDbId: reservations.evseId,
+          status: reservations.status,
+          startsAt: reservations.startsAt,
+          expiresAt: reservations.expiresAt,
+          createdAt: reservations.createdAt,
+          updatedAt: reservations.updatedAt,
+        })
+        .from(reservations)
+        .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
+        .leftJoin(sites, eq(chargingStations.siteId, sites.id))
+        .where(and(eq(reservations.id, id), eq(reservations.driverId, driverId)));
+
+      if (reservation == null) {
+        await reply
+          .status(404)
+          .send({ error: 'Reservation not found', code: 'RESERVATION_NOT_FOUND' });
+        return;
+      }
+
+      let evseIdInt: number | null = null;
+      if (reservation.evseDbId != null) {
+        const [evseRow] = await db
+          .select({ evseId: evses.evseId })
+          .from(evses)
+          .where(eq(evses.id, reservation.evseDbId));
+        evseIdInt = evseRow?.evseId ?? null;
+      }
+
+      // The OCPP TransactionEvent.Started projection links a session back to the
+      // reservation when the station echoes the reservationId. Surface that link
+      // only for terminal/used reservations so active drivers can see the receipt.
+      let sessionId: string | null = null;
+      if (reservation.status === 'used') {
+        const [sessionRow] = await db
+          .select({ id: chargingSessions.id })
+          .from(chargingSessions)
+          .where(eq(chargingSessions.reservationId, reservation.id))
+          .orderBy(desc(chargingSessions.startedAt))
+          .limit(1);
+        sessionId = sessionRow?.id ?? null;
+      }
+
+      return {
+        id: reservation.id,
+        reservationId: reservation.reservationId,
+        stationOcppId: reservation.stationOcppId,
+        siteName: reservation.siteName,
+        siteAddress: reservation.siteAddress,
+        siteCity: reservation.siteCity,
+        siteState: reservation.siteState,
+        evseId: evseIdInt,
+        status: reservation.status,
+        startsAt: reservation.startsAt,
+        expiresAt: reservation.expiresAt,
+        createdAt: reservation.createdAt,
+        updatedAt: reservation.updatedAt,
+        sessionId,
+      };
     },
   );
 
@@ -1661,6 +1789,29 @@ export function portalChargerRoutes(app: FastifyInstance): void {
             ? 'Station is pending approval'
             : 'Station is blocked';
         await reply.status(403).send({ error: msg, code });
+        return;
+      }
+
+      // Window validation. datetime-local inputs only have minute precision,
+      // so a "now"-ish click can produce expiresAt seconds in the past once it
+      // hits the API. Stations parse this and fire their expiry timer at 0ms,
+      // sending StatusNotification(Available) back immediately -- the
+      // reservation looks "expired" the moment it's created.
+      const MIN_DURATION_MS = 60_000;
+      const expiresAtTime = new Date(body.expiresAt).getTime();
+      const startsAtTime = body.startsAt != null ? new Date(body.startsAt).getTime() : Date.now();
+      if (expiresAtTime - startsAtTime < MIN_DURATION_MS) {
+        await reply.status(400).send({
+          error: 'Reservation must end at least 60 seconds after it starts',
+          code: 'RESERVATION_WINDOW_TOO_SHORT',
+        });
+        return;
+      }
+      if (expiresAtTime - Date.now() < MIN_DURATION_MS) {
+        await reply.status(400).send({
+          error: 'Reservation must end at least 60 seconds in the future',
+          code: 'RESERVATION_EXPIRES_TOO_SOON',
+        });
         return;
       }
 

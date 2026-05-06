@@ -93,21 +93,40 @@ export async function handleReservationActivate(job: Job, pubsub: PubSubClient):
     ocppPayload['evseId'] = evseOcppId;
   }
 
+  // Do NOT include `version` here. CommandListener treats a present `version`
+  // as "caller already shaped the payload for that wire protocol -- skip
+  // translation". This payload is in OCPP 2.1 form (id/evseId/idToken object/
+  // expiryDateTime); for an OCPP 1.6 station those fields must be translated
+  // to reservationId/connectorId/idTag/expiryDate. Omitting `version` routes
+  // through `sendVersionAwareCommand`, which looks up the station's actual
+  // protocol from the open connection and applies the right mapper.
   const notification = JSON.stringify({
     commandId,
     stationId: reservation.stationOcppId,
     action: 'ReserveNow',
     payload: ocppPayload,
-    ...(reservation.ocppProtocol != null ? { version: reservation.ocppProtocol } : {}),
   });
 
-  await pubsub.publish('ocpp_commands', notification);
-
-  // Update status to active
-  await db
+  // Flip status BEFORE publish so retries can't double-send. The guarded
+  // update only succeeds when the row is still 'scheduled'; on retry after a
+  // partial failure we'll see status='active' and skip the publish entirely.
+  // BullMQ jobId dedup already guards against duplicate enqueues, but worker
+  // retries (attempts: 3 in reservation-worker) can re-run the handler.
+  const updated = await db
     .update(reservations)
     .set({ status: 'active', updatedAt: new Date() })
-    .where(and(eq(reservations.id, reservationDbId), eq(reservations.status, 'scheduled')));
+    .where(and(eq(reservations.id, reservationDbId), eq(reservations.status, 'scheduled')))
+    .returning({ id: reservations.id });
+
+  if (updated.length === 0) {
+    log.info(
+      { reservationDbId },
+      'Reservation already activated (or no longer scheduled); skipping ReserveNow publish',
+    );
+    return;
+  }
+
+  await pubsub.publish('ocpp_commands', notification);
 
   log.info(
     {

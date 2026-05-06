@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Home, Activity, PlugZap, User, Bell, Star } from 'lucide-react';
+import { Home, Activity, PlugZap, User, Bell, Star, CalendarClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { useAuthBranding } from './AuthBranding';
@@ -15,6 +15,7 @@ import { usePortalEvents } from '@/hooks/use-portal-events';
 const navItems = [
   { to: '/', labelKey: 'nav.home', icon: Home },
   { to: '/start', labelKey: 'nav.findCharger', icon: PlugZap },
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/activity', labelKey: 'nav.activity', icon: Activity },
   { to: '/account', labelKey: 'nav.account', icon: User },
 ];
@@ -48,6 +49,21 @@ export function Layout(): React.JSX.Element {
     refetchInterval: 60000,
   });
   const unreadCount = unreadData?.count ?? 0;
+
+  // Public feature flags. Drives conditional nav (Reservations, Support) so
+  // operators can disable the feature system-wide without dead links.
+  // Defaults to enabled while loading to avoid a flash of missing tab on
+  // every page load.
+  const { data: features } = useQuery({
+    queryKey: ['portal-features'],
+    queryFn: () =>
+      api.get<{ reservationEnabled: boolean; supportEnabled: boolean }>('/v1/portal/features'),
+    staleTime: 5 * 60_000,
+  });
+  const reservationEnabled = features?.reservationEnabled ?? true;
+  const visibleNavItems = navItems.filter(
+    (item) => item.to !== '/reservations' || reservationEnabled,
+  );
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -108,7 +124,7 @@ export function Layout(): React.JSX.Element {
       {/* Bottom tab navigation */}
       <nav className="fixed bottom-0 left-0 right-0 h-16 z-30 border-t border-border bg-background pb-[env(safe-area-inset-bottom)]">
         <div className="flex">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

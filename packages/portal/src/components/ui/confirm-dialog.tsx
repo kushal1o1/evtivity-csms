@@ -11,6 +11,13 @@ interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel: string;
+  /**
+   * Override the cancel button label. Defaults to `t('common.cancel')`.
+   * Useful when the dialog is itself confirming a "Cancel X" action and
+   * the standard "Cancel" label would be ambiguous (e.g. cancel-reservation
+   * dialog uses "Keep" so it's clear which way each button goes).
+   */
+  cancelLabel?: string;
   // Returning false (or a Promise resolving to false) prevents the dialog
   // from auto-closing -- useful when the caller wants to keep the dialog
   // open with `isPending` until an async side effect completes. Returning
@@ -28,6 +35,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel,
   onConfirm,
   variant = 'default',
   isPending = false,
@@ -60,7 +68,7 @@ export function ConfirmDialog({
                 onOpenChange(false);
               }}
             >
-              {t('common.cancel')}
+              {cancelLabel ?? t('common.cancel')}
             </Button>
           )}
           <Button

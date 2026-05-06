@@ -481,6 +481,30 @@ export function reservationRoutes(app: FastifyInstance): void {
         return;
       }
 
+      // Window validation. datetime-local inputs only have minute precision,
+      // so a "now"-ish click can produce expiresAt seconds in the past once it
+      // hits the API. Stations parse this and fire their expiry timer at 0ms,
+      // sending StatusNotification(Available) back immediately -- the
+      // reservation looks "expired" the moment it's created. Require at least
+      // 60s of runway, and that startsAt < expiresAt.
+      const MIN_DURATION_MS = 60_000;
+      const expiresAtTime = new Date(body.expiresAt).getTime();
+      const startsAtTime = body.startsAt != null ? new Date(body.startsAt).getTime() : Date.now();
+      if (expiresAtTime - startsAtTime < MIN_DURATION_MS) {
+        await reply.status(400).send({
+          error: 'Reservation must end at least 60 seconds after it starts',
+          code: 'RESERVATION_WINDOW_TOO_SHORT',
+        });
+        return;
+      }
+      if (expiresAtTime - Date.now() < MIN_DURATION_MS) {
+        await reply.status(400).send({
+          error: 'Reservation must end at least 60 seconds in the future',
+          code: 'RESERVATION_EXPIRES_TOO_SOON',
+        });
+        return;
+      }
+
       // Skip online check for future-scheduled reservations (station may come online by startsAt)
       const hasFutureStart =
         body.startsAt != null && new Date(body.startsAt).getTime() > Date.now();
@@ -515,15 +539,35 @@ export function reservationRoutes(app: FastifyInstance): void {
         resolvedEvseId = evse.id;
       }
 
-      // Check for conflicting active or scheduled reservations
+      // Check for conflicting active or scheduled reservations whose time
+      // window OVERLAPS the requested one. Two windows [aStart, aEnd] and
+      // [bStart, bEnd] overlap iff aStart < bEnd AND bStart < aEnd. The
+      // existing reservation's start defaults to its createdAt when there's
+      // no explicit startsAt (the holder reserved for "now"). The new
+      // reservation's start defaults to NOW() when the caller did not pass
+      // startsAt. Without time-overlap math the check would block any
+      // future reservation just because some other future window exists on
+      // the same EVSE.
+      const newStart = body.startsAt != null ? new Date(body.startsAt) : new Date();
+      const newEnd = new Date(body.expiresAt);
       const conflictConditions = [
         eq(reservations.stationId, station.id),
         or(eq(reservations.status, 'active'), eq(reservations.status, 'scheduled')),
-        sql`${reservations.expiresAt} > NOW()`,
+        // existingStart < newEnd
+        sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) < ${newEnd}`,
+        // existing.expiresAt > newStart
+        sql`${reservations.expiresAt} > ${newStart}`,
       ];
       if (resolvedEvseId != null) {
-        conflictConditions.push(eq(reservations.evseId, resolvedEvseId));
+        // EVSE-specific request: only conflict with same EVSE OR with
+        // station-level reservations (evseId IS NULL applies to all EVSEs).
+        conflictConditions.push(
+          or(eq(reservations.evseId, resolvedEvseId), sql`${reservations.evseId} IS NULL`),
+        );
       }
+      // Station-level request (resolvedEvseId is null) conflicts with any
+      // reservation on this station regardless of EVSE -- no extra
+      // condition needed.
       const [conflict] = await db
         .select({ id: reservations.id })
         .from(reservations)
@@ -532,7 +576,7 @@ export function reservationRoutes(app: FastifyInstance): void {
 
       if (conflict != null) {
         await reply.status(409).send({
-          error: 'An active reservation already exists for this station',
+          error: 'A reservation already exists for this connector during the requested window',
           code: 'RESERVATION_CONFLICT',
         });
         return;
@@ -1014,13 +1058,17 @@ export function reservationRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // 2. Validate reservation is active
-      if (reservation.status !== 'active') {
+      // 2. Validate reservation is active or scheduled. Scheduled reservations
+      // have no station-side ReserveNow yet (worker fires it at startsAt), so
+      // reassign for those is a pure DB update -- the worker will later target
+      // the updated station.
+      if (reservation.status !== 'active' && reservation.status !== 'scheduled') {
         await reply
           .status(400)
           .send({ error: 'Reservation is not active', code: 'RESERVATION_NOT_ACTIVE' });
         return;
       }
+      const isScheduled = reservation.status === 'scheduled';
 
       // 3. Find new station by OCPP ID
       const [newStation] = await db
@@ -1044,8 +1092,10 @@ export function reservationRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // 4. Check new station is online
-      if (!newStation.isOnline) {
+      // 4. Online check applies only to active reassign. Scheduled reassign
+      // mirrors the create-reservation behavior: the new station has time to
+      // come online before startsAt.
+      if (!isScheduled && !newStation.isOnline) {
         await reply.status(400).send({ error: 'Station is offline', code: 'STATION_OFFLINE' });
         return;
       }
@@ -1076,7 +1126,22 @@ export function reservationRoutes(app: FastifyInstance): void {
         resolvedNewEvseId = evse.id;
       }
 
-      // 7. Send ReserveNow to new station FIRST
+      // 7. Scheduled reassign: pure DB update, no OCPP calls.
+      // The worker activation handler will send ReserveNow to the updated
+      // station at startsAt.
+      if (isScheduled) {
+        await db
+          .update(reservations)
+          .set({
+            stationId: newStation.id,
+            evseId: resolvedNewEvseId,
+            updatedAt: new Date(),
+          })
+          .where(eq(reservations.id, id));
+        return { status: 'reassigned', newStationOcppId };
+      }
+
+      // 8. Active reassign: send ReserveNow to new station FIRST
       const ocppPayload: Record<string, unknown> = {
         id: reservation.reservationId,
         expiryDateTime: reservation.expiresAt.toISOString(),
@@ -1105,7 +1170,7 @@ export function reservationRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // 8. Update reservation row with new station and evse BEFORE cancelling old
+      // 9. Update reservation row with new station and evse BEFORE cancelling old
       await db
         .update(reservations)
         .set({
@@ -1115,7 +1180,7 @@ export function reservationRoutes(app: FastifyInstance): void {
         })
         .where(eq(reservations.id, id));
 
-      // 9. Cancel on old station (best effort, after DB update)
+      // 10. Cancel on old station (best effort, after DB update)
       try {
         await sendOcppCommandAndWait(reservation.stationOcppId, 'CancelReservation', {
           reservationId: reservation.reservationId,
@@ -1127,7 +1192,6 @@ export function reservationRoutes(app: FastifyInstance): void {
         );
       }
 
-      // 10. Return success
       return { status: 'reassigned', newStationOcppId };
     },
   );
