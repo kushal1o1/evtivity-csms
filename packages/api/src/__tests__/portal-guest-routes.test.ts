@@ -72,6 +72,8 @@ vi.mock('@evtivity/database', () => ({
   guestSessions: {},
   chargingSessions: {},
   meterValues: {},
+  paymentRecords: {},
+  reservations: {},
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -286,6 +288,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'faulted' }],
+        [], // active reservation gate (no reservation)
       );
       const response = await app.inject({
         method: 'POST',
@@ -310,6 +313,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
         [],
       );
       vi.mocked(isTariffFree).mockReturnValue(true);
@@ -338,6 +342,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
       );
       vi.mocked(getStripeConfig).mockResolvedValue(null);
 
@@ -365,6 +370,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
       );
       vi.mocked(getStripeConfig).mockResolvedValue({
         stripe: {
@@ -405,6 +411,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
         [],
       );
       vi.mocked(getStripeConfig).mockResolvedValue({
@@ -459,6 +466,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
         [], // INSERT guest_sessions
         [], // DELETE guest_sessions (rollback)
       );
@@ -507,6 +515,7 @@ describe('Portal guest routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
         [], // INSERT guest_sessions (paid)
         [], // DELETE guest_sessions (rollback)
       );

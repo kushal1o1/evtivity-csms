@@ -438,15 +438,20 @@ export function ChargerDetail(): React.JSX.Element {
               'ev_connected',
               'finishing',
             ];
-            // A `reserved` connector is startable only by the holder of the
-            // active reservation. The API returns the reservation's driver
-            // id; allow the start tile when it matches the current driver.
+            // Reservation gate: an EVSE with any active reservation is
+            // startable ONLY by the holder. Connector status flips to
+            // `preparing`/`occupied`/`ev_connected` the moment the holder
+            // plugs in, all of which are in startableStatuses -- without
+            // this gate any other driver could start a session against
+            // the holder&#39;s plug.
+            const reservedByOther =
+              evse.reservationDriverId != null && evse.reservationDriverId !== currentDriverId;
             const reservedForMe =
-              connectorStatus === 'reserved' &&
-              currentDriverId != null &&
-              evse.reservationDriverId === currentDriverId;
+              evse.reservationDriverId != null && evse.reservationDriverId === currentDriverId;
             const isAvailable =
-              (startableStatuses.includes(connectorStatus) || reservedForMe) && station.isOnline;
+              station.isOnline &&
+              !reservedByOther &&
+              (startableStatuses.includes(connectorStatus) || reservedForMe);
             const isSelected = selectedEvseId === evse.evseId;
 
             const connectorTypes = [

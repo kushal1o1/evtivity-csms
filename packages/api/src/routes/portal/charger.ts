@@ -294,11 +294,14 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .from(connectors)
         .where(eq(connectors.evseId, evse.id));
 
-      // Look up reservation expiry when any connector is reserved
-      const hasReservedConnector = evseConnectors.some((c) => c.status === 'reserved');
+      // Look up active reservation regardless of connector status. Status
+      // flips from `reserved` to `preparing`/`occupied` the moment the
+      // holder plugs in, but the reservation is still active and the gate
+      // must keep applying. Gating on connector status here would let the
+      // UI flash a Start button for everyone post-plug-in.
       let reservationExpiresAt: string | null = null;
       let reservationDriverId: string | null = null;
-      if (hasReservedConnector) {
+      {
         const [reservation] = await db
           .select({ expiresAt: reservations.expiresAt, driverId: reservations.driverId })
           .from(reservations)
@@ -972,14 +975,15 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         }
       }
 
-      // Look up reservation expiry for EVSEs with reserved connectors
-      const reservedEvseUuids = Array.from(evseMap.values())
-        .filter((e) => e.connectors.some((c) => c.status === 'reserved'))
-        .map((e) => e.evseUuid);
+      // Look up active reservations for ALL EVSEs on the station, not just
+      // ones whose connector status currently reads `reserved`. Status flips
+      // to `preparing`/`occupied` the moment the holder plugs in but the
+      // reservation gate must keep applying until the reservation ends.
+      const allEvseUuids = Array.from(evseMap.values()).map((e) => e.evseUuid);
 
       const reservationExpiryMap = new Map<string, string>();
       const reservationDriverMap = new Map<string, string | null>();
-      if (reservedEvseUuids.length > 0) {
+      if (allEvseUuids.length > 0) {
         const activeReservations = await db
           .select({
             evseId: reservations.evseId,
@@ -991,15 +995,15 @@ export function portalChargerRoutes(app: FastifyInstance): void {
           .orderBy(asc(reservations.expiresAt));
 
         for (const res of activeReservations) {
-          // Station-level reservation (no evseId) applies to all reserved EVSEs
+          // Station-level reservation (no evseId) applies to every EVSE
           if (res.evseId == null) {
-            for (const uuid of reservedEvseUuids) {
+            for (const uuid of allEvseUuids) {
               if (!reservationExpiryMap.has(uuid)) {
                 reservationExpiryMap.set(uuid, res.expiresAt.toISOString());
                 reservationDriverMap.set(uuid, res.driverId);
               }
             }
-          } else if (reservedEvseUuids.includes(res.evseId)) {
+          } else if (allEvseUuids.includes(res.evseId)) {
             if (!reservationExpiryMap.has(res.evseId)) {
               reservationExpiryMap.set(res.evseId, res.expiresAt.toISOString());
               reservationDriverMap.set(res.evseId, res.driverId);
@@ -1195,39 +1199,50 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .where(eq(connectors.evseId, evse.id))
         .limit(1);
 
+      // Reservation gate first: if any active reservation covers this EVSE,
+      // ONLY the reservation holder may start, regardless of connector
+      // status. The connector legitimately flips to `preparing` /
+      // `occupied` / `ev_connected` the moment the holder plugs in, but
+      // those statuses are also "startable" in the generic sense, so
+      // without this check any other driver (or guest) could race the
+      // reservation holder and start a session against the holder&#39;s plug.
+      const [activeReservation] = await db
+        .select({ driverId: reservations.driverId })
+        .from(reservations)
+        .where(
+          and(
+            eq(reservations.stationId, station.id),
+            or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
+            eq(reservations.status, 'active'),
+          ),
+        )
+        .orderBy(asc(reservations.expiresAt))
+        .limit(1);
+
+      if (activeReservation != null && activeReservation.driverId !== driverId) {
+        await reply.status(403).send({
+          error: 'Connector is reserved for another driver',
+          code: 'CONNECTOR_RESERVED',
+        });
+        return;
+      }
+
       // 'finishing' (OCPP 1.6) means cable is still plugged after a previous
       // stop; real stations accept a new RemoteStart from this state. The
       // OCPP 2.1 equivalent is 'occupied' which is already in the set.
-      // 'reserved' is allowed only when the active reservation belongs to
-      // the requesting driver -- the reservation holder is the only driver
-      // who can start charging during the reserved window.
+      // 'reserved' is allowed when we got past the gate above (i.e., the
+      // requesting driver IS the holder).
       const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected', 'finishing'];
-      if (connector != null && !startableStatuses.includes(connector.status)) {
-        let allowReserved = false;
-        if (connector.status === 'reserved') {
-          const [reservation] = await db
-            .select({ driverId: reservations.driverId })
-            .from(reservations)
-            .where(
-              and(
-                eq(reservations.stationId, station.id),
-                or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
-                eq(reservations.status, 'active'),
-              ),
-            )
-            .orderBy(asc(reservations.expiresAt))
-            .limit(1);
-          if (reservation != null && reservation.driverId === driverId) {
-            allowReserved = true;
-          }
-        }
-        if (!allowReserved) {
-          await reply.status(400).send({
-            error: 'Connector is not available for charging',
-            code: 'CONNECTOR_NOT_AVAILABLE',
-          });
-          return;
-        }
+      if (
+        connector != null &&
+        !startableStatuses.includes(connector.status) &&
+        !(connector.status === 'reserved' && activeReservation?.driverId === driverId)
+      ) {
+        await reply.status(400).send({
+          error: 'Connector is not available for charging',
+          code: 'CONNECTOR_NOT_AVAILABLE',
+        });
+        return;
       }
 
       // Defense-in-depth: refuse start if an active session already exists on this EVSE,

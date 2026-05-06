@@ -581,6 +581,7 @@ describe('Portal charger routes - handler logic', () => {
         ],
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
         [], // EVSE active-session check (defense-in-depth)
         [], // driver active-session check
         [{ id: VALID_SESSION_ID }],
@@ -833,6 +834,7 @@ describe('Portal charger routes - handler logic', () => {
         [stationRow],
         [evseRow],
         [connectorRow],
+        existingSessionsEmpty, // active reservation gate (no reservation)
         existingSessionsEmpty, // EVSE active-session check
         existingSessionsEmpty, // driver active-session check
         [{ id: VALID_SESSION_ID }],
@@ -855,6 +857,7 @@ describe('Portal charger routes - handler logic', () => {
         [stationRow],
         [evseRow],
         [connectorRow],
+        existingSessionsEmpty, // active reservation gate (no reservation)
         existingSessionsEmpty, // EVSE active-session check
         existingSessionsEmpty, // driver active-session check
         [{ id: VALID_SESSION_ID }],
@@ -880,6 +883,7 @@ describe('Portal charger routes - handler logic', () => {
         [stationRow],
         [evseRow],
         [connectorRow],
+        [], // active reservation gate (no reservation)
         [{ id: 'ses_existing_evse' }], // EVSE active-session check returns an active session
       );
       vi.mocked(isEvseInReservationBuffer).mockResolvedValue(false);

@@ -231,7 +231,8 @@
     "checkingStatus": "Wird geprüft...",
     "statusCheckFailed": "Anschlussstatus konnte nicht geprüft werden. Versuche es erneut.",
     "reservedUntil": "Reserviert bis {{time}}",
-    "reserved": "Reserviert"
+    "reserved": "Reserviert",
+    "connectorReserved": "Anschluss ist reserviert"
   },
   "chargerSearch": {
     "title": "Ladevorgang starten",

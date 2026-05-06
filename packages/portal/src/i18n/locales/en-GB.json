@@ -233,7 +233,8 @@
     "checkingStatus": "Checking...",
     "statusCheckFailed": "Could not check connector status. Try again.",
     "reservedUntil": "Reserved until {{time}}",
-    "reserved": "Reserved"
+    "reserved": "Reserved",
+    "connectorReserved": "Connector is reserved"
   },
   "chargerSearch": {
     "title": "Start Charging",

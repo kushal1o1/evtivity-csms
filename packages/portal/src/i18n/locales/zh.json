@@ -233,7 +233,8 @@
     "checkingStatus": "检查中...",
     "statusCheckFailed": "无法检查连接器状态。请重试。",
     "reservedUntil": "预约至 {{time}}",
-    "reserved": "已预约"
+    "reserved": "已预约",
+    "connectorReserved": "充电接口已被预约"
   },
   "chargerSearch": {
     "title": "开始充电",

@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, asc, sql } from 'drizzle-orm';
+import { eq, and, or, asc, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import { db } from '@evtivity/database';
 import {
@@ -15,6 +15,7 @@ import {
   chargingSessions,
   meterValues,
   paymentRecords,
+  reservations,
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import { getPubSub } from '../../lib/pubsub.js';
@@ -319,6 +320,30 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         .from(connectors)
         .where(eq(connectors.evseId, evse.id))
         .limit(1);
+
+      // Reservation gate: guest checkout is never allowed against an EVSE
+      // with an active reservation, regardless of connector status. The
+      // connector flips to `preparing` / `occupied` when the holder plugs
+      // in -- without this check a guest could race the holder and start
+      // a paid session against the holder&#39;s plug.
+      const [activeReservation] = await db
+        .select({ id: reservations.id })
+        .from(reservations)
+        .where(
+          and(
+            eq(reservations.stationId, station.id),
+            or(eq(reservations.evseId, evse.id), sql`${reservations.evseId} IS NULL`),
+            eq(reservations.status, 'active'),
+          ),
+        )
+        .limit(1);
+      if (activeReservation != null) {
+        await reply.status(403).send({
+          error: 'Connector is reserved',
+          code: 'CONNECTOR_RESERVED',
+        });
+        return;
+      }
 
       // 'finishing' (OCPP 1.6) means cable is still plugged after a previous
       // stop; real stations accept a new RemoteStart from this state. The

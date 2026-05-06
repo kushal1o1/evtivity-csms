@@ -237,7 +237,12 @@ export function ChargerLanding(): React.JSX.Element {
   // real stations accept a new RemoteStart from this state without an unplug
   // cycle. The OCPP 2.1 equivalent is 'occupied' which is already in the set.
   const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected', 'finishing'];
-  const isAvailable = startableStatuses.includes(connectorStatus);
+  // Reserved connectors are never available for guest checkout, even when
+  // their status flips to `preparing`/`occupied` after the reservation
+  // holder plugs in. The portal-authenticated flow (ChargerDetail) handles
+  // the reservation-holder case; guests must always be blocked.
+  const isReserved = charger.evse.reservationExpiresAt != null;
+  const isAvailable = startableStatuses.includes(connectorStatus) && !isReserved;
   const maxPower = charger.evse.connectors.reduce((max, c) => Math.max(max, c.maxPowerKw ?? 0), 0);
   const maxCurrent = charger.evse.connectors.reduce(
     (max, c) => Math.max(max, c.maxCurrentAmps ?? 0),
@@ -325,7 +330,11 @@ export function ChargerLanding(): React.JSX.Element {
           {displayPricing != null && <PricingDisplay pricing={displayPricing} />}
 
           {/* Actions */}
-          {isAvailable && charger.isOnline ? (
+          {isReserved ? (
+            <p className="pt-2 text-center text-sm text-destructive font-medium">
+              {t('charger.connectorReserved')}
+            </p>
+          ) : isAvailable && charger.isOnline ? (
             <div className="space-y-2 pt-2">
               {freeStartError !== '' && (
                 <p className="text-sm text-destructive">{freeStartError}</p>

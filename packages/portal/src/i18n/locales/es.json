@@ -233,7 +233,8 @@
     "checkingStatus": "Verificando...",
     "statusCheckFailed": "No se pudo verificar el estado del conector. Intente de nuevo.",
     "reservedUntil": "Reservado hasta {{time}}",
-    "reserved": "Reservado"
+    "reserved": "Reservado",
+    "connectorReserved": "El conector esta reservado"
   },
   "chargerSearch": {
     "title": "Iniciar carga",

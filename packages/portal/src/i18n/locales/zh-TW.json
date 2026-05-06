@@ -233,7 +233,8 @@
     "checkingStatus": "檢查中...",
     "statusCheckFailed": "無法檢查連接器狀態。請重試。",
     "reservedUntil": "預約至 {{time}}",
-    "reserved": "已預約"
+    "reserved": "已預約",
+    "connectorReserved": "充電接口已被預約"
   },
   "chargerSearch": {
     "title": "開始充電",
