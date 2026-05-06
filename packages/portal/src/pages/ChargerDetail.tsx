@@ -45,6 +45,7 @@ interface EvseItem {
   evseId: number;
   connectors: ConnectorItem[];
   reservationExpiresAt: string | null;
+  reservationDriverId: string | null;
 }
 
 interface StationDetail {
@@ -107,6 +108,7 @@ export function ChargerDetail(): React.JSX.Element {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isAuthenticated = useAuth((s) => s.isAuthenticated);
+  const currentDriverId = useAuth((s) => s.driver?.id ?? null);
   useStationEvents(stationId);
 
   const evseParam = searchParams.get('evse');
@@ -436,7 +438,15 @@ export function ChargerDetail(): React.JSX.Element {
               'ev_connected',
               'finishing',
             ];
-            const isAvailable = startableStatuses.includes(connectorStatus) && station.isOnline;
+            // A `reserved` connector is startable only by the holder of the
+            // active reservation. The API returns the reservation's driver
+            // id; allow the start tile when it matches the current driver.
+            const reservedForMe =
+              connectorStatus === 'reserved' &&
+              currentDriverId != null &&
+              evse.reservationDriverId === currentDriverId;
+            const isAvailable =
+              (startableStatuses.includes(connectorStatus) || reservedForMe) && station.isOnline;
             const isSelected = selectedEvseId === evse.evseId;
 
             const connectorTypes = [
