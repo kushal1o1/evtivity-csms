@@ -234,6 +234,7 @@ export function FleetReservationsTab({ fleetId }: FleetReservationsTabProps): Re
                   <TableHead>{t('fleets.fleetReservationName')}</TableHead>
                   <TableHead>{t('common.status')}</TableHead>
                   <TableHead>{t('reservations.reservationCount')}</TableHead>
+                  <TableHead>{t('reservations.startsAt')}</TableHead>
                   <TableHead>{t('reservations.expiresAt')}</TableHead>
                   <TableHead>{t('reservations.createdAt')}</TableHead>
                   <TableHead className="text-right">{t('common.actions')}</TableHead>
@@ -256,6 +257,13 @@ export function FleetReservationsTab({ fleetId }: FleetReservationsTabProps): Re
                       <Badge variant={fleetReservationStatusVariant(fr.status)}>{fr.status}</Badge>
                     </TableCell>
                     <TableCell>{fr.reservationCount}</TableCell>
+                    <TableCell>
+                      {fr.startsAt != null ? (
+                        formatDateTime(fr.startsAt, timezone)
+                      ) : (
+                        <span className="text-muted-foreground">--</span>
+                      )}
+                    </TableCell>
                     <TableCell>{formatDateTime(fr.expiresAt, timezone)}</TableCell>
                     <TableCell>{formatDateTime(fr.createdAt, timezone)}</TableCell>
                     <TableCell className="text-right">

@@ -2995,6 +2995,7 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 5: SELECT driver info for notification
         [{ name: null }], // 6: resolveSiteName
+        [{ ocpp_protocol: 'ocpp2.1' }], // 6b: SELECT ocpp_protocol for station_message_transaction publish
         // Second subscriber (auto-capture Ended)
         [
           {
@@ -3079,6 +3080,7 @@ describe('Event projections - coverage expansion', () => {
             ended_at: '2024-01-01T01:00:00Z',
           },
         ], // 6: SELECT driver info
+        [{ ocpp_protocol: 'ocpp2.1' }], // 6b: SELECT ocpp_protocol for station_message_transaction publish
         // Second subscriber (auto-cancel)
         [{ id: 'session-cancel', final_cost_cents: null, site_id: null }], // 7: SELECT session
         [{ id: 'pr-1', stripe_payment_intent_id: 'pi_cancel_test', driver_id: 'driver-cancel' }], // 7: payment records (includes driver_id)
@@ -3317,6 +3319,7 @@ describe('Event projections - coverage expansion', () => {
             ended_at: '2024-01-01T01:00:00Z',
           },
         ],
+        [{ ocpp_protocol: 'ocpp2.1' }], // SELECT ocpp_protocol for station_message_transaction publish
         // Second subscriber
         [{ id: 'session-err', final_cost_cents: 2000, site_id: null }],
         [{ id: 'pr-1', stripe_payment_intent_id: 'pi_fail', driver_id: 'driver-fail' }],
@@ -3505,6 +3508,7 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 6: SELECT driver info
         [{ name: null }], // 7: resolveSiteName
+        [{ ocpp_protocol: 'ocpp2.1' }], // 7b: SELECT ocpp_protocol for station_message_transaction publish
         // Second subscriber
         [{ id: 'session-sim-cap', final_cost_cents: 2000, site_id: null }], // 8: SELECT session
         [
@@ -3585,6 +3589,7 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 6: SELECT driver info
         [{ name: null }], // 7: resolveSiteName
+        [{ ocpp_protocol: 'ocpp2.1' }], // 7b: SELECT ocpp_protocol for station_message_transaction publish
         // Second subscriber
         [{ id: 'session-sim-fail', final_cost_cents: 2000, site_id: null }], // 8: SELECT session
         [

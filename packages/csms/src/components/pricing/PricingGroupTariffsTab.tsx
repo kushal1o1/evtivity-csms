@@ -35,6 +35,7 @@ interface Tariff {
   pricePerSession: string | null;
   isActive: boolean;
   idleFeePricePerMinute: string | null;
+  reservationFeePerMinute: string | null;
   taxRate: string | null;
   restrictions: TariffRestrictions | null;
   priority: number;
@@ -119,6 +120,7 @@ export function PricingGroupTariffsTab({
                   <TableHead>{t('pricing.perMin')}</TableHead>
                   <TableHead>{t('pricing.perSession')}</TableHead>
                   <TableHead>{t('pricing.idleFeePricePerMinute')}</TableHead>
+                  <TableHead>{t('pricing.reservationFeePerMinute')}</TableHead>
                   <TableHead>{t('pricing.taxRate')}</TableHead>
                   <TableHead>{t('pricing.currency')}</TableHead>
                 </TableRow>
@@ -146,6 +148,7 @@ export function PricingGroupTariffsTab({
                     <TableCell>{tariff.pricePerMinute ?? '--'}</TableCell>
                     <TableCell>{tariff.pricePerSession ?? '--'}</TableCell>
                     <TableCell>{tariff.idleFeePricePerMinute ?? '--'}</TableCell>
+                    <TableCell>{tariff.reservationFeePerMinute ?? '--'}</TableCell>
                     <TableCell>{tariff.taxRate ?? '--'}</TableCell>
                     <TableCell>{tariff.currency}</TableCell>
                   </TableRow>

@@ -33,6 +33,7 @@ interface Reservation {
   driverFirstName: string | null;
   driverLastName: string | null;
   status: string;
+  startsAt: string | null;
   expiresAt: string;
   createdAt: string;
   sessionId: string | null;
@@ -121,6 +122,7 @@ export function ReservationsTable({
                 <TableHead>{t('reservations.driverName')}</TableHead>
                 <TableHead>{t('common.status')}</TableHead>
                 <TableHead>{t('reservations.session')}</TableHead>
+                <TableHead>{t('reservations.startsAt')}</TableHead>
                 <TableHead>{t('reservations.expiresAt')}</TableHead>
                 <TableHead>{t('reservations.createdAt')}</TableHead>
               </TableRow>
@@ -129,7 +131,7 @@ export function ReservationsTable({
               {isLoading && (
                 <TableRow>
                   <TableCell
-                    colSpan={hideStationName === true ? 6 : 7}
+                    colSpan={hideStationName === true ? 7 : 8}
                     className="text-center text-muted-foreground"
                   >
                     {t('common.loading')}
@@ -198,6 +200,13 @@ export function ReservationsTable({
                       <span className="text-muted-foreground">--</span>
                     )}
                   </TableCell>
+                  <TableCell>
+                    {r.startsAt != null ? (
+                      formatDateTime(r.startsAt, timezone)
+                    ) : (
+                      <span className="text-muted-foreground">--</span>
+                    )}
+                  </TableCell>
                   <TableCell>{formatDateTime(r.expiresAt, timezone)}</TableCell>
                   <TableCell>{formatDateTime(r.createdAt, timezone)}</TableCell>
                 </TableRow>
@@ -205,7 +214,7 @@ export function ReservationsTable({
               {reservations?.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={hideStationName === true ? 6 : 7}
+                    colSpan={hideStationName === true ? 7 : 8}
                     className="text-center text-muted-foreground"
                   >
                     {t('reservations.noReservations')}

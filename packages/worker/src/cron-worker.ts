@@ -19,6 +19,7 @@ import { dashboardSnapshotHandler } from './handlers/dashboard-snapshot.js';
 import { reservationExpiryCheckHandler } from './handlers/reservation-expiry-check.js';
 import { offlineCommandCleanupHandler } from './handlers/offline-command-cleanup.js';
 import { certificateExpirationCheckHandler } from './handlers/certificate-expiration-check.js';
+import { stationMessageChargingRefreshHandler } from './handlers/station-message-charging-refresh.js';
 
 const log = createLogger('cron-worker');
 
@@ -38,6 +39,7 @@ const JOB_HANDLERS = new Map<string, JobHandlerFn>([
   ['reservation-expiry-check', reservationExpiryCheckHandler],
   ['offline-command-cleanup', offlineCommandCleanupHandler],
   ['certificate-expiration-check', certificateExpirationCheckHandler],
+  ['station-message-charging-refresh', stationMessageChargingRefreshHandler],
 ]);
 
 export function createCronWorker(connection: ConnectionOptions): Worker {

@@ -630,6 +630,147 @@ describe('Event projections', () => {
       });
       expect(idleClearCalls.length).toBe(1);
     });
+
+    it('publishes station_message_refresh on connector status change for OCPP 2.1 stations', async () => {
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationUuid
+        [{ id: 'evse_000000000001' }], // SELECT evses (found)
+        [{ status: 'available' }], // SELECT status FROM connectors (prev)
+        [], // INSERT port_status_log
+        [], // UPDATE connectors
+        [{ site_id: null }], // resolveSiteId
+        [{ ocpp_protocol: 'ocpp2.1' }], // SELECT ocpp_protocol for station_message_refresh
+      );
+
+      await eventBus.emit(
+        'ocpp.StatusNotification',
+        makeDomainEvent('ocpp.StatusNotification', 'CS-001', {
+          evseId: 1,
+          connectorId: 1,
+          connectorStatus: 'Occupied',
+        }),
+      );
+
+      const refreshCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'station_message_refresh',
+      );
+      expect(refreshCalls.length).toBe(1);
+      expect(refreshCalls[0]?.[1]).toContain('CS-001');
+      expect(refreshCalls[0]?.[1]).toContain('ocpp2.1');
+    });
+
+    it('does NOT publish station_message_refresh when connector status unchanged', async () => {
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationUuid
+        [{ id: 'evse_000000000001' }], // SELECT evses (found)
+        [{ status: 'available' }], // SELECT status FROM connectors (prev = same as new)
+        [], // INSERT port_status_log
+        [], // UPDATE connectors
+        [{ site_id: null }], // resolveSiteId
+      );
+
+      await eventBus.emit(
+        'ocpp.StatusNotification',
+        makeDomainEvent('ocpp.StatusNotification', 'CS-001', {
+          evseId: 1,
+          connectorId: 1,
+          connectorStatus: 'Available',
+        }),
+      );
+
+      const refreshCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'station_message_refresh',
+      );
+      expect(refreshCalls.length).toBe(0);
+    });
+
+    it('does NOT publish station_message_refresh for OCPP 1.6 stations', async () => {
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationUuid
+        [{ id: 'evse_000000000001' }], // SELECT evses (found)
+        [{ status: 'available' }], // SELECT status FROM connectors (prev)
+        [], // INSERT port_status_log
+        [], // UPDATE connectors
+        [{ site_id: null }], // resolveSiteId
+        [{ ocpp_protocol: 'ocpp1.6' }], // SELECT ocpp_protocol for station_message_refresh
+      );
+
+      await eventBus.emit(
+        'ocpp.StatusNotification',
+        makeDomainEvent('ocpp.StatusNotification', 'CS-001', {
+          evseId: 1,
+          connectorId: 1,
+          connectorStatus: 'Occupied',
+        }),
+      );
+
+      const refreshCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'station_message_refresh',
+      );
+      expect(refreshCalls.length).toBe(0);
+    });
+
+    it('publishes station_message_refresh for Faulted transitions on OCPP 2.1', async () => {
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationUuid
+        [{ id: 'evse_000000000001' }], // SELECT evses (found)
+        [{ status: 'available' }], // SELECT status FROM connectors (prev)
+        [], // INSERT port_status_log
+        [], // UPDATE connectors
+        [{ site_id: null }], // resolveSiteId
+        [{ ocpp_protocol: 'ocpp2.1' }], // SELECT ocpp_protocol
+      );
+
+      await eventBus.emit(
+        'ocpp.StatusNotification',
+        makeDomainEvent('ocpp.StatusNotification', 'CS-001', {
+          evseId: 1,
+          connectorId: 1,
+          connectorStatus: 'Faulted',
+        }),
+      );
+
+      const refreshCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'station_message_refresh',
+      );
+      expect(refreshCalls.length).toBe(1);
+    });
+
+    it('publishes station_message_refresh on auto-create EVSE branch for OCPP 2.1', async () => {
+      await setup();
+
+      setupSqlResults(
+        [{ id: 'sta_000000000001' }], // resolveStationUuid
+        [], // SELECT evses (not found)
+        [{ id: 'evs_000000000001' }], // INSERT evses RETURNING id
+        [], // INSERT connectors
+        [], // INSERT port_status_log
+        [{ site_id: null }], // resolveSiteId
+        [{ ocpp_protocol: 'ocpp2.1' }], // SELECT ocpp_protocol
+      );
+
+      await eventBus.emit(
+        'ocpp.StatusNotification',
+        makeDomainEvent('ocpp.StatusNotification', 'CS-001', {
+          evseId: 1,
+          connectorId: 1,
+          connectorStatus: 'Available',
+        }),
+      );
+
+      const refreshCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'station_message_refresh',
+      );
+      expect(refreshCalls.length).toBe(1);
+    });
   });
 
   describe('ocpp.TransactionEvent', () => {

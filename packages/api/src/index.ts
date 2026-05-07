@@ -21,6 +21,10 @@ import {
   startMetricsCollector,
   stopMetricsCollector,
 } from './services/metrics-collector.service.js';
+import {
+  startStationMessageRefreshListener,
+  startStationMessageTransactionListener,
+} from './services/station-message.service.js';
 
 async function start(): Promise<void> {
   const sentryConfig = await getSentryConfig();
@@ -63,9 +67,16 @@ async function start(): Promise<void> {
   // same TransactionStarted event and create duplicate payment_records.
   // dev:worker is required for guest charging in dev mode.
 
+  const stationMessageSubscription = await startStationMessageRefreshListener(app.log);
+  const stationMessageTransactionSubscription = await startStationMessageTransactionListener(
+    app.log,
+  );
+
   app.addHook('onClose', async () => {
     stopMetricsCollector();
     await stopMetricsServer();
+    await stationMessageSubscription.unsubscribe();
+    await stationMessageTransactionSubscription.unsubscribe();
     await pubsub.close();
   });
 

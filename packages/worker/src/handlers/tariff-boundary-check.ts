@@ -8,18 +8,18 @@ import {
   chargingStations,
   sessionTariffSegments,
   isSplitBillingEnabled,
-  isPushDisplayEnabled,
+  isStationMessageEnabled,
 } from '@evtivity/database';
 import type { Logger } from 'pino';
 import crypto from 'node:crypto';
 import { getPubSub } from '@evtivity/api/src/lib/pubsub.js';
 import { resolveTariff } from '@evtivity/api/src/services/tariff.service.js';
-import { pushPricingDisplayToAllStations } from '@evtivity/api/src/services/pricing-display.service.js';
+import { pushAllMessagesToAllStations } from '@evtivity/api/src/services/station-message.service.js';
 
 export async function tariffBoundaryCheckHandler(log: Logger): Promise<void> {
   const [splitBilling, pushDisplay] = await Promise.all([
     isSplitBillingEnabled(),
-    isPushDisplayEnabled(),
+    isStationMessageEnabled(),
   ]);
 
   if (!splitBilling && !pushDisplay) return;
@@ -127,6 +127,6 @@ export async function tariffBoundaryCheckHandler(log: Logger): Promise<void> {
   }
 
   if (pushDisplay) {
-    await pushPricingDisplayToAllStations(log);
+    await pushAllMessagesToAllStations(log);
   }
 }

@@ -22,7 +22,7 @@ import {
   sessionTariffSegments,
   guestSessions,
   isSplitBillingEnabled,
-  isPushDisplayEnabled,
+  isStationMessageEnabled,
 } from '@evtivity/database';
 import type { FastifyBaseLogger } from 'fastify';
 import { CronExpressionParser } from 'cron-parser';
@@ -30,7 +30,7 @@ import { queueReport } from './report.service.js';
 import { reconcilePayments } from './payment-reconciliation.service.js';
 import { resolveTariff } from './tariff.service.js';
 import { getStripeConfig, cancelPaymentIntent } from './stripe.service.js';
-import { pushPricingDisplayToAllStations } from './pricing-display.service.js';
+import { pushAllMessagesToAllStations } from './station-message.service.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { getNotificationSettings, sendEmail, renderTemplate, wrapEmailHtml } from '@evtivity/lib';
 import type { EmailAttachment } from '@evtivity/lib';
@@ -152,7 +152,7 @@ jobHandlers.set('report-scheduler', async (log: FastifyBaseLogger) => {
 jobHandlers.set('tariff-boundary-check', async (log: FastifyBaseLogger) => {
   const [splitBilling, pushDisplay] = await Promise.all([
     isSplitBillingEnabled(),
-    isPushDisplayEnabled(),
+    isStationMessageEnabled(),
   ]);
 
   if (!splitBilling && !pushDisplay) return;
@@ -260,7 +260,7 @@ jobHandlers.set('tariff-boundary-check', async (log: FastifyBaseLogger) => {
   }
 
   if (pushDisplay) {
-    await pushPricingDisplayToAllStations(log);
+    await pushAllMessagesToAllStations(log);
   }
 });
 

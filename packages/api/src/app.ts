@@ -85,6 +85,7 @@ import { eventAlertRuleRoutes } from './routes/event-alert-rules.js';
 import { workerLogRoutes } from './routes/worker-logs.js';
 import { apiKeyRoutes } from './routes/api-keys.js';
 import { stationImageRoutes } from './routes/station-images.js';
+import { stationMessageTemplateRoutes } from './routes/station-message-templates.js';
 import { fleetReservationRoutes } from './routes/fleet-reservations.js';
 import { cssRoutes } from './routes/css.js';
 import { smartChargingRoutes } from './routes/smart-charging.js';
@@ -201,6 +202,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
       await v1.register(workerLogRoutes);
       await v1.register(apiKeyRoutes);
       await v1.register(stationImageRoutes);
+      await v1.register(stationMessageTemplateRoutes);
       await v1.register(fleetReservationRoutes);
       await v1.register(cssRoutes);
       await v1.register(smartChargingRoutes);

@@ -64,6 +64,7 @@ import {
   carbonIntensityFactors,
   userPermissions,
   userSiteAssignments,
+  stationMessageTemplates,
 } from './schema/index.js';
 import argon2 from 'argon2';
 import {
@@ -71,6 +72,7 @@ import {
   calculateCo2AvoidedKg,
   ADMIN_DEFAULT_PERMISSIONS,
   OPERATOR_DEFAULT_PERMISSIONS,
+  STATION_MESSAGE_DEFAULTS,
 } from '@evtivity/lib';
 
 // Helper data
@@ -422,8 +424,10 @@ async function seed(): Promise<void> {
     'security.autoDisableOnCritical': true,
     'pricing.currency': 'USD',
     'pricing.splitBillingEnabled': true,
-    'pricing.displayFormat': 'standard',
-    'pricing.pushDisplayEnabled': true,
+    'stationMessage.enabled': false,
+    'stationMessage.pricingFormat': 'compact',
+    'stationMessage.charging.refreshSeconds': 30,
+    'stationMessage.brandLine': '',
     'notifications.emailEnabled': true,
     'ftp.host': 'ftp',
     'ftp.port': 21,
@@ -572,6 +576,545 @@ async function seed(): Promise<void> {
       set: { value: sql`EXCLUDED.value`, updatedAt: new Date() },
     });
   console.log(`  ${String(settingsRows.length)} settings created.`);
+
+  // ------ Pricing Holidays + Groups + Tariffs (always seeded) ------
+  // Operators expect a working pricing schedule even in minimal mode so that
+  // newly created stations resolve a tariff and the pricing UI is non-empty.
+
+  // ------ Pricing Holidays ------
+  const holidayRows = [
+    { name: "New Year's Day", date: '2026-01-01' },
+    { name: 'Martin Luther King Jr. Day', date: '2026-01-19' },
+    { name: "Presidents' Day", date: '2026-02-16' },
+    { name: 'Memorial Day', date: '2026-05-25' },
+    { name: 'Independence Day', date: '2026-07-04' },
+    { name: 'Labor Day', date: '2026-09-07' },
+    { name: 'Thanksgiving', date: '2026-11-26' },
+    { name: 'Christmas Day', date: '2026-12-25' },
+  ];
+  await db.insert(pricingHolidays).values(holidayRows);
+  console.log(`  ${String(holidayRows.length)} pricing holidays created.`);
+
+  // ------ Pricing Groups and Tariffs (all restriction types) ------
+  const pricingGroupDefs = [
+    {
+      name: 'Time-of-Day Standard',
+      description: 'Full schedule with peak/off-peak/shoulder/holiday/energy tiers',
+      isDefault: true,
+    },
+    {
+      name: 'Premium DC Fast',
+      description: 'High-power DC with weekday/weekend time splits',
+      isDefault: false,
+    },
+    {
+      name: 'Fleet Discount',
+      description: 'Discounted fleet rate with seasonal and energy tiers',
+      isDefault: false,
+    },
+    {
+      name: 'Employee Benefit',
+      description: 'Free off-peak charging with nominal peak rate',
+      isDefault: false,
+    },
+    {
+      name: 'Seasonal Resort',
+      description: 'Summer/winter seasonal pricing for resort locations',
+      isDefault: false,
+    },
+    {
+      name: 'VIP',
+      description: 'Free charging for VIP drivers',
+      isDefault: false,
+    },
+  ];
+  const createdPricingGroups = await db
+    .insert(pricingGroups)
+    .values(pricingGroupDefs)
+    .returning({ id: pricingGroups.id });
+  console.log(`  ${String(createdPricingGroups.length)} pricing groups created.`);
+
+  // Group 0: Time-of-Day Standard (all restriction types)
+  // Group 1: Premium DC Fast (day+time combos)
+  // Group 2: Fleet Discount (seasonal + energy threshold)
+  // Group 3: Employee Benefit (time-only)
+  // Group 4: Seasonal Resort (date-range + holiday)
+  const tariffRows = [
+    // --- Group 0: Time-of-Day Standard ---
+    // Default fallback (priority 0)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Standard Rate',
+      currency: 'USD',
+      pricePerKwh: '0.30',
+      pricePerMinute: '0.02',
+      pricePerSession: '1.00',
+      idleFeePricePerMinute: '0.15',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+      restrictions: null,
+    },
+    // Time-only: peak hours (priority 10)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Peak Hours',
+      currency: 'USD',
+      pricePerKwh: '0.48',
+      pricePerMinute: '0.05',
+      pricePerSession: '1.50',
+      idleFeePricePerMinute: '0.25',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 10,
+      isDefault: false,
+      restrictions: { timeRange: { startTime: '16:00', endTime: '21:00' } },
+    },
+    // Time-only: off-peak overnight with midnight crossing (priority 10)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Off-Peak Overnight',
+      currency: 'USD',
+      pricePerKwh: '0.18',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.50',
+      idleFeePricePerMinute: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 10,
+      isDefault: false,
+      restrictions: { timeRange: { startTime: '23:00', endTime: '06:00' } },
+    },
+    // Day+time: weekday peak (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Weekday Business Hours',
+      currency: 'USD',
+      pricePerKwh: '0.42',
+      pricePerMinute: '0.04',
+      pricePerSession: '1.25',
+      idleFeePricePerMinute: '0.20',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [1, 2, 3, 4, 5],
+        timeRange: { startTime: '08:00', endTime: '17:00' },
+      },
+    },
+    // Day+time: weekend daytime (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Weekend Daytime',
+      currency: 'USD',
+      pricePerKwh: '0.25',
+      pricePerMinute: '0.01',
+      pricePerSession: '0.75',
+      idleFeePricePerMinute: '0.10',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [0, 6],
+        timeRange: { startTime: '09:00', endTime: '21:00' },
+      },
+    },
+    // Holiday (priority 40)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'Holiday Rate',
+      currency: 'USD',
+      pricePerKwh: '0.22',
+      pricePerMinute: '0.01',
+      pricePerSession: '0.50',
+      idleFeePricePerMinute: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 40,
+      isDefault: false,
+      restrictions: { holidays: true },
+    },
+    // Energy threshold: high-usage surcharge (priority 50)
+    {
+      pricingGroupId: at(createdPricingGroups, 0).id,
+      name: 'High Usage Surcharge',
+      currency: 'USD',
+      pricePerKwh: '0.55',
+      pricePerMinute: '0.06',
+      pricePerSession: '2.00',
+      idleFeePricePerMinute: '0.30',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 50,
+      isDefault: false,
+      restrictions: { energyThresholdKwh: 80 },
+    },
+
+    // --- Group 1: Premium DC Fast ---
+    // Default
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'DC Base Rate',
+      currency: 'USD',
+      pricePerKwh: '0.50',
+      pricePerMinute: '0.08',
+      pricePerSession: '2.00',
+      idleFeePricePerMinute: '0.40',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+      restrictions: null,
+    },
+    // Day+time: weekday morning rush (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'Weekday Morning Rush',
+      currency: 'USD',
+      pricePerKwh: '0.65',
+      pricePerMinute: '0.10',
+      pricePerSession: '2.50',
+      idleFeePricePerMinute: '0.50',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [1, 2, 3, 4, 5],
+        timeRange: { startTime: '07:00', endTime: '10:00' },
+      },
+    },
+    // Day+time: weekday evening rush (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'Weekday Evening Rush',
+      currency: 'USD',
+      pricePerKwh: '0.68',
+      pricePerMinute: '0.10',
+      pricePerSession: '2.50',
+      idleFeePricePerMinute: '0.50',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [1, 2, 3, 4, 5],
+        timeRange: { startTime: '17:00', endTime: '20:00' },
+      },
+    },
+    // Day+time: weekend all day (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'Weekend Rate',
+      currency: 'USD',
+      pricePerKwh: '0.45',
+      pricePerMinute: '0.06',
+      pricePerSession: '1.50',
+      idleFeePricePerMinute: '0.30',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [0, 6],
+        timeRange: { startTime: '06:00', endTime: '22:00' },
+      },
+    },
+    // Holiday (priority 40)
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'Holiday Discount',
+      currency: 'USD',
+      pricePerKwh: '0.40',
+      pricePerMinute: '0.04',
+      pricePerSession: '1.00',
+      idleFeePricePerMinute: '0.20',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 40,
+      isDefault: false,
+      restrictions: { holidays: true },
+    },
+    // Energy threshold: ultra-high usage (priority 50)
+    {
+      pricingGroupId: at(createdPricingGroups, 1).id,
+      name: 'Ultra-High Usage',
+      currency: 'USD',
+      pricePerKwh: '0.75',
+      pricePerMinute: '0.12',
+      pricePerSession: '3.00',
+      idleFeePricePerMinute: '0.60',
+      taxRate: '0.0725',
+      isActive: true,
+      priority: 50,
+      isDefault: false,
+      restrictions: { energyThresholdKwh: 100 },
+    },
+
+    // --- Group 2: Fleet Discount ---
+    // Default
+    {
+      pricingGroupId: at(createdPricingGroups, 2).id,
+      name: 'Fleet Base Rate',
+      currency: 'USD',
+      pricePerKwh: '0.20',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+      restrictions: null,
+    },
+    // Time-only: fleet overnight charging discount (priority 10)
+    {
+      pricingGroupId: at(createdPricingGroups, 2).id,
+      name: 'Fleet Overnight',
+      currency: 'USD',
+      pricePerKwh: '0.12',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 10,
+      isDefault: false,
+      restrictions: { timeRange: { startTime: '22:00', endTime: '05:00' } },
+    },
+    // Seasonal: summer peak demand (priority 30)
+    {
+      pricingGroupId: at(createdPricingGroups, 2).id,
+      name: 'Summer Peak Surcharge',
+      currency: 'USD',
+      pricePerKwh: '0.28',
+      pricePerMinute: '0.02',
+      pricePerSession: '0.50',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 30,
+      isDefault: false,
+      restrictions: { dateRange: { startDate: '06-01', endDate: '09-30' } },
+    },
+    // Seasonal: winter off-peak (priority 30)
+    {
+      pricingGroupId: at(createdPricingGroups, 2).id,
+      name: 'Winter Discount',
+      currency: 'USD',
+      pricePerKwh: '0.14',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 30,
+      isDefault: false,
+      restrictions: { dateRange: { startDate: '11-01', endDate: '02-28' } },
+    },
+    // Energy threshold: bulk charging (priority 50)
+    {
+      pricingGroupId: at(createdPricingGroups, 2).id,
+      name: 'Fleet Bulk Discount',
+      currency: 'USD',
+      pricePerKwh: '0.10',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      taxRate: '0.0825',
+      isActive: true,
+      priority: 50,
+      isDefault: false,
+      restrictions: { energyThresholdKwh: 50 },
+    },
+
+    // --- Group 3: Employee Benefit ---
+    // Default (free off-peak)
+    {
+      pricingGroupId: at(createdPricingGroups, 3).id,
+      name: 'Employee Free Charging',
+      currency: 'USD',
+      pricePerKwh: '0.00',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      idleFeePricePerMinute: '0.10',
+      taxRate: '0.00',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+      restrictions: null,
+    },
+    // Time-only: nominal peak rate (priority 10)
+    {
+      pricingGroupId: at(createdPricingGroups, 3).id,
+      name: 'Employee Peak Rate',
+      currency: 'USD',
+      pricePerKwh: '0.10',
+      pricePerMinute: '0.01',
+      pricePerSession: '0.00',
+      idleFeePricePerMinute: '0.15',
+      taxRate: '0.00',
+      isActive: true,
+      priority: 10,
+      isDefault: false,
+      restrictions: { timeRange: { startTime: '12:00', endTime: '14:00' } },
+    },
+    // Day+time: Friday afternoon free (priority 20)
+    {
+      pricingGroupId: at(createdPricingGroups, 3).id,
+      name: 'Friday Afternoon Free',
+      currency: 'USD',
+      pricePerKwh: '0.00',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      idleFeePricePerMinute: '0.00',
+      taxRate: '0.00',
+      isActive: true,
+      priority: 20,
+      isDefault: false,
+      restrictions: {
+        daysOfWeek: [5],
+        timeRange: { startTime: '13:00', endTime: '18:00' },
+      },
+    },
+    // Holiday: employee holiday bonus (priority 40)
+    {
+      pricingGroupId: at(createdPricingGroups, 3).id,
+      name: 'Holiday Free Charging',
+      currency: 'USD',
+      pricePerKwh: '0.00',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      idleFeePricePerMinute: '0.00',
+      taxRate: '0.00',
+      isActive: true,
+      priority: 40,
+      isDefault: false,
+      restrictions: { holidays: true },
+    },
+
+    // --- Group 4: Seasonal Resort ---
+    // Default
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Resort Base Rate',
+      currency: 'USD',
+      pricePerKwh: '0.35',
+      pricePerMinute: '0.03',
+      pricePerSession: '1.50',
+      idleFeePricePerMinute: '0.20',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+      restrictions: null,
+    },
+    // Time-only: resort evening discount (priority 10)
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Evening Discount',
+      currency: 'USD',
+      pricePerKwh: '0.25',
+      pricePerMinute: '0.01',
+      pricePerSession: '0.75',
+      idleFeePricePerMinute: '0.10',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 10,
+      isDefault: false,
+      restrictions: { timeRange: { startTime: '20:00', endTime: '08:00' } },
+    },
+    // Seasonal: summer peak (priority 30)
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Summer Peak Season',
+      currency: 'USD',
+      pricePerKwh: '0.55',
+      pricePerMinute: '0.06',
+      pricePerSession: '2.50',
+      idleFeePricePerMinute: '0.35',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 30,
+      isDefault: false,
+      restrictions: { dateRange: { startDate: '05-15', endDate: '09-15' } },
+    },
+    // Seasonal: ski season (priority 30, year-wrapping date range)
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Ski Season Premium',
+      currency: 'USD',
+      pricePerKwh: '0.50',
+      pricePerMinute: '0.05',
+      pricePerSession: '2.00',
+      idleFeePricePerMinute: '0.30',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 30,
+      isDefault: false,
+      restrictions: { dateRange: { startDate: '11-15', endDate: '03-31' } },
+    },
+    // Holiday: resort holiday premium (priority 40)
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Holiday Premium',
+      currency: 'USD',
+      pricePerKwh: '0.60',
+      pricePerMinute: '0.08',
+      pricePerSession: '3.00',
+      idleFeePricePerMinute: '0.50',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 40,
+      isDefault: false,
+      restrictions: { holidays: true },
+    },
+    // Energy threshold (priority 50)
+    {
+      pricingGroupId: at(createdPricingGroups, 4).id,
+      name: 'Heavy Usage Rate',
+      currency: 'USD',
+      pricePerKwh: '0.70',
+      pricePerMinute: '0.10',
+      pricePerSession: '3.50',
+      idleFeePricePerMinute: '0.50',
+      taxRate: '0.09',
+      isActive: true,
+      priority: 50,
+      isDefault: false,
+      restrictions: { energyThresholdKwh: 60 },
+    },
+
+    // --- Group 5: VIP ---
+    {
+      pricingGroupId: at(createdPricingGroups, 5).id,
+      name: 'VIP Free Charging',
+      currency: 'USD',
+      pricePerKwh: '0.00',
+      pricePerMinute: '0.00',
+      pricePerSession: '0.00',
+      idleFeePricePerMinute: '0.00',
+      taxRate: '0.00',
+      isActive: true,
+      priority: 0,
+      isDefault: true,
+    },
+  ];
+  await db.insert(tariffs).values(tariffRows);
+  console.log(`  ${String(tariffRows.length)} tariffs created.`);
+
+  // ------ Station Message Templates (always seeded) ------
+  // One row per OCPP MessageState slot. ON CONFLICT DO NOTHING so re-runs
+  // don't overwrite operator edits. Defaults sourced from @evtivity/lib so
+  // the API "Reset to default" handler can re-insert the same content.
+  const stationMessageTemplateRows = (
+    Object.entries(STATION_MESSAGE_DEFAULTS) as Array<
+      [keyof typeof STATION_MESSAGE_DEFAULTS, string]
+    >
+  ).map(([state, body]) => ({ state, body }));
+  await db
+    .insert(stationMessageTemplates)
+    .values(stationMessageTemplateRows)
+    .onConflictDoNothing({ target: stationMessageTemplates.state });
+  console.log(`  ${String(stationMessageTemplateRows.length)} station message templates seeded.`);
 
   if (!seedDemo) {
     // When SEED_DEMO=false, only create roles, admin user, and permissions, then exit
@@ -1279,526 +1822,6 @@ async function seed(): Promise<void> {
     await db.insert(fleetStations).values(fleetStationRows);
   }
   console.log(`  ${String(fleetStationRows.length)} fleet-station assignments created.`);
-
-  // ------ Pricing Holidays ------
-  const holidayRows = [
-    { name: "New Year's Day", date: '2026-01-01' },
-    { name: 'Martin Luther King Jr. Day', date: '2026-01-19' },
-    { name: "Presidents' Day", date: '2026-02-16' },
-    { name: 'Memorial Day', date: '2026-05-25' },
-    { name: 'Independence Day', date: '2026-07-04' },
-    { name: 'Labor Day', date: '2026-09-07' },
-    { name: 'Thanksgiving', date: '2026-11-26' },
-    { name: 'Christmas Day', date: '2026-12-25' },
-  ];
-  await db.insert(pricingHolidays).values(holidayRows);
-  console.log(`  ${String(holidayRows.length)} pricing holidays created.`);
-
-  // ------ Pricing Groups and Tariffs (all restriction types) ------
-  const pricingGroupDefs = [
-    {
-      name: 'Time-of-Day Standard',
-      description: 'Full schedule with peak/off-peak/shoulder/holiday/energy tiers',
-      isDefault: true,
-    },
-    {
-      name: 'Premium DC Fast',
-      description: 'High-power DC with weekday/weekend time splits',
-      isDefault: false,
-    },
-    {
-      name: 'Fleet Discount',
-      description: 'Discounted fleet rate with seasonal and energy tiers',
-      isDefault: false,
-    },
-    {
-      name: 'Employee Benefit',
-      description: 'Free off-peak charging with nominal peak rate',
-      isDefault: false,
-    },
-    {
-      name: 'Seasonal Resort',
-      description: 'Summer/winter seasonal pricing for resort locations',
-      isDefault: false,
-    },
-    {
-      name: 'VIP',
-      description: 'Free charging for VIP drivers',
-      isDefault: false,
-    },
-  ];
-  const createdPricingGroups = await db
-    .insert(pricingGroups)
-    .values(pricingGroupDefs)
-    .returning({ id: pricingGroups.id });
-  console.log(`  ${String(createdPricingGroups.length)} pricing groups created.`);
-
-  // Group 0: Time-of-Day Standard (all restriction types)
-  // Group 1: Premium DC Fast (day+time combos)
-  // Group 2: Fleet Discount (seasonal + energy threshold)
-  // Group 3: Employee Benefit (time-only)
-  // Group 4: Seasonal Resort (date-range + holiday)
-  const tariffRows = [
-    // --- Group 0: Time-of-Day Standard ---
-    // Default fallback (priority 0)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Standard Rate',
-      currency: 'USD',
-      pricePerKwh: '0.30',
-      pricePerMinute: '0.02',
-      pricePerSession: '1.00',
-      idleFeePricePerMinute: '0.15',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: peak hours (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Peak Hours',
-      currency: 'USD',
-      pricePerKwh: '0.48',
-      pricePerMinute: '0.05',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.25',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '16:00', endTime: '21:00' } },
-    },
-    // Time-only: off-peak overnight with midnight crossing (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Off-Peak Overnight',
-      currency: 'USD',
-      pricePerKwh: '0.18',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.50',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '23:00', endTime: '06:00' } },
-    },
-    // Day+time: weekday peak (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Weekday Business Hours',
-      currency: 'USD',
-      pricePerKwh: '0.42',
-      pricePerMinute: '0.04',
-      pricePerSession: '1.25',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '08:00', endTime: '17:00' },
-      },
-    },
-    // Day+time: weekend daytime (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Weekend Daytime',
-      currency: 'USD',
-      pricePerKwh: '0.25',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.75',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [0, 6],
-        timeRange: { startTime: '09:00', endTime: '21:00' },
-      },
-    },
-    // Holiday (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Holiday Rate',
-      currency: 'USD',
-      pricePerKwh: '0.22',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.50',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold: high-usage surcharge (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'High Usage Surcharge',
-      currency: 'USD',
-      pricePerKwh: '0.55',
-      pricePerMinute: '0.06',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 80 },
-    },
-
-    // --- Group 1: Premium DC Fast ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'DC Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.50',
-      pricePerMinute: '0.08',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.40',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Day+time: weekday morning rush (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekday Morning Rush',
-      currency: 'USD',
-      pricePerKwh: '0.65',
-      pricePerMinute: '0.10',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '07:00', endTime: '10:00' },
-      },
-    },
-    // Day+time: weekday evening rush (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekday Evening Rush',
-      currency: 'USD',
-      pricePerKwh: '0.68',
-      pricePerMinute: '0.10',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '17:00', endTime: '20:00' },
-      },
-    },
-    // Day+time: weekend all day (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekend Rate',
-      currency: 'USD',
-      pricePerKwh: '0.45',
-      pricePerMinute: '0.06',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [0, 6],
-        timeRange: { startTime: '06:00', endTime: '22:00' },
-      },
-    },
-    // Holiday (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Holiday Discount',
-      currency: 'USD',
-      pricePerKwh: '0.40',
-      pricePerMinute: '0.04',
-      pricePerSession: '1.00',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold: ultra-high usage (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Ultra-High Usage',
-      currency: 'USD',
-      pricePerKwh: '0.75',
-      pricePerMinute: '0.12',
-      pricePerSession: '3.00',
-      idleFeePricePerMinute: '0.60',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 100 },
-    },
-
-    // --- Group 2: Fleet Discount ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.20',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: fleet overnight charging discount (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Overnight',
-      currency: 'USD',
-      pricePerKwh: '0.12',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '22:00', endTime: '05:00' } },
-    },
-    // Seasonal: summer peak demand (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Summer Peak Surcharge',
-      currency: 'USD',
-      pricePerKwh: '0.28',
-      pricePerMinute: '0.02',
-      pricePerSession: '0.50',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '06-01', endDate: '09-30' } },
-    },
-    // Seasonal: winter off-peak (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Winter Discount',
-      currency: 'USD',
-      pricePerKwh: '0.14',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '11-01', endDate: '02-28' } },
-    },
-    // Energy threshold: bulk charging (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Bulk Discount',
-      currency: 'USD',
-      pricePerKwh: '0.10',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 50 },
-    },
-
-    // --- Group 3: Employee Benefit ---
-    // Default (free off-peak)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Employee Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: nominal peak rate (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Employee Peak Rate',
-      currency: 'USD',
-      pricePerKwh: '0.10',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.15',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '12:00', endTime: '14:00' } },
-    },
-    // Day+time: Friday afternoon free (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Friday Afternoon Free',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [5],
-        timeRange: { startTime: '13:00', endTime: '18:00' },
-      },
-    },
-    // Holiday: employee holiday bonus (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Holiday Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-
-    // --- Group 4: Seasonal Resort ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Resort Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.35',
-      pricePerMinute: '0.03',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: resort evening discount (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Evening Discount',
-      currency: 'USD',
-      pricePerKwh: '0.25',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.75',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '20:00', endTime: '08:00' } },
-    },
-    // Seasonal: summer peak (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Summer Peak Season',
-      currency: 'USD',
-      pricePerKwh: '0.55',
-      pricePerMinute: '0.06',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.35',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '05-15', endDate: '09-15' } },
-    },
-    // Seasonal: ski season (priority 30, year-wrapping date range)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Ski Season Premium',
-      currency: 'USD',
-      pricePerKwh: '0.50',
-      pricePerMinute: '0.05',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '11-15', endDate: '03-31' } },
-    },
-    // Holiday: resort holiday premium (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Holiday Premium',
-      currency: 'USD',
-      pricePerKwh: '0.60',
-      pricePerMinute: '0.08',
-      pricePerSession: '3.00',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Heavy Usage Rate',
-      currency: 'USD',
-      pricePerKwh: '0.70',
-      pricePerMinute: '0.10',
-      pricePerSession: '3.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 60 },
-    },
-
-    // --- Group 5: VIP ---
-    {
-      pricingGroupId: at(createdPricingGroups, 5).id,
-      name: 'VIP Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-    },
-  ];
-  await db.insert(tariffs).values(tariffRows);
-  console.log(`  ${String(tariffRows.length)} tariffs created.`);
 
   // ------ Pricing Group Station assignments (100) ------
   const pgStationRows: Array<{ pricingGroupId: string; stationId: string }> = [];

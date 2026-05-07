@@ -20,18 +20,21 @@ echo ""
 echo "Core services (postgres, redis, api, ocpp, csms, portal, simulator, worker) always start."
 echo ""
 
-# Network binding
+# Network binding. The whole point of an explicit BIND_IP is cross-device
+# access (phone, tablet, another laptop on the same LAN). Default to YES so
+# the URLs printed at the end are immediately reachable from any device on
+# the network. Pick "n" to keep the stack loopback-only.
 if [ -z "${BIND_IP:-}" ]; then
   LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "")
   if [ -n "$LAN_IP" ]; then
-    read -rp "Bind to LAN IP ($LAN_IP) for external access? [y/N] " bind_ip
-    if [[ "$bind_ip" == "y" || "$bind_ip" == "Y" ]]; then
-      export BIND_IP="$LAN_IP"
+    read -rp "Bind to LAN IP ($LAN_IP) for external access? [Y/n] " bind_ip
+    if [[ "$bind_ip" == "n" || "$bind_ip" == "N" ]]; then
+      export BIND_IP="127.0.0.1"
     else
-      export BIND_IP="0.0.0.0"
+      export BIND_IP="$LAN_IP"
     fi
   else
-    export BIND_IP="0.0.0.0"
+    export BIND_IP="127.0.0.1"
   fi
 fi
 
@@ -54,7 +57,9 @@ if [[ "$monitoring" == "y" || "$monitoring" == "Y" ]]; then
 fi
 
 echo ""
-echo "Bind IP: $BIND_IP"
+if [ "$BIND_IP" != "127.0.0.1" ]; then
+  echo "Bind IP: $BIND_IP (LAN)"
+fi
 echo "Profiles: ${PROFILES[*]:-none}"
 echo ""
 

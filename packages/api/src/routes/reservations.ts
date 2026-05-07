@@ -204,6 +204,7 @@ export function reservationRoutes(app: FastifyInstance): void {
             driverFirstName: drivers.firstName,
             driverLastName: drivers.lastName,
             status: reservations.status,
+            startsAt: reservations.startsAt,
             expiresAt: reservations.expiresAt,
             createdAt: reservations.createdAt,
             sessionId: chargingSessions.id,

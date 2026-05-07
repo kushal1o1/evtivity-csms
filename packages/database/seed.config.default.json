@@ -34,8 +34,10 @@
 
     "pricing.currency": "USD",
     "pricing.splitBillingEnabled": true,
-    "pricing.displayFormat": "standard",
-    "pricing.pushDisplayEnabled": true,
+    "stationMessage.enabled": false,
+    "stationMessage.pricingFormat": "compact",
+    "stationMessage.charging.refreshSeconds": 30,
+    "stationMessage.brandLine": "",
     "idling.gracePeriodMinutes": 30,
     "session.staleTimeoutHours": 24,
 

@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { ReservationSettings } from '@/components/settings/ReservationSettings';
+import { StationMessageSettings } from '@/components/settings/StationMessageSettings';
 
 interface IntegrationsSettingsProps {
   settings: Record<string, unknown> | undefined;
@@ -54,8 +55,6 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
 
   // Pricing
   const [splitBillingEnabled, setSplitBillingEnabled] = useState(true);
-  const [pricingDisplayFormat, setPricingDisplayFormat] = useState('standard');
-  const [pushDisplayEnabled, setPushDisplayEnabled] = useState(true);
 
   // Google Maps
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState('');
@@ -141,9 +140,6 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
     const sst = settings['session.staleTimeoutHours'];
     setStaleSessionTimeout(sst != null ? Number(sst).toString() : '24');
     setSplitBillingEnabled(settings['pricing.splitBillingEnabled'] !== false);
-    const displayFmt = settings['pricing.displayFormat'];
-    setPricingDisplayFormat(typeof displayFmt === 'string' ? displayFmt : 'standard');
-    setPushDisplayEnabled(settings['pricing.pushDisplayEnabled'] !== false);
     const mapsKey = settings['googleMaps.apiKey'];
     setGoogleMapsApiKey(typeof mapsKey === 'string' ? mapsKey : '');
     const mapsLat = settings['googleMaps.defaultLat'];
@@ -369,16 +365,8 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
   });
 
   const pricingSettingsMutation = useMutation({
-    mutationFn: (vals: {
-      splitBillingEnabled: boolean;
-      displayFormat: string;
-      pushDisplayEnabled: boolean;
-    }) =>
-      Promise.all([
-        api.put('/v1/settings/pricing.splitBillingEnabled', { value: vals.splitBillingEnabled }),
-        api.put('/v1/settings/pricing.displayFormat', { value: vals.displayFormat }),
-        api.put('/v1/settings/pricing.pushDisplayEnabled', { value: vals.pushDisplayEnabled }),
-      ]),
+    mutationFn: (vals: { splitBillingEnabled: boolean }) =>
+      api.put('/v1/settings/pricing.splitBillingEnabled', { value: vals.splitBillingEnabled }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
@@ -397,6 +385,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
         <TabsTrigger value="idling">{t('settings.idling')}</TabsTrigger>
         <TabsTrigger value="session">{t('settings.session')}</TabsTrigger>
         <TabsTrigger value="pricing">{t('settings.pricingSettings')}</TabsTrigger>
+        <TabsTrigger value="messages">{t('settings.messagesTab')}</TabsTrigger>
         <TabsTrigger value="s3">{t('settings.s3')}</TabsTrigger>
         <TabsTrigger value="ftp">{t('settings.ftpServer')}</TabsTrigger>
         <TabsTrigger value="googleMaps">{t('settings.googleMaps')}</TabsTrigger>
@@ -1071,60 +1060,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               </button>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="pricing-display-format">{t('settings.displayFormat')}</Label>
-              <p className="text-xs text-muted-foreground">{t('settings.displayFormatDesc')}</p>
-              <Select
-                id="pricing-display-format"
-                value={pricingDisplayFormat}
-                onChange={(e) => {
-                  setPricingDisplayFormat(e.target.value);
-                }}
-              >
-                <option value="standard">{t('settings.displayFormatStandard')}</option>
-                <option value="compact">{t('settings.displayFormatCompact')}</option>
-              </Select>
-              <div className="rounded-md border bg-muted/50 px-3 py-2">
-                <p className="text-xs font-medium text-muted-foreground mb-1">
-                  {t('settings.displayFormatExample')}
-                </p>
-                <p className="text-sm">
-                  {pricingDisplayFormat === 'compact'
-                    ? '$0.25/kWh + $0.15/min + $2.00 session'
-                    : 'Energy: $0.25/kWh | Time: $0.15/min | Session: $2.00 | Idle: $0.05/min | Tax: 8%'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <Label>{t('settings.pushDisplay')}</Label>
-                <p className="text-xs text-muted-foreground">{t('settings.pushDisplayDesc')}</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={pushDisplayEnabled}
-                onClick={() => {
-                  setPushDisplayEnabled((v) => !v);
-                }}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${pushDisplayEnabled ? 'bg-primary' : 'bg-muted'}`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${pushDisplayEnabled ? 'translate-x-5' : 'translate-x-0'}`}
-                />
-              </button>
-            </div>
-
             <SaveButton
               isPending={pricingSettingsMutation.isPending}
               type="button"
               onClick={() => {
-                pricingSettingsMutation.mutate({
-                  splitBillingEnabled,
-                  displayFormat: pricingDisplayFormat,
-                  pushDisplayEnabled,
-                });
+                pricingSettingsMutation.mutate({ splitBillingEnabled });
               }}
             />
             {pricingSettingsMutation.isSuccess && (
@@ -1132,6 +1072,9 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
             )}
           </CardContent>
         </Card>
+      </TabsContent>
+      <TabsContent value="messages" className="mt-4">
+        <StationMessageSettings settings={settings} />
       </TabsContent>
       <TabsContent value="googleMaps" className="mt-4">
         <Card>

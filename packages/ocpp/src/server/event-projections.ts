@@ -705,6 +705,21 @@ export function registerProjections(
     } catch {
       // Non-critical: queue drain failure should not block connection handling
     }
+
+    if (ocppProtocol != null && ocppProtocol.startsWith('ocpp2')) {
+      try {
+        await pubsub.publish(
+          'station_message_refresh',
+          JSON.stringify({
+            stationOcppId,
+            internalStationId: stationUuid,
+            ocppProtocol,
+          }),
+        );
+      } catch {
+        // Best-effort station-message refresh
+      }
+    }
   });
 
   safeSubscribe('station.Disconnected', async (event: DomainEvent) => {
@@ -995,6 +1010,25 @@ export function registerProjections(
         'Failed to push OCPP configuration on boot',
       );
     }
+
+    try {
+      const [stationRow] = await sql`
+        SELECT ocpp_protocol FROM charging_stations WHERE id = ${stationUuid}
+      `;
+      const protocol = stationRow?.ocpp_protocol as string | null;
+      if (protocol != null && protocol.startsWith('ocpp2')) {
+        await pubsub.publish(
+          'station_message_refresh',
+          JSON.stringify({
+            stationOcppId: event.aggregateId,
+            internalStationId: stationUuid,
+            ocppProtocol: protocol,
+          }),
+        );
+      }
+    } catch {
+      // Best-effort station-message refresh
+    }
   });
 
   safeSubscribe('ocpp.Heartbeat', async (event: DomainEvent) => {
@@ -1033,6 +1067,7 @@ export function registerProjections(
 
     const evseRow = evseRows[0];
     let resolvedEvseUuid: string | undefined;
+    let previousDbStatus: string | undefined;
 
     if (evseRow == null) {
       // Auto-create EVSE (only if station still exists)
@@ -1068,6 +1103,7 @@ export function registerProjections(
         SELECT status FROM connectors WHERE evse_id = ${evseUuid} AND connector_id = ${connectorIdNum}
       `;
       const previousStatus = prevRows[0]?.status as string | undefined;
+      previousDbStatus = previousStatus;
 
       await sql`
         INSERT INTO port_status_log (station_id, evse_id, connector_id, previous_status, new_status, timestamp)
@@ -1092,6 +1128,45 @@ export function registerProjections(
     await notifyChange('station.status', stationUuid, siteId);
     if (siteId != null) {
       await notifyOcpiPush('location', { siteId });
+    }
+
+    // Trigger station-message refresh on real connector-status transitions for
+    // OCPP 2.1 stations. The shared push helper re-evaluates the current
+    // connector status and rewrites slot 9000 (Available/Occupied/Reserved
+    // share Idle) plus the persistent Faulted (9004) and Unavailable (9005)
+    // slots; transaction-state slots (9001-9003) are handled by the
+    // TransactionEvent projection. Gate on (a) status actually changed -- real
+    // stations sometimes resend the same status on heartbeat ticks -- and
+    // (b) the transition is one that can change what the station displays.
+    const STATION_MESSAGE_RELEVANT_STATUSES = new Set([
+      'Available',
+      'Occupied',
+      'Reserved',
+      'Faulted',
+      'Unavailable',
+      'Preparing',
+      'EVConnected',
+      'Finishing',
+    ]);
+    if (dbStatus !== previousDbStatus && STATION_MESSAGE_RELEVANT_STATUSES.has(ocppStatus)) {
+      try {
+        const [stationRow] = await sql`
+          SELECT ocpp_protocol FROM charging_stations WHERE id = ${stationUuid}
+        `;
+        const protocol = stationRow?.ocpp_protocol as string | null | undefined;
+        if (protocol != null && protocol.startsWith('ocpp2')) {
+          await pubsub.publish(
+            'station_message_refresh',
+            JSON.stringify({
+              stationOcppId: event.aggregateId,
+              internalStationId: stationUuid,
+              ocppProtocol: protocol,
+            }),
+          );
+        }
+      } catch {
+        // Best-effort station-message refresh
+      }
     }
 
     // OCPP 1.6 StatusNotification idle detection fallback.
@@ -1150,6 +1225,33 @@ export function registerProjections(
     const triggerReason = payload.triggerReason as string;
     const timestamp = payload.timestamp as string;
     const payloadJson = JSON.stringify(payload);
+
+    async function publishStationMessageTransaction(
+      sessionId: string,
+      kind: 'started' | 'updated' | 'ended',
+      chargingState: string | null,
+    ): Promise<void> {
+      try {
+        const [stationRow] = await sql`
+          SELECT ocpp_protocol FROM charging_stations WHERE id = ${stationUuid}
+        `;
+        const protocol = stationRow?.ocpp_protocol as string | null | undefined;
+        if (protocol == null || !protocol.startsWith('ocpp2')) return;
+        await pubsub.publish(
+          'station_message_transaction',
+          JSON.stringify({
+            sessionId,
+            internalStationId: stationUuid,
+            stationOcppId: stationId,
+            ocppProtocol: protocol,
+            eventType: kind,
+            chargingState,
+          }),
+        );
+      } catch {
+        // Best-effort station-message refresh
+      }
+    }
 
     if (eventType === 'Started') {
       // For remote starts, link back to the session created by the portal/API
@@ -1463,6 +1565,17 @@ export function registerProjections(
       for (const bufferedEvent of buffered) {
         void eventBus.publish(bufferedEvent);
       }
+
+      // Refresh station display with the in-progress transaction message.
+      // Defer to the api-side listener so the renderer + push logic stays
+      // in one place and we don't pull the renderer into the OCPP package.
+      const startedSessionId = getSessionId(
+        await sql`SELECT id FROM charging_sessions WHERE transaction_id = ${transactionId}`,
+      );
+      if (startedSessionId != null) {
+        const startedChargingState = (payload.chargingState as string | undefined) ?? null;
+        await publishStationMessageTransaction(startedSessionId, 'started', startedChargingState);
+      }
     } else if (eventType === 'Updated') {
       const sessionId = getSessionId(
         await sql`SELECT id FROM charging_sessions WHERE transaction_id = ${transactionId}`,
@@ -1568,6 +1681,9 @@ export function registerProjections(
             pubsub,
           );
         }
+
+        const updatedChargingState = getString(payload, 'chargingState');
+        await publishStationMessageTransaction(sessionId, 'updated', updatedChargingState);
       } else {
         txBuffer.add(transactionId, event);
       }
@@ -1884,6 +2000,8 @@ export function registerProjections(
             pubsub,
           );
         }
+
+        await publishStationMessageTransaction(sessionRow.id as string, 'ended', null);
       } else {
         txBuffer.add(transactionId, event);
       }
