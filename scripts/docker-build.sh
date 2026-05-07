@@ -99,6 +99,14 @@ echo "Running migrations..."
 docker compose up --no-deps --build migrate
 
 echo ""
+# The seed scripts run on the host and resolve `@evtivity/lib` to its compiled
+# `dist/`. New lib exports (like STATION_MESSAGE_DEFAULTS) only land in `dist/`
+# when lib is built. Compile lib + database before seeding so a fresh checkout
+# never fails with "module does not provide an export named X".
+echo "Building lib + database for host-side seed..."
+npm run build --workspace=@evtivity/lib --workspace=@evtivity/database
+
+echo ""
 echo "Seeding database..."
 npm run db:seed
 npm run db:seed:dev
