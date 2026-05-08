@@ -14,3 +14,13 @@ WHERE key IN ('company.logo', 'company.favicon')
     -- Previous seed.ts default (solid #4ade80 circle with white bolt)
     '"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMTIwIDEyMCI+PGNpcmNsZSBjeD0iNjAiIGN5PSI2MCIgcj0iNTYiIGZpbGw9IiM0YWRlODAiLz48cGF0aCBkPSJNNjggMjBMMzggNjhoMjJsLTYgMzIgMzAtNDhINjJsNi0zMnoiIGZpbGw9IndoaXRlIi8+PC9zdmc+"'
   );
+
+-- Seed `qr_code_icon` with the same ring mark, embedded raw (the CSMS hook
+-- base64-encodes it client-side before inlining into QR codes). INSERT only
+-- when no row exists, so an operator-uploaded icon is preserved.
+INSERT INTO settings (key, value)
+VALUES (
+  'qr_code_icon',
+  to_jsonb($svg$<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><defs><mask id="ringgaps"><rect width="120" height="120" fill="white"/><polygon points="68.82,-8.24 76.70,-6.86 69.82,32.54 61.94,31.16" fill="black"/><polygon points="52.08,87.46 59.96,88.84 53.08,128.24 45.20,126.86" fill="black"/></mask></defs><circle cx="60" cy="60" r="50" fill="none" stroke="#22c55e" stroke-width="12" mask="url(#ringgaps)"/><g transform="translate(60 60) scale(0.95) translate(-60 -60)"><path d="M68 20L38 68h22l-6 32 30-48H62l6-32z" fill="#22c55e"/></g></svg>$svg$::text)
+)
+ON CONFLICT (key) DO NOTHING;

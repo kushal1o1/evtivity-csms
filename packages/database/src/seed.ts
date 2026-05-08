@@ -472,6 +472,7 @@ async function seed(): Promise<void> {
     'company.country': 'US',
     'company.logo': logoDataUri,
     'company.favicon': logoDataUri,
+    qr_code_icon: logoSvg,
     'company.metaDescription': 'EV charging station management',
     'company.metaKeywords': 'EV, charging, OCPP',
     'company.ogImage': '',
