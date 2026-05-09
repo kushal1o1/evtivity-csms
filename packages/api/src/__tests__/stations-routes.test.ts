@@ -114,6 +114,7 @@ vi.mock('@evtivity/database', () => {
     pricingGroupStations: {},
     pricingGroups: {},
     guestSessions: {},
+    configTemplates: {},
   };
 });
 
