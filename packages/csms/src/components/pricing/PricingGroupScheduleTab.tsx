@@ -101,7 +101,7 @@ export function PricingGroupScheduleTab({
         {scheduleLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
         {schedule != null && schedule.length === 0 && (
-          <p className="text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
         )}
 
         {schedule != null && schedule.length > 0 && (

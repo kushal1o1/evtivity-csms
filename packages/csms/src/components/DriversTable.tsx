@@ -17,6 +17,22 @@ import {
 import { CopyableId } from '@/components/copyable-id';
 import { Pagination } from '@/components/ui/pagination';
 import { formatDate } from '@/lib/timezone';
+import type { ColumnMeta, ColumnVisibility } from '@/lib/column-visibility';
+
+export const DRIVERS_COLUMNS: ColumnMeta[] = [
+  {
+    key: 'driverName',
+    label: 'drivers.driverName',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  { key: 'driverId', label: 'drivers.driverId', defaultVisible: true, defaultVisibleMobile: false },
+  { key: 'email', label: 'common.email', defaultVisible: true, defaultVisibleMobile: true },
+  { key: 'phone', label: 'drivers.phone', defaultVisible: true, defaultVisibleMobile: false },
+  { key: 'status', label: 'common.status', defaultVisible: true, defaultVisibleMobile: true },
+  { key: 'created', label: 'common.created', defaultVisible: true, defaultVisibleMobile: false },
+];
 
 export interface Driver {
   id: string;
@@ -38,6 +54,7 @@ interface DriversTableProps {
   emptyMessage?: string;
   onRemove?: (driverId: string) => void;
   removeDisabled?: boolean;
+  visibility?: ColumnVisibility;
 }
 
 export function DriversTable({
@@ -50,11 +67,14 @@ export function DriversTable({
   emptyMessage,
   onRemove,
   removeDisabled,
+  visibility,
 }: DriversTableProps): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const hasRemove = onRemove != null;
-  const colSpan = hasRemove ? 7 : 6;
+  const isVisible = (key: string): boolean => visibility == null || visibility[key] !== false;
+  const visibleCount = DRIVERS_COLUMNS.filter((c) => isVisible(c.key)).length;
+  const colSpan = visibleCount + (hasRemove ? 1 : 0);
 
   return (
     <>
@@ -62,12 +82,12 @@ export function DriversTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t('drivers.driverName')}</TableHead>
-              <TableHead>{t('drivers.driverId')}</TableHead>
-              <TableHead>{t('common.email')}</TableHead>
-              <TableHead>{t('drivers.phone')}</TableHead>
-              <TableHead>{t('common.status')}</TableHead>
-              <TableHead>{t('common.created')}</TableHead>
+              {isVisible('driverName') && <TableHead>{t('drivers.driverName')}</TableHead>}
+              {isVisible('driverId') && <TableHead>{t('drivers.driverId')}</TableHead>}
+              {isVisible('email') && <TableHead>{t('common.email')}</TableHead>}
+              {isVisible('phone') && <TableHead>{t('drivers.phone')}</TableHead>}
+              {isVisible('status') && <TableHead>{t('common.status')}</TableHead>}
+              {isVisible('created') && <TableHead>{t('common.created')}</TableHead>}
               {hasRemove && <TableHead />}
             </TableRow>
           </TableHeader>
@@ -88,20 +108,28 @@ export function DriversTable({
                   void navigate(`/drivers/${driver.id}`);
                 }}
               >
-                <TableCell className="font-medium text-primary" data-testid="row-click-target">
-                  {driver.firstName} {driver.lastName}
-                </TableCell>
-                <TableCell>
-                  <CopyableId id={driver.id} variant="table" />
-                </TableCell>
-                <TableCell>{driver.email ?? '-'}</TableCell>
-                <TableCell>{driver.phone ?? '-'}</TableCell>
-                <TableCell>
-                  <Badge variant={driver.isActive ? 'default' : 'secondary'}>
-                    {driver.isActive ? t('common.active') : t('common.inactive')}
-                  </Badge>
-                </TableCell>
-                <TableCell>{formatDate(driver.createdAt, timezone)}</TableCell>
+                {isVisible('driverName') && (
+                  <TableCell className="font-medium text-primary" data-testid="row-click-target">
+                    {driver.firstName} {driver.lastName}
+                  </TableCell>
+                )}
+                {isVisible('driverId') && (
+                  <TableCell>
+                    <CopyableId id={driver.id} variant="table" />
+                  </TableCell>
+                )}
+                {isVisible('email') && <TableCell>{driver.email ?? '-'}</TableCell>}
+                {isVisible('phone') && <TableCell>{driver.phone ?? '-'}</TableCell>}
+                {isVisible('status') && (
+                  <TableCell>
+                    <Badge variant={driver.isActive ? 'default' : 'secondary'}>
+                      {driver.isActive ? t('common.active') : t('common.inactive')}
+                    </Badge>
+                  </TableCell>
+                )}
+                {isVisible('created') && (
+                  <TableCell>{formatDate(driver.createdAt, timezone)}</TableCell>
+                )}
                 {hasRemove && (
                   <TableCell>
                     <Button

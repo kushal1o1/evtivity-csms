@@ -243,7 +243,9 @@ export function CaseInfoSidebar({
         </CardHeader>
         <CardContent>
           {allAttachments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('supportCases.noAttachments')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('supportCases.noAttachments')}
+            </p>
           ) : (
             <div className="space-y-1">
               {allAttachments.map((att, idx) => (

@@ -226,7 +226,9 @@ export function StationLocalAuthList({
 
         {/* Entries table */}
         {entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noLocalAuthEntries')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noLocalAuthEntries')}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">

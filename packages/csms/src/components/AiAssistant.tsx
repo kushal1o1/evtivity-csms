@@ -322,7 +322,13 @@ export function AiAssistant(): React.JSX.Element {
           ))}
           {chatMutation.isPending && (
             <div className="flex justify-start">
-              <div className="rounded-lg px-3 py-2 max-w-[80%] bg-muted text-sm text-muted-foreground">
+              <div className="rounded-lg px-3 py-2 max-w-[80%] bg-muted text-sm text-muted-foreground flex items-center gap-2">
+                <img
+                  src="/evtivity-spinner.svg"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0"
+                />
                 {t('chatbotAi.typing')}
               </div>
             </div>

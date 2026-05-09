@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { api } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 import type { PricingGroup } from '@/lib/types';
@@ -19,6 +20,7 @@ export function SiteAssignPricing(): React.JSX.Element {
   const { t } = useTranslation();
 
   const [mutatingId, setMutatingId] = useState<string | null>(null);
+  const [pendingGroup, setPendingGroup] = useState<PricingGroup | null>(null);
 
   const { data: pricingGroups } = useQuery({
     queryKey: ['pricing-groups'],
@@ -60,8 +62,7 @@ export function SiteAssignPricing(): React.JSX.Element {
                   type="button"
                   className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => {
-                    setMutatingId(group.id);
-                    assignMutation.mutate(group.id);
+                    setPendingGroup(group);
                   }}
                   disabled={assignMutation.isPending}
                 >
@@ -82,6 +83,25 @@ export function SiteAssignPricing(): React.JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={pendingGroup != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingGroup(null);
+        }}
+        variant="default"
+        title={t('sites.assignPricingGroup')}
+        description={t('sites.confirmAssignPricing', { name: pendingGroup?.name ?? '' })}
+        confirmLabel={t('common.confirm')}
+        isPending={assignMutation.isPending}
+        onConfirm={() => {
+          if (pendingGroup != null) {
+            setMutatingId(pendingGroup.id);
+            assignMutation.mutate(pendingGroup.id);
+            setPendingGroup(null);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -187,9 +187,11 @@ export function SessionDetailsTab({
         </CardHeader>
         <CardContent>
           {txEventLoading ? (
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : txEventData == null || txEventData.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('sessions.noTransactionEvents')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('sessions.noTransactionEvents')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">

@@ -435,7 +435,7 @@ export function UserDetail(): React.JSX.Element {
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">{t('users.writeImpliesRead')}</p>
           {userPermissions.length === 0 && !editingPermissions ? (
-            <p className="text-sm text-muted-foreground">{t('users.noPermissions')}</p>
+            <p className="text-center text-sm text-muted-foreground">{t('users.noPermissions')}</p>
           ) : (
             <div className="space-y-4">
               <PermissionEditor

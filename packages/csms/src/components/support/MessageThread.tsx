@@ -150,7 +150,9 @@ export function MessageThread({
       </CardHeader>
       <CardContent className="space-y-4">
         {messages.length === 0 && (
-          <p className="text-sm text-muted-foreground">{t('supportCases.noMessages')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('supportCases.noMessages')}
+          </p>
         )}
         {messages.map((msg) => (
           <MessageBubble
@@ -218,7 +220,7 @@ export function MessageThread({
               </div>
             </div>
           )}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm">
                 <input

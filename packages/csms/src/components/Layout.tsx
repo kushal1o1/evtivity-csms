@@ -304,7 +304,7 @@ export function Layout(): React.JSX.Element {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden md:flex flex-col border-r bg-card transition-all duration-200',
+          'hidden lg:flex flex-col border-r bg-card transition-all duration-200',
           collapsed ? 'w-16' : 'w-64',
         )}
       >
@@ -320,7 +320,7 @@ export function Layout(): React.JSX.Element {
       {/* Mobile backdrop */}
       {mobileNavOpen && (
         <div
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
           onClick={() => {
             setMobileNavOpen(false);
           }}
@@ -330,7 +330,7 @@ export function Layout(): React.JSX.Element {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform duration-200 md:hidden',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform duration-200 lg:hidden',
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -359,7 +359,7 @@ export function Layout(): React.JSX.Element {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile header */}
-        <header className="flex items-center gap-3 border-b p-4 md:hidden">
+        <header className="flex items-center gap-3 border-b p-4 lg:hidden">
           <Button
             variant="ghost"
             size="icon"
@@ -379,7 +379,7 @@ export function Layout(): React.JSX.Element {
             <span className="text-lg font-bold">{companyName}</span>
           </div>
         </header>
-        <main className="flex-1 overflow-auto bg-background px-4 py-4 md:px-6 md:py-6">
+        <main className="flex-1 overflow-auto bg-background px-4 py-4 lg:px-6 lg:py-6">
           <Outlet />
         </main>
       </div>

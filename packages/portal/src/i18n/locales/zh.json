@@ -739,7 +739,9 @@
     "getDirections": "获取路线",
     "noImages": "暂无图片",
     "contactInfo": "联系方式",
-    "loading": "加载位置中..."
+    "loading": "加载位置中...",
+    "availableChargers": "可用充电桩",
+    "noAvailableChargers": "当前没有可用的充电桩。"
   },
   "stationDetail": {
     "selectConnector": "选择连接器以开始充电",

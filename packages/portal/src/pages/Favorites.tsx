@@ -59,7 +59,7 @@ export function Favorites(): React.JSX.Element {
       )}
 
       {!isLoading && (favorites == null || favorites.length === 0) && (
-        <p className="text-sm text-muted-foreground">{t('favorites.noFavorites')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('favorites.noFavorites')}</p>
       )}
 
       <div className="space-y-3">

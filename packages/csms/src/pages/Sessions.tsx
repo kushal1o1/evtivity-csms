@@ -8,8 +8,10 @@ import { Select } from '@/components/ui/select';
 import { SearchInput } from '@/components/search-input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { ResponsiveFilters } from '@/components/responsive-filters';
-import { SessionsTable } from '@/components/SessionsTable';
+import { SessionsTable, SESSIONS_COLUMNS } from '@/components/SessionsTable';
 import type { Session } from '@/components/SessionsTable';
+import { ColumnVisibilityToggle } from '@/components/ColumnVisibilityToggle';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { useUserTimezone } from '@/lib/timezone';
 import { api } from '@/lib/api';
@@ -66,6 +68,8 @@ export function Sessions(): React.JSX.Element {
     search,
     setSearch,
   } = usePaginatedQuery<Session>('sessions', '/v1/sessions', extraParams);
+
+  const { visibility, setVisibility } = useColumnVisibility('sessions', SESSIONS_COLUMNS);
 
   return (
     <div className="space-y-6">
@@ -125,6 +129,12 @@ export function Sessions(): React.JSX.Element {
             <option value="faulted">{t('status.faulted')}</option>
           </Select>
         </ResponsiveFilters>
+        <ColumnVisibilityToggle
+          tableKey="sessions"
+          columns={SESSIONS_COLUMNS}
+          visibility={visibility}
+          onChange={setVisibility}
+        />
       </div>
 
       <SessionsTable
@@ -134,6 +144,7 @@ export function Sessions(): React.JSX.Element {
         onPageChange={setPage}
         timezone={timezone}
         isLoading={isLoading}
+        visibility={visibility}
       />
     </div>
   );

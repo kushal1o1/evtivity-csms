@@ -183,7 +183,7 @@ export function PaymentMethods(): React.JSX.Element {
       )}
 
       {methods != null && methods.length === 0 && !showAdd && (
-        <p className="text-sm text-muted-foreground">{t('payments.noMethods')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('payments.noMethods')}</p>
       )}
 
       <div className="space-y-2">

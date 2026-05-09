@@ -499,7 +499,7 @@ export function ReservationDetailsTab({
       />
 
       <Dialog open={reassignOpen} onOpenChange={setReassignOpen}>
-        <DialogContent className="max-w-lg overflow-visible">
+        <DialogContent className="max-w-[95vw] md:max-w-lg overflow-visible">
           <DialogHeader>
             <DialogTitle>{t('reservations.reassignTitle')}</DialogTitle>
           </DialogHeader>

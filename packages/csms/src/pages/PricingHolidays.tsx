@@ -141,7 +141,7 @@ export function PricingHolidays(): React.JSX.Element {
       {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
       {sorted.length === 0 && !isLoading && (
-        <p className="text-sm text-muted-foreground">{t('pricing.noHolidays')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('pricing.noHolidays')}</p>
       )}
 
       {sorted.length > 0 && (
@@ -237,7 +237,7 @@ export function PricingHolidays(): React.JSX.Element {
       </Dialog>
 
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[95vw] md:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('pricing.bulkAdd')}</DialogTitle>
           </DialogHeader>

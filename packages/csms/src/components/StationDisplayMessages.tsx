@@ -174,7 +174,7 @@ export function StationDisplayMessages({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-4">
         <CardTitle>{t('stations.displayMessages')}</CardTitle>
         <div className="flex gap-2">
           <Button
@@ -204,7 +204,9 @@ export function StationDisplayMessages({
       </CardHeader>
       <CardContent>
         {messages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noDisplayMessages')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noDisplayMessages')}
+          </p>
         ) : (
           <>
             <Table>
@@ -264,7 +266,7 @@ export function StationDisplayMessages({
             <DialogTitle>{t('stations.sendMessage')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate} noValidate className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="display-msg-priority">{t('stations.messagePriority')}</Label>
                 <Select
@@ -316,7 +318,7 @@ export function StationDisplayMessages({
                 <p className="text-sm text-destructive">{errors.content}</p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="msg-language">{t('stations.messageLanguage')}</Label>
                 <Input
@@ -348,7 +350,7 @@ export function StationDisplayMessages({
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="msg-start-time">{t('stations.messageStartTime')}</Label>
                 <Input
@@ -372,7 +374,7 @@ export function StationDisplayMessages({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="msg-transaction-id">{t('stations.messageTransactionId')}</Label>
                 <Input

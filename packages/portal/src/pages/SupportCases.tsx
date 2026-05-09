@@ -74,7 +74,7 @@ export function SupportCases(): React.JSX.Element {
       {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
       {cases.length === 0 && !isLoading && (
-        <p className="text-sm text-muted-foreground">{t('supportCases.noCases')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('supportCases.noCases')}</p>
       )}
 
       {cases.map((c) => (

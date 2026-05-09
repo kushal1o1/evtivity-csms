@@ -81,7 +81,7 @@ export function Pricing(): React.JSX.Element {
       {isLoading && <TableSkeleton columns={5} rows={5} />}
 
       {filtered != null && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
       )}
 
       {filtered != null && filtered.length > 0 && (

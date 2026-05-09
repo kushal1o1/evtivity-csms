@@ -739,7 +739,9 @@
     "getDirections": "取得路線",
     "noImages": "暫無圖片",
     "contactInfo": "聯繫方式",
-    "loading": "載入位置中..."
+    "loading": "載入位置中...",
+    "availableChargers": "可用充電樁",
+    "noAvailableChargers": "目前沒有可用的充電樁。"
   },
   "stationDetail": {
     "selectConnector": "選擇連接器以開始充電",

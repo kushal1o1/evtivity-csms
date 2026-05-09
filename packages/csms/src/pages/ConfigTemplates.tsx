@@ -88,9 +88,11 @@ export function ConfigTemplates({ embedded }: { embedded?: boolean } = {}): Reac
         )}
         <CardContent className={embedded ? '' : 'pt-6'}>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : data == null || data.data.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('configTemplates.noTemplates')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('configTemplates.noTemplates')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">

@@ -11,8 +11,10 @@ import { ResponsiveFilters } from '@/components/responsive-filters';
 import { SearchInput } from '@/components/search-input';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Pagination } from '@/components/ui/pagination';
-import { StationsTable } from '@/components/StationsTable';
+import { StationsTable, STATIONS_COLUMNS } from '@/components/StationsTable';
 import type { Station } from '@/components/StationsTable';
+import { ColumnVisibilityToggle } from '@/components/ColumnVisibilityToggle';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { api } from '@/lib/api';
 import { useUserTimezone } from '@/lib/timezone';
@@ -71,6 +73,8 @@ export function Stations(): React.JSX.Element {
       siteMap.set(s.id, s.name);
     }
   }
+
+  const { visibility, setVisibility } = useColumnVisibility('stations', STATIONS_COLUMNS);
 
   const primaryFilters = (
     <>
@@ -171,6 +175,12 @@ export function Stations(): React.JSX.Element {
         <ResponsiveFilters activeCount={totalFilterCount} moreFilters={secondaryFilters}>
           {primaryFilters}
         </ResponsiveFilters>
+        <ColumnVisibilityToggle
+          tableKey="stations"
+          columns={STATIONS_COLUMNS}
+          visibility={visibility}
+          onChange={setVisibility}
+        />
       </div>
 
       <div className="overflow-x-auto">
@@ -179,6 +189,7 @@ export function Stations(): React.JSX.Element {
           timezone={timezone}
           siteMap={siteMap}
           isLoading={isLoading}
+          visibility={visibility}
         />
       </div>
 

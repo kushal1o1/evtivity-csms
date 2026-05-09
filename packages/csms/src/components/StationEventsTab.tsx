@@ -75,7 +75,7 @@ function SecurityEventsPanel({ stationId, timezone }: Props): React.JSX.Element 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
           <CardTitle>{t('stations.securityEvents')}</CardTitle>
           <ResponsiveFilters activeCount={severity ? 1 : 0}>
             <Select
@@ -100,9 +100,11 @@ function SecurityEventsPanel({ stationId, timezone }: Props): React.JSX.Element 
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : data == null || data.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noSecurityEvents')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noSecurityEvents')}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -166,9 +168,9 @@ function NotifyEventsPanel({ stationId, timezone }: Props): React.JSX.Element {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : data == null || data.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noEvents')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('stations.noEvents')}</p>
         ) : (
           <>
             <div className="overflow-x-auto">

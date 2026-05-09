@@ -341,7 +341,7 @@ export function FleetReservationsTab({ fleetId }: FleetReservationsTabProps): Re
           if (!open) setDialogOpen(false);
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('fleets.newBulkReservation')}</DialogTitle>
             <DialogDescription>{t('fleets.bulkReservations')}</DialogDescription>

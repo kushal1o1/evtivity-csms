@@ -102,10 +102,12 @@ export function PricingGroupTariffsTab({
         />
       </CardHeader>
       <CardContent>
-        {tariffsLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
+        {tariffsLoading && (
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+        )}
 
         {tariffs != null && tariffs.length === 0 && (
-          <p className="text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('pricing.noTariffsFound')}</p>
         )}
 
         {tariffs != null && tariffs.length > 0 && (

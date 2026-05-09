@@ -20,6 +20,52 @@ import { SecurityProfileBadge } from '@/components/SecurityProfileBadge';
 import { SVG_COLORS } from '@/lib/chart-theme';
 import { formatDateTime, formatRelativeTime } from '@/lib/timezone';
 import { stationStatusVariant } from '@/lib/status-variants';
+import type { ColumnMeta, ColumnVisibility } from '@/lib/column-visibility';
+
+export const STATIONS_COLUMNS: ColumnMeta[] = [
+  {
+    key: 'stationId',
+    label: 'stations.stationId',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  { key: 'id', label: 'stations.id', defaultVisible: true, defaultVisibleMobile: false },
+  { key: 'site', label: 'sites.siteName', defaultVisible: true, defaultVisibleMobile: true },
+  { key: 'model', label: 'stations.model', defaultVisible: true, defaultVisibleMobile: false },
+  {
+    key: 'securityProfile',
+    label: 'stations.securityProfile',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  {
+    key: 'ocppProtocol',
+    label: 'stations.ocppProtocol',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  {
+    key: 'evseStatus',
+    label: 'stations.evseStatus',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  {
+    key: 'connectors',
+    label: 'stations.connectors',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  { key: 'online', label: 'status.online', defaultVisible: true, defaultVisibleMobile: true },
+  {
+    key: 'lastHeartbeat',
+    label: 'stations.lastHeartbeat',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+];
 
 export interface Station {
   id: string;
@@ -255,6 +301,7 @@ interface StationsTableProps {
   siteMap?: Map<string, string>;
   isLoading?: boolean;
   onRemove?: (station: Station) => void;
+  visibility?: ColumnVisibility;
 }
 
 export function StationsTable({
@@ -264,82 +311,90 @@ export function StationsTable({
   siteMap,
   isLoading,
   onRemove,
+  visibility,
 }: StationsTableProps): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const showSiteColumn = siteMap != null;
   const hasActions = onRemove != null;
-  const baseCols = 9;
-  const colSpan = baseCols + (showSiteColumn ? 1 : 0) + (hasActions ? 1 : 0);
+  const isVisible = (key: string): boolean => visibility == null || visibility[key] !== false;
+  const visibleCount = STATIONS_COLUMNS.filter(
+    (c) => (c.key !== 'site' || showSiteColumn) && isVisible(c.key),
+  ).length;
+  const colSpan = visibleCount + (hasActions ? 1 : 0);
 
   return (
     <>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t('stations.stationId')}</TableHead>
-            <TableHead>{t('stations.id')}</TableHead>
-            {showSiteColumn && <TableHead>{t('sites.siteName')}</TableHead>}
-            <TableHead>{t('stations.model')}</TableHead>
-            <TableHead>{t('stations.securityProfile')}</TableHead>
-            <TableHead>{t('stations.ocppProtocol')}</TableHead>
-            <TableHead>
-              <span className="inline-flex items-center gap-1">
-                {t('stations.evseStatus')}
-                <Tooltip
-                  content={
-                    <div className="w-56 space-y-1">
-                      <p className="font-medium">{t('stations.evseStatus')}</p>
-                      <p className="text-muted-foreground">{t('stations.evseStatusTooltip')}</p>
-                    </div>
-                  }
-                >
-                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                </Tooltip>
-              </span>
-            </TableHead>
-            <TableHead>
-              <span className="inline-flex items-center gap-1">
-                {t('stations.connectors')}
-                <Tooltip
-                  content={
-                    <div className="w-48 space-y-2">
-                      <p className="font-medium">{t('stations.connectors')}</p>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <Type1Icon />
-                          <span>Type 1 (J1772)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Type2Icon />
-                          <span>Type 2</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <CCS1Icon />
-                          <span>CCS1</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <CCS2Icon />
-                          <span>CCS2</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <CHAdeMOIcon />
-                          <span>CHAdeMO</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <NACSIcon />
-                          <span>NACS (Tesla)</span>
+            {isVisible('stationId') && <TableHead>{t('stations.stationId')}</TableHead>}
+            {isVisible('id') && <TableHead>{t('stations.id')}</TableHead>}
+            {showSiteColumn && isVisible('site') && <TableHead>{t('sites.siteName')}</TableHead>}
+            {isVisible('model') && <TableHead>{t('stations.model')}</TableHead>}
+            {isVisible('securityProfile') && <TableHead>{t('stations.securityProfile')}</TableHead>}
+            {isVisible('ocppProtocol') && <TableHead>{t('stations.ocppProtocol')}</TableHead>}
+            {isVisible('evseStatus') && (
+              <TableHead>
+                <span className="inline-flex items-center gap-1">
+                  {t('stations.evseStatus')}
+                  <Tooltip
+                    content={
+                      <div className="w-56 space-y-1">
+                        <p className="font-medium">{t('stations.evseStatus')}</p>
+                        <p className="text-muted-foreground">{t('stations.evseStatusTooltip')}</p>
+                      </div>
+                    }
+                  >
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Tooltip>
+                </span>
+              </TableHead>
+            )}
+            {isVisible('connectors') && (
+              <TableHead>
+                <span className="inline-flex items-center gap-1">
+                  {t('stations.connectors')}
+                  <Tooltip
+                    content={
+                      <div className="w-48 space-y-2">
+                        <p className="font-medium">{t('stations.connectors')}</p>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <Type1Icon />
+                            <span>Type 1 (J1772)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Type2Icon />
+                            <span>Type 2</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <CCS1Icon />
+                            <span>CCS1</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <CCS2Icon />
+                            <span>CCS2</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <CHAdeMOIcon />
+                            <span>CHAdeMO</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <NACSIcon />
+                            <span>NACS (Tesla)</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  }
-                >
-                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                </Tooltip>
-              </span>
-            </TableHead>
-            <TableHead>{t('status.online')}</TableHead>
-            <TableHead>{t('stations.lastHeartbeat')}</TableHead>
+                    }
+                  >
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Tooltip>
+                </span>
+              </TableHead>
+            )}
+            {isVisible('online') && <TableHead>{t('status.online')}</TableHead>}
+            {isVisible('lastHeartbeat') && <TableHead>{t('stations.lastHeartbeat')}</TableHead>}
             {hasActions && <TableHead />}
           </TableRow>
         </TableHeader>
@@ -360,28 +415,32 @@ export function StationsTable({
                 void navigate(`/stations/${station.id}`);
               }}
             >
-              <TableCell
-                className="font-medium text-primary whitespace-nowrap"
-                data-testid="row-click-target"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  {station.stationId}
-                  {station.isSimulator === true && (
-                    <Badge variant="info" className="text-[10px] px-1.5 py-0">
-                      {t('stations.simulator')}
-                    </Badge>
-                  )}
-                  {station.siteFreeVendEnabled === true && (
-                    <Badge variant="info" className="text-[10px] px-1.5 py-0">
-                      {t('stations.freeVend')}
-                    </Badge>
-                  )}
-                </span>
-              </TableCell>
-              <TableCell>
-                <CopyableId id={station.id} variant="table" />
-              </TableCell>
-              {showSiteColumn && (
+              {isVisible('stationId') && (
+                <TableCell
+                  className="font-medium text-primary whitespace-nowrap"
+                  data-testid="row-click-target"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    {station.stationId}
+                    {station.isSimulator === true && (
+                      <Badge variant="info" className="text-[10px] px-1.5 py-0">
+                        {t('stations.simulator')}
+                      </Badge>
+                    )}
+                    {station.siteFreeVendEnabled === true && (
+                      <Badge variant="info" className="text-[10px] px-1.5 py-0">
+                        {t('stations.freeVend')}
+                      </Badge>
+                    )}
+                  </span>
+                </TableCell>
+              )}
+              {isVisible('id') && (
+                <TableCell>
+                  <CopyableId id={station.id} variant="table" />
+                </TableCell>
+              )}
+              {showSiteColumn && isVisible('site') && (
                 <TableCell>
                   {station.siteId != null ? (
                     <Link
@@ -398,47 +457,59 @@ export function StationsTable({
                   )}
                 </TableCell>
               )}
-              <TableCell className="whitespace-nowrap">{station.model ?? '-'}</TableCell>
-              <TableCell className="whitespace-nowrap">
-                {station.securityProfile != null ? (
-                  <SecurityProfileBadge
-                    profile={station.securityProfile}
-                    ocppProtocol={station.ocppProtocol}
-                  />
-                ) : (
-                  '-'
-                )}
-              </TableCell>
-              <TableCell>{station.ocppProtocol ?? '-'}</TableCell>
-              <TableCell>
-                <Badge
-                  variant={stationStatusVariant(station.status)}
-                  className={statusClassName(station.status)}
-                >
-                  {t(`status.${station.status}`, station.status)}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {station.connectorTypes?.map((type) => (
-                    <ConnectorTypeIcon key={type} type={type} />
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={station.isOnline ? 'success' : 'destructive'}>
-                  {station.isOnline ? t('status.online') : t('status.offline')}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {station.lastHeartbeat != null ? (
-                  <span title={formatDateTime(station.lastHeartbeat, timezone)}>
-                    {formatRelativeTime(station.lastHeartbeat, timezone)}
-                  </span>
-                ) : (
-                  '-'
-                )}
-              </TableCell>
+              {isVisible('model') && (
+                <TableCell className="whitespace-nowrap">{station.model ?? '-'}</TableCell>
+              )}
+              {isVisible('securityProfile') && (
+                <TableCell className="whitespace-nowrap">
+                  {station.securityProfile != null ? (
+                    <SecurityProfileBadge
+                      profile={station.securityProfile}
+                      ocppProtocol={station.ocppProtocol}
+                    />
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+              )}
+              {isVisible('ocppProtocol') && <TableCell>{station.ocppProtocol ?? '-'}</TableCell>}
+              {isVisible('evseStatus') && (
+                <TableCell>
+                  <Badge
+                    variant={stationStatusVariant(station.status)}
+                    className={statusClassName(station.status)}
+                  >
+                    {t(`status.${station.status}`, station.status)}
+                  </Badge>
+                </TableCell>
+              )}
+              {isVisible('connectors') && (
+                <TableCell>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {station.connectorTypes?.map((type) => (
+                      <ConnectorTypeIcon key={type} type={type} />
+                    ))}
+                  </div>
+                </TableCell>
+              )}
+              {isVisible('online') && (
+                <TableCell>
+                  <Badge variant={station.isOnline ? 'success' : 'destructive'}>
+                    {station.isOnline ? t('status.online') : t('status.offline')}
+                  </Badge>
+                </TableCell>
+              )}
+              {isVisible('lastHeartbeat') && (
+                <TableCell>
+                  {station.lastHeartbeat != null ? (
+                    <span title={formatDateTime(station.lastHeartbeat, timezone)}>
+                      {formatRelativeTime(station.lastHeartbeat, timezone)}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </TableCell>
+              )}
               {hasActions && (
                 <TableCell className="text-right">
                   <Button

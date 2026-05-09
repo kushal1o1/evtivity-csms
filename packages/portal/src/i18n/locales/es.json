@@ -739,7 +739,9 @@
     "getDirections": "Obtener Direcciones",
     "noImages": "No hay imagenes disponibles",
     "contactInfo": "Contacto",
-    "loading": "Cargando ubicacion..."
+    "loading": "Cargando ubicacion...",
+    "availableChargers": "Cargadores disponibles",
+    "noAvailableChargers": "No hay cargadores disponibles ahora mismo."
   },
   "stationDetail": {
     "selectConnector": "Selecciona un conector para comenzar a cargar",

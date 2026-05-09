@@ -744,6 +744,24 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .leftJoin(connectors, eq(connectors.evseId, evses.id))
         .where(eq(chargingStations.siteId, siteId));
 
+      // Per-EVSE detail for the chargers list. One row per EVSE with the first
+      // connector's type / power / status (most stations have 1 connector per
+      // EVSE, and the portal renders one button per EVSE).
+      const chargers = await db
+        .select({
+          stationId: chargingStations.stationId,
+          stationName: chargingStations.stationId,
+          evseId: evses.evseId,
+          connectorType: connectors.connectorType,
+          maxPowerKw: connectors.maxPowerKw,
+          status: connectors.status,
+        })
+        .from(chargingStations)
+        .innerJoin(evses, eq(evses.stationId, chargingStations.id))
+        .innerJoin(connectors, eq(connectors.evseId, evses.id))
+        .where(eq(chargingStations.siteId, siteId))
+        .orderBy(chargingStations.stationId, evses.evseId);
+
       const isContactPublic = site.contactIsPublic;
 
       return {
@@ -762,6 +780,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         stationCount: counts?.stationCount ?? 0,
         evseCount: counts?.evseCount ?? 0,
         availableCount: counts?.availableCount ?? 0,
+        chargers,
       };
     },
   );

@@ -194,7 +194,7 @@ export function ProfileChatbotAi(): React.JSX.Element {
             onChange={(e) => {
               setChatbotAiSystemPrompt(e.target.value);
             }}
-            placeholder="You are an EV charging station management assistant. Answer questions about stations, sessions, energy, revenue, and operations. Use the provided tools to fetch real-time data. Format numbers with commas, currency from cents to dollars, energy from Wh to kWh. Use markdown tables for tabular data. Be concise and direct. Before making any changes, ask the user for explicit confirmation. Never reveal passwords, API keys, secret keys, encryption keys, tokens, or credentials."
+            placeholder="You are an EV charging station management assistant. Answer questions about stations, sessions, energy, revenue, and operations. Never answer questions unrelated to EV charging and EVtivity's system usage. Use the provided tools to fetch real-time data. Format numbers with commas, currency from cents to dollars, energy from Wh to kWh. Use markdown tables for tabular data. Be concise and direct. Before making any changes, ask the user for explicit confirmation. Never reveal passwords, API keys, secret keys, encryption keys, tokens, or credentials."
           />
           <p className="text-xs text-muted-foreground">{t('settings.chatbotAiSystemPromptHint')}</p>
         </div>

@@ -73,7 +73,7 @@ export function MeterValuesTable({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
           <div className="space-y-1.5">
             <CardTitle>{t('sessions.meterValuesTab')}</CardTitle>
             <p className="text-sm text-muted-foreground">{description}</p>
@@ -100,9 +100,9 @@ export function MeterValuesTable({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : meterData == null || meterData.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('sessions.noMeterValues')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('sessions.noMeterValues')}</p>
         ) : (
           <div className="space-y-4">
             <div className="overflow-x-auto">

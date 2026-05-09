@@ -427,7 +427,7 @@ function StationDataSection(): React.JSX.Element {
             if (!open) setEditStation(null);
           }}
         >
-          <DialogContent className="max-w-sm md:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] md:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {t('nevi.editStationData')} - {editStation?.stationId}
@@ -871,7 +871,7 @@ function ExcludedDowntimeSection(): React.JSX.Element {
             }
           }}
         >
-          <DialogContent className="max-w-sm md:max-w-lg">
+          <DialogContent className="max-w-[95vw] md:max-w-lg">
             <DialogHeader>
               <DialogTitle>
                 {editId != null ? t('nevi.editDowntime') : t('nevi.addDowntime')}

@@ -31,7 +31,7 @@ export function StationPowerChart({ data }: StationPowerChartProps): React.JSX.E
           <CardTitle className="text-base">{t('charts.powerKw')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">{t('charts.noPowerData')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('charts.noPowerData')}</p>
         </CardContent>
       </Card>
     );

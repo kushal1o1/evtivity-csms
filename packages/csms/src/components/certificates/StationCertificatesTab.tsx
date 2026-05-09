@@ -66,7 +66,7 @@ export function StationCertificatesTab(): React.JSX.Element {
     <TabsContent value="station">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
             <CardTitle>{t('pnc.stationCertificates')}</CardTitle>
             <ResponsiveFilters activeCount={stationCertStatusFilter ? 1 : 0}>
               <Select

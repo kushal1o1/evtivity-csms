@@ -37,7 +37,7 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-[95vw] md:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -45,10 +45,10 @@ export function ConfirmDialog({
           <p className="text-sm text-muted-foreground">{description}</p>
           {children}
         </div>
-        <DialogFooter>
+        <DialogFooter className="flex-col-reverse md:flex-row">
           <Button
             variant="outline"
-            className="gap-1.5"
+            className="gap-1.5 w-full md:w-auto"
             onClick={() => {
               onOpenChange(false);
             }}
@@ -59,7 +59,7 @@ export function ConfirmDialog({
           <Button
             variant={variant}
             disabled={isPending}
-            className="relative gap-1.5"
+            className="relative gap-1.5 w-full md:w-auto"
             onClick={() => {
               const result = onConfirm();
               if (result !== false) {

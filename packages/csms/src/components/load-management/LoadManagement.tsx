@@ -292,7 +292,9 @@ export function LoadManagement({ siteId }: LoadManagementProps): React.JSX.Eleme
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('loadManagement.noHistory')}</p>
+              <p className="text-center text-sm text-muted-foreground">
+                {t('loadManagement.noHistory')}
+              </p>
             )}
           </CardContent>
         )}

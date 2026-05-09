@@ -89,7 +89,7 @@ export function CsrRequestsTab(): React.JSX.Element {
       <TabsContent value="csr">
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
               <CardTitle>{t('pnc.csrRequests')}</CardTitle>
               <ResponsiveFilters activeCount={csrStatusFilter ? 1 : 0}>
                 <Select

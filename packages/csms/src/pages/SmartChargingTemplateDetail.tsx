@@ -854,7 +854,9 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
                   {t('smartCharging.schedulePeriods')} ({template.schedulePeriods.length})
                 </h3>
                 {template.schedulePeriods.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t('smartCharging.noTemplates')}</p>
+                  <p className="text-center text-sm text-muted-foreground">
+                    {t('smartCharging.noTemplates')}
+                  </p>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -922,7 +924,9 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {(pushHistory?.total ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('smartCharging.noPushes')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('smartCharging.noPushes')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">

@@ -67,7 +67,7 @@ export function AccountSupportCases(): React.JSX.Element {
       </div>
 
       {cases.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('supportCases.noCases')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('supportCases.noCases')}</p>
       )}
 
       {cases.map((c) => (

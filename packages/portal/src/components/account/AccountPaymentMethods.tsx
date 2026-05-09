@@ -27,7 +27,7 @@ export function AccountPaymentMethods(): React.JSX.Element {
   return (
     <div className="space-y-3">
       {methods != null && methods.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('payments.noMethods')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('payments.noMethods')}</p>
       )}
       {methods?.map((pm) => (
         <div key={pm.id} className="flex items-center gap-3">

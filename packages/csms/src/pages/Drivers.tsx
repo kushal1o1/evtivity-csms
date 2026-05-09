@@ -9,7 +9,9 @@ import { CreateButton } from '@/components/create-button';
 import { SearchInput } from '@/components/search-input';
 import { ResponsiveFilters } from '@/components/responsive-filters';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
-import { DriversTable, type Driver } from '@/components/DriversTable';
+import { DriversTable, DRIVERS_COLUMNS, type Driver } from '@/components/DriversTable';
+import { ColumnVisibilityToggle } from '@/components/ColumnVisibilityToggle';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { useUserTimezone } from '@/lib/timezone';
 
@@ -30,6 +32,8 @@ export function Drivers(): React.JSX.Element {
   } = usePaginatedQuery<Driver>('drivers', '/v1/drivers', {
     status: filterStatus,
   });
+
+  const { visibility, setVisibility } = useColumnVisibility('drivers', DRIVERS_COLUMNS);
 
   return (
     <div className="space-y-6">
@@ -64,6 +68,12 @@ export function Drivers(): React.JSX.Element {
             <option value="inactive">{t('common.inactive')}</option>
           </Select>
         </ResponsiveFilters>
+        <ColumnVisibilityToggle
+          tableKey="drivers"
+          columns={DRIVERS_COLUMNS}
+          visibility={visibility}
+          onChange={setVisibility}
+        />
       </div>
 
       <DriversTable
@@ -73,6 +83,7 @@ export function Drivers(): React.JSX.Element {
         onPageChange={setPage}
         timezone={timezone}
         isLoading={isLoading}
+        visibility={visibility}
       />
     </div>
   );

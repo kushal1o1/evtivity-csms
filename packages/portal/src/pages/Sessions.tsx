@@ -63,7 +63,7 @@ export function Sessions(): React.JSX.Element {
       {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
       {data != null && data.data.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('sessions.noSessions')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('sessions.noSessions')}</p>
       )}
 
       <div className="space-y-2">

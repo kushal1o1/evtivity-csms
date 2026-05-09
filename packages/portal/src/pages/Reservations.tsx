@@ -116,7 +116,9 @@ export function Reservations(): React.JSX.Element {
       {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
 
       {data != null && data.data.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('reservations.noReservations')}</p>
+        <p className="text-center text-sm text-muted-foreground">
+          {t('reservations.noReservations')}
+        </p>
       )}
 
       <div className="space-y-2">

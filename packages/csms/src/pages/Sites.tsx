@@ -380,7 +380,7 @@ export function Sites(): React.JSX.Element {
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-w-sm md:max-w-lg">
+        <DialogContent className="max-w-[95vw] md:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('sites.importConfirmTitle')}</DialogTitle>
           </DialogHeader>

@@ -736,7 +736,9 @@
     "getDirections": "Route anzeigen",
     "noImages": "Keine Bilder verfügbar",
     "contactInfo": "Kontakt",
-    "loading": "Standort wird geladen..."
+    "loading": "Standort wird geladen...",
+    "availableChargers": "Verfügbare Ladegeräte",
+    "noAvailableChargers": "Keine Ladegeräte derzeit verfügbar."
   },
   "stationDetail": {
     "selectConnector": "Wähle einen Anschluss, um den Ladevorgang zu starten",

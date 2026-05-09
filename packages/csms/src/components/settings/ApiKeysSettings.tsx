@@ -296,7 +296,7 @@ print(data)`;
 
         {/* Create Key Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-[95vw] md:max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('settings.createApiKey')}</DialogTitle>
             </DialogHeader>
@@ -403,7 +403,7 @@ print(data)`;
             setTokenDialogOpen(open);
           }}
         >
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-[95vw] md:max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('settings.apiKeyCreated')}</DialogTitle>
             </DialogHeader>
@@ -457,7 +457,7 @@ print(data)`;
             if (!open) setEditKey(null);
           }}
         >
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-[95vw] md:max-w-lg">
             <DialogHeader>
               <DialogTitle>{t('settings.apiKeyEditPermissions')}</DialogTitle>
             </DialogHeader>

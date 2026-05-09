@@ -384,7 +384,7 @@ export function ConnectorStatus({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-4">
         <CardTitle>{t('charts.connectors')}</CardTitle>
         <CreateButton
           label={t('stations.addEvse')}
@@ -405,12 +405,14 @@ export function ConnectorStatus({
           </AlertDescription>
         </Alert>
         {data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('charts.noEvsesConfigured')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('charts.noEvsesConfigured')}
+          </p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {data.map((evse) => (
               <div key={evse.evseId} className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center justify-between pb-3 border-b">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">
                       {t('charts.evse', { id: evse.evseId })}
@@ -421,7 +423,7 @@ export function ConnectorStatus({
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     <RefreshIconButton
                       onClick={() => {
                         setRefreshingEvseId(evse.evseId);
@@ -523,9 +525,9 @@ export function ConnectorStatus({
                     {evse.connectors.map((conn) => (
                       <div
                         key={conn.connectorId}
-                        className="flex items-center justify-between text-sm"
+                        className="flex flex-wrap items-center justify-between gap-2 text-sm"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="text-muted-foreground">
                             {t('charts.connector', { id: conn.connectorId })}
                           </span>
@@ -538,7 +540,7 @@ export function ConnectorStatus({
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {conn.maxPowerKw != null && (
                             <span className="text-muted-foreground">
                               {t('charts.powerValue', { value: conn.maxPowerKw })}
@@ -579,7 +581,9 @@ export function ConnectorStatus({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">{t('charts.noConnectors')}</p>
+                  <p className="text-center text-sm text-muted-foreground">
+                    {t('charts.noConnectors')}
+                  </p>
                 )}
               </div>
             ))}

@@ -46,7 +46,9 @@ function StationQrSection({
   });
 
   if (connectors == null || connectors.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t('charts.noEvsesConfigured')}</p>;
+    return (
+      <p className="text-center text-sm text-muted-foreground">{t('charts.noEvsesConfigured')}</p>
+    );
   }
 
   return (
@@ -91,7 +93,7 @@ export function SiteQrCodesTab({
           </Card>
         ))
       ) : (
-        <p className="text-sm text-muted-foreground">{t('sites.noStationsAtSite')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('sites.noStationsAtSite')}</p>
       )}
     </TabsContent>
   );

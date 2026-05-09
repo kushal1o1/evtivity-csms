@@ -106,7 +106,7 @@ export function SessionPaymentTab({
         </CardHeader>
         <CardContent>
           {payment == null ? (
-            <p className="text-sm text-muted-foreground">{t('sessions.noPayment')}</p>
+            <p className="text-center text-sm text-muted-foreground">{t('sessions.noPayment')}</p>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

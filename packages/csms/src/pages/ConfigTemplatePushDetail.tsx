@@ -145,7 +145,9 @@ export function ConfigTemplatePushDetail(): React.JSX.Element {
           )}
 
           {stations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('configTemplates.noPushes')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('configTemplates.noPushes')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">

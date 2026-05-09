@@ -98,7 +98,9 @@ export function TimeSlotEditor({
       </CardHeader>
       <CardContent>
         {sorted.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('smartCharging.noTemplates')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('smartCharging.noTemplates')}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <Table>

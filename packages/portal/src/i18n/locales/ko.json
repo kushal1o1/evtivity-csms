@@ -739,7 +739,9 @@
     "getDirections": "길찾기",
     "noImages": "이미지가 없습니다",
     "contactInfo": "연락처",
-    "loading": "위치 로딩 중..."
+    "loading": "위치 로딩 중...",
+    "availableChargers": "사용 가능한 충전기",
+    "noAvailableChargers": "현재 사용 가능한 충전기가 없습니다."
   },
   "stationDetail": {
     "selectConnector": "충전을 시작할 커넥터를 선택하세요",

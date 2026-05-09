@@ -23,7 +23,7 @@ export function StationEnergyChart({ data }: StationEnergyChartProps): React.JSX
           <CardTitle className="text-base">{t('charts.energyKwhPerDay')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">{t('charts.noEnergyData')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('charts.noEnergyData')}</p>
         </CardContent>
       </Card>
     );

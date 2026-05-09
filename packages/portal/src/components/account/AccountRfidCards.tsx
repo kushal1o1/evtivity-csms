@@ -75,7 +75,7 @@ export function AccountRfidCards(): React.JSX.Element {
   return (
     <div className="space-y-4">
       {tokens != null && tokens.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('rfid.noCards')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('rfid.noCards')}</p>
       )}
 
       <div className="space-y-4">

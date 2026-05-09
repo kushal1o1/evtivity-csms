@@ -207,7 +207,7 @@ export const TemplateEditPanel = forwardRef<TemplateEditPanelHandle, TemplateEdi
         </Card>
 
         <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{t('notifications.preview')}</DialogTitle>
             </DialogHeader>

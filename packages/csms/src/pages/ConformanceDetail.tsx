@@ -275,7 +275,7 @@ export function ConformanceDetail(): React.JSX.Element {
         <TabsContent value="results">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
                 <CardTitle className="text-lg">{t('conformance.testResults')}</CardTitle>
                 <ResponsiveFilters
                   activeCount={
@@ -460,7 +460,9 @@ function ResultRow({
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('conformance.noSteps')}</p>
+              <p className="text-center text-sm text-muted-foreground">
+                {t('conformance.noSteps')}
+              </p>
             )}
           </TableCell>
         </TableRow>

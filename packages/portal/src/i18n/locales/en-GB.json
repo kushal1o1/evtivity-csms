@@ -739,7 +739,9 @@
     "getDirections": "Get Directions",
     "noImages": "No images available",
     "contactInfo": "Contact",
-    "loading": "Loading location..."
+    "loading": "Loading location...",
+    "availableChargers": "Available chargers",
+    "noAvailableChargers": "No chargers currently available."
   },
   "stationDetail": {
     "selectConnector": "Select a connector to start charging",

@@ -53,7 +53,7 @@ export function AccountVehicles(): React.JSX.Element {
       <p className="text-xs text-muted-foreground">{t('vehicles.helper')}</p>
 
       {vehicles != null && vehicles.length === 0 && (
-        <p className="text-sm text-muted-foreground">{t('vehicles.noVehicles')}</p>
+        <p className="text-center text-sm text-muted-foreground">{t('vehicles.noVehicles')}</p>
       )}
 
       <div className="space-y-2">

@@ -94,7 +94,7 @@ export function PricingAssignmentTab({
         <>
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     {pricingGroup.name}
@@ -132,7 +132,7 @@ export function PricingAssignmentTab({
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
-            <p className="text-sm text-muted-foreground">{t(keys.empty)}</p>
+            <p className="text-center text-sm text-muted-foreground">{t(keys.empty)}</p>
             <Button
               onClick={() => {
                 void navigate(assignUrl);

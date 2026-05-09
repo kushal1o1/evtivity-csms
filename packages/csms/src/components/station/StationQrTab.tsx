@@ -83,7 +83,9 @@ export function StationQrTab({
             </div>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">{t('charts.noEvsesConfigured')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('charts.noEvsesConfigured')}
+          </p>
         )}
       </CardContent>
     </Card>

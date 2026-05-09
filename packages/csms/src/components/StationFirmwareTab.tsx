@@ -68,9 +68,11 @@ export function StationFirmwareTab({ stationId, timezone }: Props): React.JSX.El
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : data == null || data.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noFirmwareUpdates')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noFirmwareUpdates')}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">

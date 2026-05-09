@@ -144,7 +144,7 @@ export function PanelForm({
         if (!v) onClose();
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-[95vw] md:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? t('loadManagement.editPanel') : t('loadManagement.addPanel')}

@@ -1,10 +1,10 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Clock, Mail, MapPin, Phone, User, Zap } from 'lucide-react';
+import { ArrowLeft, Clock, Mail, MapPin, Phone, Plug, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
@@ -13,6 +13,14 @@ import { LocationMap } from '@/components/LocationMap';
 import { PopularTimesChart } from '@/components/PopularTimesChart';
 import type { PopularTimesData } from '@/components/PopularTimesChart';
 import { api } from '@/lib/api';
+
+interface ChargerInfo {
+  stationId: string;
+  evseId: number;
+  connectorType: string | null;
+  maxPowerKw: string | null;
+  status: string;
+}
 
 interface LocationInfo {
   siteId: string;
@@ -30,6 +38,7 @@ interface LocationInfo {
   stationCount: number;
   evseCount: number;
   availableCount: number;
+  chargers: ChargerInfo[];
 }
 
 export function LocationDetail(): React.JSX.Element {
@@ -106,7 +115,7 @@ export function LocationDetail(): React.JSX.Element {
   return (
     <div className="flex min-h-screen flex-col items-center p-4">
       <AuthBranding companyName={companyName} companyLogo={companyLogo} />
-      <div className="w-full max-w-lg space-y-4">
+      <div className="w-full max-w-sm space-y-4">
         {/* Header with back button */}
         <div className="flex items-center gap-2">
           <Button variant="ghost" className="gap-1 px-0" onClick={handleBack}>
@@ -139,17 +148,40 @@ export function LocationDetail(): React.JSX.Element {
               </div>
             )}
 
-            {/* Station count */}
-            <div className="flex items-center gap-2 text-sm">
-              <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span>
-                {t('location.chargers', { count: location.evseCount })}
-                {' -- '}
-                <span className="text-success font-medium">
-                  {t('location.available', { count: location.availableCount })}
-                </span>
-              </span>
-            </div>
+            {/* Available chargers - one outline button per available connector */}
+            {location.chargers.filter((c) => c.status === 'available').length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t('location.availableChargers')}</p>
+                <div className="space-y-2">
+                  {location.chargers
+                    .filter((c) => c.status === 'available')
+                    .map((c) => (
+                      <Link
+                        key={`${c.stationId}-${String(c.evseId)}`}
+                        to={`/charge/${c.stationId}/${String(c.evseId)}`}
+                        className="block"
+                      >
+                        <Button
+                          variant="outline"
+                          className="w-full justify-between gap-2 h-auto py-3"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Plug className="h-4 w-4 text-success shrink-0" />
+                            <span className="font-medium">{c.stationId}</span>
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {c.connectorType != null ? c.connectorType : ''}
+                            {c.connectorType != null && c.maxPowerKw != null ? ' - ' : ''}
+                            {c.maxPowerKw != null ? `${c.maxPowerKw} kW` : ''}
+                          </span>
+                        </Button>
+                      </Link>
+                    ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('location.noAvailableChargers')}</p>
+            )}
           </CardContent>
         </Card>
 

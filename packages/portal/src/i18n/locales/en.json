@@ -735,6 +735,8 @@
     "title": "Location Details",
     "chargers": "{{count}} chargers",
     "available": "{{count}} available",
+    "availableChargers": "Available chargers",
+    "noAvailableChargers": "No chargers currently available.",
     "hoursOfOperation": "Hours of Operation",
     "getDirections": "Get Directions",
     "noImages": "No images available",

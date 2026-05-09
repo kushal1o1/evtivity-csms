@@ -18,6 +18,57 @@ import { Pagination } from '@/components/ui/pagination';
 import { formatDuration } from '@/lib/formatting';
 import { formatDateTime } from '@/lib/timezone';
 import { sessionStatusVariant } from '@/lib/status-variants';
+import type { ColumnMeta, ColumnVisibility } from '@/lib/column-visibility';
+
+export const SESSIONS_COLUMNS: ColumnMeta[] = [
+  {
+    key: 'stationName',
+    label: 'sessions.stationName',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  {
+    key: 'sessionId',
+    label: 'sessions.sessionId',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  {
+    key: 'driverName',
+    label: 'sessions.driverName',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+  },
+  {
+    key: 'guestSession',
+    label: 'sessions.guestSession',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  {
+    key: 'status',
+    label: 'common.status',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  { key: 'started', label: 'sessions.started', defaultVisible: true, defaultVisibleMobile: false },
+  {
+    key: 'duration',
+    label: 'sessions.duration',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  { key: 'energy', label: 'sessions.energy', defaultVisible: true, defaultVisibleMobile: false },
+  {
+    key: 'co2Avoided',
+    label: 'sessions.co2Avoided',
+    defaultVisible: true,
+    defaultVisibleMobile: false,
+  },
+  { key: 'cost', label: 'payments.cost', defaultVisible: true, defaultVisibleMobile: true },
+];
 
 export interface Session {
   id: string;
@@ -57,6 +108,7 @@ interface SessionsTableProps {
   emptyMessage?: string;
   hideStationName?: boolean;
   hideDriverName?: boolean;
+  visibility?: ColumnVisibility;
 }
 
 export const SessionsTable = memo(function SessionsTable({
@@ -69,10 +121,16 @@ export const SessionsTable = memo(function SessionsTable({
   emptyMessage,
   hideStationName = false,
   hideDriverName = false,
+  visibility,
 }: SessionsTableProps): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const colCount = 10 - (hideStationName ? 1 : 0) - (hideDriverName ? 1 : 0);
+  const isVisible = (key: string): boolean => visibility == null || visibility[key] !== false;
+  const colCount = SESSIONS_COLUMNS.filter((c) => {
+    if (c.key === 'stationName' && hideStationName) return false;
+    if (c.key === 'driverName' && hideDriverName) return false;
+    return isVisible(c.key);
+  }).length;
 
   return (
     <>
@@ -80,16 +138,26 @@ export const SessionsTable = memo(function SessionsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              {!hideStationName && <TableHead>{t('sessions.stationName')}</TableHead>}
-              <TableHead>{t('sessions.sessionId')}</TableHead>
-              {!hideDriverName && <TableHead>{t('sessions.driverName')}</TableHead>}
-              <TableHead>{t('sessions.guestSession')}</TableHead>
-              <TableHead>{t('common.status')}</TableHead>
-              <TableHead>{t('sessions.started')}</TableHead>
-              <TableHead>{t('sessions.duration')}</TableHead>
-              <TableHead className="text-right">{t('sessions.energy')}</TableHead>
-              <TableHead className="text-right">{t('sessions.co2Avoided')}</TableHead>
-              <TableHead className="text-right">{t('payments.cost')}</TableHead>
+              {!hideStationName && isVisible('stationName') && (
+                <TableHead>{t('sessions.stationName')}</TableHead>
+              )}
+              {isVisible('sessionId') && <TableHead>{t('sessions.sessionId')}</TableHead>}
+              {!hideDriverName && isVisible('driverName') && (
+                <TableHead>{t('sessions.driverName')}</TableHead>
+              )}
+              {isVisible('guestSession') && <TableHead>{t('sessions.guestSession')}</TableHead>}
+              {isVisible('status') && <TableHead>{t('common.status')}</TableHead>}
+              {isVisible('started') && <TableHead>{t('sessions.started')}</TableHead>}
+              {isVisible('duration') && <TableHead>{t('sessions.duration')}</TableHead>}
+              {isVisible('energy') && (
+                <TableHead className="text-right">{t('sessions.energy')}</TableHead>
+              )}
+              {isVisible('co2Avoided') && (
+                <TableHead className="text-right">{t('sessions.co2Avoided')}</TableHead>
+              )}
+              {isVisible('cost') && (
+                <TableHead className="text-right">{t('payments.cost')}</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -109,7 +177,7 @@ export const SessionsTable = memo(function SessionsTable({
                   void navigate(`/sessions/${session.id}`);
                 }}
               >
-                {!hideStationName && (
+                {!hideStationName && isVisible('stationName') && (
                   <TableCell className="whitespace-nowrap">
                     <Link
                       to={`/stations/${session.stationId}`}
@@ -124,10 +192,12 @@ export const SessionsTable = memo(function SessionsTable({
                     </Link>
                   </TableCell>
                 )}
-                <TableCell>
-                  <CopyableId id={session.id} variant="table" />
-                </TableCell>
-                {!hideDriverName && (
+                {isVisible('sessionId') && (
+                  <TableCell>
+                    <CopyableId id={session.id} variant="table" />
+                  </TableCell>
+                )}
+                {!hideDriverName && isVisible('driverName') && (
                   <TableCell className="whitespace-nowrap">
                     {session.freeVend === true ? (
                       <span className="text-muted-foreground">{t('sessions.freeVend')}</span>
@@ -146,46 +216,60 @@ export const SessionsTable = memo(function SessionsTable({
                     )}
                   </TableCell>
                 )}
-                <TableCell>
-                  {session.isGuestSession === true ? (
-                    <Badge variant="info">{t('common.yes')}</Badge>
-                  ) : (
-                    <span className="text-muted-foreground">{t('common.no')}</span>
-                  )}
-                </TableCell>
-                <TableCell data-testid="row-click-target">
-                  <Badge
-                    variant={sessionStatusVariant(
-                      session.status,
-                      session.status === 'active' && session.idleStartedAt != null,
+                {isVisible('guestSession') && (
+                  <TableCell>
+                    {session.isGuestSession === true ? (
+                      <Badge variant="info">{t('common.yes')}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">{t('common.no')}</span>
                     )}
-                  >
-                    {session.status === 'active' && session.idleStartedAt != null
-                      ? t('status.idle')
-                      : session.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {session.startedAt != null ? formatDateTime(session.startedAt, timezone) : '-'}
-                </TableCell>
-                <TableCell>{formatDuration(session.startedAt, session.endedAt)}</TableCell>
-                <TableCell className="text-right">
-                  {session.energyDeliveredWh != null
-                    ? t('sessions.energyKwh', {
-                        value: (session.energyDeliveredWh / 1000).toFixed(2),
-                      })
-                    : '-'}
-                </TableCell>
-                <TableCell className="text-right">
-                  {session.co2AvoidedKg != null ? (
-                    <span className="text-success">
-                      {parseFloat(String(session.co2AvoidedKg)).toFixed(2)} kg
-                    </span>
-                  ) : (
-                    '--'
-                  )}
-                </TableCell>
-                <TableCell className="text-right">{formatCost(session)}</TableCell>
+                  </TableCell>
+                )}
+                {isVisible('status') && (
+                  <TableCell data-testid="row-click-target">
+                    <Badge
+                      variant={sessionStatusVariant(
+                        session.status,
+                        session.status === 'active' && session.idleStartedAt != null,
+                      )}
+                    >
+                      {session.status === 'active' && session.idleStartedAt != null
+                        ? t('status.idle')
+                        : session.status}
+                    </Badge>
+                  </TableCell>
+                )}
+                {isVisible('started') && (
+                  <TableCell>
+                    {session.startedAt != null ? formatDateTime(session.startedAt, timezone) : '-'}
+                  </TableCell>
+                )}
+                {isVisible('duration') && (
+                  <TableCell>{formatDuration(session.startedAt, session.endedAt)}</TableCell>
+                )}
+                {isVisible('energy') && (
+                  <TableCell className="text-right">
+                    {session.energyDeliveredWh != null
+                      ? t('sessions.energyKwh', {
+                          value: (session.energyDeliveredWh / 1000).toFixed(2),
+                        })
+                      : '-'}
+                  </TableCell>
+                )}
+                {isVisible('co2Avoided') && (
+                  <TableCell className="text-right">
+                    {session.co2AvoidedKg != null ? (
+                      <span className="text-success">
+                        {parseFloat(String(session.co2AvoidedKg)).toFixed(2)} kg
+                      </span>
+                    ) : (
+                      '--'
+                    )}
+                  </TableCell>
+                )}
+                {isVisible('cost') && (
+                  <TableCell className="text-right">{formatCost(session)}</TableCell>
+                )}
               </TableRow>
             ))}
             {sessions?.length === 0 && (

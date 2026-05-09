@@ -102,7 +102,7 @@ export function CaCertificatesTab(): React.JSX.Element {
       <TabsContent value="ca">
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
               <CardTitle>{t('pnc.caCertificates')}</CardTitle>
               <div className="flex gap-2">
                 <ResponsiveFilters activeCount={caStatusFilter ? 1 : 0}>

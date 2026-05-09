@@ -13,7 +13,9 @@ import { ExportButton } from '@/components/export-button';
 import { SearchInput } from '@/components/search-input';
 import { ResponsiveFilters } from '@/components/responsive-filters';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
-import { TokensTable, type Token } from '@/components/TokensTable';
+import { TokensTable, TOKENS_COLUMNS, type Token } from '@/components/TokensTable';
+import { ColumnVisibilityToggle } from '@/components/ColumnVisibilityToggle';
+import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { api } from '@/lib/api';
 import { useUserTimezone } from '@/lib/timezone';
@@ -44,6 +46,8 @@ export function Tokens(): React.JSX.Element {
     tokenType: filterType,
     status: filterStatus,
   });
+
+  const { visibility, setVisibility } = useColumnVisibility('tokens', TOKENS_COLUMNS);
 
   const importMutation = useMutation({
     mutationFn: (
@@ -183,6 +187,12 @@ export function Tokens(): React.JSX.Element {
             <option value="inactive">{t('common.inactive')}</option>
           </Select>
         </ResponsiveFilters>
+        <ColumnVisibilityToggle
+          tableKey="tokens"
+          columns={TOKENS_COLUMNS}
+          visibility={visibility}
+          onChange={setVisibility}
+        />
       </div>
 
       <TokensTable
@@ -192,6 +202,7 @@ export function Tokens(): React.JSX.Element {
         onPageChange={setPage}
         timezone={timezone}
         isLoading={isLoading}
+        visibility={visibility}
       />
     </div>
   );

@@ -144,7 +144,7 @@ export function StationConfigurationsTab({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-4">
         <CardTitle>{t('stations.configurations')}</CardTitle>
         <div className="flex items-center gap-2">
           <SearchInput
@@ -174,9 +174,11 @@ export function StationConfigurationsTab({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : data == null || data.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noConfigurations')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noConfigurations')}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -218,7 +220,7 @@ export function StationConfigurationsTab({
 
       {/* Push Configuration dialog */}
       <Dialog open={pushDialogOpen} onOpenChange={setPushDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[95vw] md:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('stations.pushConfiguration')}</DialogTitle>
           </DialogHeader>

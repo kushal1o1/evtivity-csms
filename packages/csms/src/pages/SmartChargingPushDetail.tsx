@@ -144,7 +144,9 @@ export function SmartChargingPushDetail(): React.JSX.Element {
           )}
 
           {stations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('smartCharging.noPushes')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('smartCharging.noPushes')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">

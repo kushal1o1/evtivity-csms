@@ -585,7 +585,9 @@ export function StationSecurity({
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">{t('stations.noSecurityLogs')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('stations.noSecurityLogs')}
+            </p>
           )}
         </CardContent>
       </Card>

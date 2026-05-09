@@ -24,7 +24,7 @@ export function StationUptimeChart({ data }: StationUptimeChartProps): React.JSX
           <CardTitle className="text-base">{t('charts.uptimePerDay')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">{t('charts.noUptimeData')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('charts.noUptimeData')}</p>
         </CardContent>
       </Card>
     );

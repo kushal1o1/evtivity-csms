@@ -15,6 +15,28 @@ import {
 import { CopyableId } from '@/components/copyable-id';
 import { Pagination } from '@/components/ui/pagination';
 import { formatDate } from '@/lib/timezone';
+import type { ColumnMeta, ColumnVisibility } from '@/lib/column-visibility';
+
+export const TOKENS_COLUMNS: ColumnMeta[] = [
+  {
+    key: 'token',
+    label: 'tokens.token',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  { key: 'driver', label: 'tokens.driver', defaultVisible: true, defaultVisibleMobile: true },
+  { key: 'tokenId', label: 'tokens.tokenId', defaultVisible: true, defaultVisibleMobile: false },
+  { key: 'type', label: 'tokens.type', defaultVisible: true, defaultVisibleMobile: false },
+  {
+    key: 'status',
+    label: 'common.status',
+    defaultVisible: true,
+    defaultVisibleMobile: true,
+    alwaysVisible: true,
+  },
+  { key: 'created', label: 'common.created', defaultVisible: true, defaultVisibleMobile: false },
+];
 
 export interface Token {
   id: string;
@@ -36,6 +58,7 @@ interface TokensTableProps {
   isLoading?: boolean;
   showDriver?: boolean;
   emptyMessage?: string;
+  visibility?: ColumnVisibility;
 }
 
 export function TokensTable({
@@ -47,10 +70,14 @@ export function TokensTable({
   isLoading,
   showDriver = true,
   emptyMessage,
+  visibility,
 }: TokensTableProps): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const colSpan = showDriver ? 6 : 5;
+  const isVisible = (key: string): boolean => visibility == null || visibility[key] !== false;
+  const colSpan = TOKENS_COLUMNS.filter(
+    (c) => (c.key !== 'driver' || showDriver) && isVisible(c.key),
+  ).length;
 
   return (
     <>
@@ -58,12 +85,12 @@ export function TokensTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t('tokens.token')}</TableHead>
-              {showDriver && <TableHead>{t('tokens.driver')}</TableHead>}
-              <TableHead>{t('tokens.tokenId')}</TableHead>
-              <TableHead>{t('tokens.type')}</TableHead>
-              <TableHead>{t('common.status')}</TableHead>
-              <TableHead>{t('common.created')}</TableHead>
+              {isVisible('token') && <TableHead>{t('tokens.token')}</TableHead>}
+              {showDriver && isVisible('driver') && <TableHead>{t('tokens.driver')}</TableHead>}
+              {isVisible('tokenId') && <TableHead>{t('tokens.tokenId')}</TableHead>}
+              {isVisible('type') && <TableHead>{t('tokens.type')}</TableHead>}
+              {isVisible('status') && <TableHead>{t('common.status')}</TableHead>}
+              {isVisible('created') && <TableHead>{t('common.created')}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -83,10 +110,12 @@ export function TokensTable({
                   void navigate(`/tokens/${token.id}`);
                 }}
               >
-                <TableCell>
-                  <CopyableId id={token.idToken} variant="table" className="text-primary" />
-                </TableCell>
-                {showDriver && (
+                {isVisible('token') && (
+                  <TableCell>
+                    <CopyableId id={token.idToken} variant="table" className="text-primary" />
+                  </TableCell>
+                )}
+                {showDriver && isVisible('driver') && (
                   <TableCell>
                     {token.driverId != null && token.driverFirstName != null ? (
                       <Link
@@ -103,16 +132,22 @@ export function TokensTable({
                     )}
                   </TableCell>
                 )}
-                <TableCell>
-                  <CopyableId id={token.id} variant="table" />
-                </TableCell>
-                <TableCell data-testid="row-click-target">{token.tokenType}</TableCell>
-                <TableCell>
-                  <Badge variant={token.isActive ? 'default' : 'secondary'}>
-                    {token.isActive ? t('common.active') : t('common.inactive')}
-                  </Badge>
-                </TableCell>
-                <TableCell>{formatDate(token.createdAt, timezone)}</TableCell>
+                {isVisible('tokenId') && (
+                  <TableCell>
+                    <CopyableId id={token.id} variant="table" />
+                  </TableCell>
+                )}
+                {isVisible('type') && <TableCell>{token.tokenType}</TableCell>}
+                {isVisible('status') && (
+                  <TableCell data-testid="row-click-target">
+                    <Badge variant={token.isActive ? 'default' : 'secondary'}>
+                      {token.isActive ? t('common.active') : t('common.inactive')}
+                    </Badge>
+                  </TableCell>
+                )}
+                {isVisible('created') && (
+                  <TableCell>{formatDate(token.createdAt, timezone)}</TableCell>
+                )}
               </TableRow>
             ))}
             {tokens?.length === 0 && (

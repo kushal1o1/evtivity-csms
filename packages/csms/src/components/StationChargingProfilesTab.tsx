@@ -216,7 +216,7 @@ export function StationChargingProfilesTab({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-4">
         <CardTitle>{t('stations.chargingProfiles')}</CardTitle>
         <div className="flex items-center gap-2">
           <Button
@@ -255,9 +255,11 @@ export function StationChargingProfilesTab({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          <p className="text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : data == null || data.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('stations.noChargingProfiles')}</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {t('stations.noChargingProfiles')}
+          </p>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -371,7 +373,7 @@ export function StationChargingProfilesTab({
 
       {/* Push Charging Profile dialog */}
       <Dialog open={pushDialogOpen} onOpenChange={setPushDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[95vw] md:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('stations.pushChargingProfile')}</DialogTitle>
           </DialogHeader>
@@ -436,13 +438,13 @@ export function StationChargingProfilesTab({
           if (!open) setViewProfile(null);
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-[95vw] md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('stations.chargingProfileDetails')}</DialogTitle>
           </DialogHeader>
           {viewProfile != null && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                 <div>
                   <span className="text-muted-foreground">{t('common.source')}: </span>
                   <Badge
@@ -506,7 +508,7 @@ export function StationChargingProfilesTab({
 
       {/* Composite Schedule dialog */}
       <Dialog open={compositeDialogOpen} onOpenChange={setCompositeDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-[95vw] md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t('stations.viewComposite')}</DialogTitle>
           </DialogHeader>

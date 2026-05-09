@@ -265,7 +265,7 @@ export function SchedulesTab(): React.JSX.Element {
             .map((schedule) => (
               <Card key={schedule.id}>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-lg">{schedule.name}</CardTitle>
                       <Badge variant={schedule.isEnabled ? 'default' : 'secondary'}>
@@ -361,7 +361,7 @@ export function SchedulesTab(): React.JSX.Element {
         )}
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-sm md:max-w-lg">
+          <DialogContent className="max-w-[95vw] md:max-w-lg">
             <DialogHeader>
               <DialogTitle>
                 {editingSchedule != null ? t('reports.editSchedule') : t('reports.createSchedule')}

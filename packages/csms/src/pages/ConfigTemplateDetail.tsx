@@ -637,7 +637,9 @@ export function ConfigTemplateDetail(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           {(pushHistory?.total ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('configTemplates.noPushes')}</p>
+            <p className="text-center text-sm text-muted-foreground">
+              {t('configTemplates.noPushes')}
+            </p>
           ) : (
             <>
               <div className="overflow-x-auto">
