@@ -323,7 +323,7 @@ for (const def of blockAllDefs) {
 // operator can push it to IOCHARGER-001 / IOCHARGER-002 from the Configuration
 // Templates UI without picking individual stations.
 if (ioVendorId != null) {
-  const ioConfigTemplateName = 'IOCHARGER-002 - QR & Connector Code';
+  const ioConfigTemplateName = 'IOCHARGER-002 - Configurations';
   const existingIoConfigTemplate = await db
     .select({ id: configTemplates.id })
     .from(configTemplates)
@@ -332,7 +332,8 @@ if (ioVendorId != null) {
   if (existingIoConfigTemplate.length === 0) {
     await db.insert(configTemplates).values({
       name: ioConfigTemplateName,
-      description: 'IoCharger vendor QR code URLs, connector codes, and operator branding.',
+      description:
+        'IoCharger vendor defaults: QR code URLs, connector codes, operator branding, and tariff display toggle.',
       ocppVersion: '2.1',
       variables: [
         {
@@ -348,6 +349,7 @@ if (ioVendorId != null) {
         { component: 'SysConfigCtrlr', variable: 'connCode0', value: 'IOCHARGER-002' },
         { component: 'SysConfigCtrlr', variable: 'connCode1', value: 'IOCHARGER-002' },
         { component: 'SecurityCtrlr', variable: 'OrganizationName', value: 'EVtivity' },
+        { component: 'TariffCostCtrlr', variable: 'Enabled', value: 'false' },
       ],
       targetFilter: { siteId, vendorId: ioVendorId },
     });
@@ -358,7 +360,7 @@ if (ioVendorId != null) {
 
   // OCPP 1.6 variant for IOCHARGER-001 (vendor-specific keys with empty
   // component, since 1.6 has no component model).
-  const io16ConfigTemplateName = 'IOCHARGER-001 - QR & Connector Code';
+  const io16ConfigTemplateName = 'IOCHARGER-001 - Configurations';
   const existingIo16ConfigTemplate = await db
     .select({ id: configTemplates.id })
     .from(configTemplates)
@@ -367,7 +369,8 @@ if (ioVendorId != null) {
   if (existingIo16ConfigTemplate.length === 0) {
     await db.insert(configTemplates).values({
       name: io16ConfigTemplateName,
-      description: 'IoCharger vendor QR code URLs and connector codes (OCPP 1.6).',
+      description:
+        'IoCharger vendor defaults: QR code URLs, connector codes, and tariff display toggle (OCPP 1.6).',
       ocppVersion: '1.6',
       variables: [
         {
@@ -382,6 +385,7 @@ if (ioVendorId != null) {
         },
         { component: '', variable: 'connCode0', value: 'IOCHARGER-001' },
         { component: '', variable: 'connCode1', value: 'IOCHARGER-001' },
+        { component: '', variable: 'TariffCostCtrlr.Enabled', value: 'false' },
       ],
       targetFilter: { siteId, vendorId: ioVendorId },
     });

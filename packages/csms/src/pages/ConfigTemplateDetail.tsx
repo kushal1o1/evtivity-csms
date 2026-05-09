@@ -425,34 +425,34 @@ export function ConfigTemplateDetail(): React.JSX.Element {
                     </div>
                   ) : (
                     <div key={i} className="grid grid-cols-3 gap-2 items-end">
-                      <Select
+                      <Input
+                        list={`detail-comp-suggestions-${String(i)}`}
                         aria-label={t('configTemplates.selectComponent')}
+                        placeholder={t('configTemplates.selectComponent')}
                         value={v.component}
                         onChange={(e) => {
                           updateVariable(i, 'component', e.target.value);
                         }}
-                      >
-                        <option value="">{t('configTemplates.selectComponent')}</option>
+                      />
+                      <datalist id={`detail-comp-suggestions-${String(i)}`}>
                         {componentNames.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
+                          <option key={c} value={c} />
                         ))}
-                      </Select>
-                      <Select
+                      </datalist>
+                      <Input
+                        list={`detail-var-suggestions-${String(i)}`}
                         aria-label={t('configTemplates.selectVariable')}
+                        placeholder={t('configTemplates.selectVariable')}
                         value={v.variable}
                         onChange={(e) => {
                           updateVariable(i, 'variable', e.target.value);
                         }}
-                      >
-                        <option value="">{t('configTemplates.selectVariable')}</option>
+                      />
+                      <datalist id={`detail-var-suggestions-${String(i)}`}>
                         {(OCPP_21_VARIABLES[v.component] ?? []).map((varName) => (
-                          <option key={varName} value={varName}>
-                            {varName}
-                          </option>
+                          <option key={varName} value={varName} />
                         ))}
-                      </Select>
+                      </datalist>
                       <div className="flex gap-2">
                         <Input
                           placeholder={t('common.value')}

@@ -2959,8 +2959,9 @@ async function seed(): Promise<void> {
       stationsPerPush: 30,
     },
     {
-      name: 'IOCHARGER-002 - QR & Connector Code',
-      description: 'IoCharger vendor QR code URLs, connector codes, and operator branding.',
+      name: 'IOCHARGER-002 - Configurations',
+      description:
+        'IoCharger vendor defaults: QR code URLs, connector codes, operator branding, and tariff display toggle.',
       ocppVersion: '2.1' as const,
       variables: [
         {
@@ -2976,13 +2977,15 @@ async function seed(): Promise<void> {
         { component: 'SysConfigCtrlr', variable: 'connCode0', value: 'IOCHARGER-002' },
         { component: 'SysConfigCtrlr', variable: 'connCode1', value: 'IOCHARGER-002' },
         { component: 'SecurityCtrlr', variable: 'OrganizationName', value: 'EVtivity' },
+        { component: 'TariffCostCtrlr', variable: 'Enabled', value: 'false' },
       ],
       pushCount: 0,
       stationsPerPush: 0,
     },
     {
-      name: 'IOCHARGER-001 - QR & Connector Code',
-      description: 'IoCharger vendor QR code URLs and connector codes (OCPP 1.6).',
+      name: 'IOCHARGER-001 - Configurations',
+      description:
+        'IoCharger vendor defaults: QR code URLs, connector codes, and tariff display toggle (OCPP 1.6).',
       ocppVersion: '1.6' as const,
       variables: [
         {
@@ -2997,6 +3000,7 @@ async function seed(): Promise<void> {
         },
         { component: '', variable: 'connCode0', value: 'IOCHARGER-001' },
         { component: '', variable: 'connCode1', value: 'IOCHARGER-001' },
+        { component: '', variable: 'TariffCostCtrlr.Enabled', value: 'false' },
       ],
       pushCount: 0,
       stationsPerPush: 0,
