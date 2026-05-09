@@ -27,7 +27,47 @@ import { getPubSub } from '../lib/pubsub.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
-const campaignItem = z.object({}).passthrough();
+const campaignItem = z
+  .object({
+    id: z.string().describe('Campaign ID'),
+    name: z.string().describe('Campaign name'),
+    firmwareUrl: z.string().describe('Firmware download URL'),
+    version: z.string().nullable().describe('Firmware version'),
+    status: z.string().describe('Campaign status (draft/active/completed/cancelled)'),
+    targetFilter: z.record(z.unknown()).nullable().describe('Filter selecting target stations'),
+    createdById: z.string().nullable().describe('User ID that created the campaign'),
+    createdAt: z.string().describe('Row creation timestamp'),
+    updatedAt: z.string().describe('Row last update timestamp'),
+  })
+  .passthrough();
+
+const fwMatchingStationItem = z
+  .object({
+    id: z.string().describe('Station UUID'),
+    stationId: z.string().describe('Human-readable station identifier'),
+    model: z.string().nullable().describe('Station model'),
+    firmwareVersion: z.string().nullable().describe('Currently installed firmware version'),
+    isOnline: z.boolean().describe('Whether the station is currently connected'),
+    siteName: z.string().nullable().describe('Site name'),
+    vendorName: z.string().nullable().describe('Vendor name'),
+  })
+  .passthrough();
+
+const filterOptionsResponse = z
+  .object({
+    sites: z
+      .array(z.object({ id: z.string(), name: z.string() }).passthrough())
+      .describe('Sites available for targeting'),
+    vendors: z
+      .array(z.object({ id: z.string(), name: z.string() }).passthrough())
+      .describe('Vendors available for targeting'),
+    models: z.array(z.string()).describe('Distinct station models available for targeting'),
+    stations: z
+      .array(z.object({ id: z.string(), stationId: z.string() }).passthrough())
+      .describe('Stations matching the current filter'),
+  })
+  .passthrough();
+
 const campaignParams = z.object({ id: z.string().describe('Campaign ID') });
 
 const createCampaignBody = z.object({
@@ -80,7 +120,7 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         operationId: 'getFirmwareCampaignFilterOptions',
         security: [{ bearerAuth: [] }],
         querystring: zodSchema(fwFilterOptionsQuery),
-        response: { 200: itemResponse(z.object({}).passthrough()) },
+        response: { 200: itemResponse(filterOptionsResponse) },
       },
     },
     async (request) => {
@@ -371,7 +411,7 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
         querystring: zodSchema(fwMatchingStationsQuery),
-        response: { 200: paginatedResponse(campaignItem), 404: errorResponse },
+        response: { 200: paginatedResponse(fwMatchingStationItem), 404: errorResponse },
       },
     },
     async (request, reply) => {

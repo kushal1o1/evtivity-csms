@@ -18,9 +18,76 @@ import {
   itemResponse,
 } from '../lib/response-schemas.js';
 
-const caCertItem = z.object({}).passthrough();
-const csrItem = z.object({}).passthrough();
-const stationCertItem = z.object({}).passthrough();
+const caCertItem = z
+  .object({
+    id: z.number().describe('CA certificate ID'),
+    certificateType: z
+      .string()
+      .describe('Certificate type (e.g. V2GRootCertificate, MORootCertificate)'),
+    certificate: z.string().describe('PEM-encoded certificate'),
+    serialNumber: z.string().nullable().describe('Certificate serial number'),
+    issuer: z.string().nullable().describe('Issuer distinguished name'),
+    subject: z.string().nullable().describe('Subject distinguished name'),
+    validFrom: z.string().nullable().describe('Validity start timestamp (ISO 8601)'),
+    validTo: z.string().nullable().describe('Validity end timestamp (ISO 8601)'),
+    hashAlgorithm: z.string().nullable().describe('Hash algorithm used (e.g. SHA256)'),
+    issuerNameHash: z.string().nullable().describe('Hash of the issuer distinguished name'),
+    issuerKeyHash: z.string().nullable().describe('Hash of the issuer public key'),
+    status: z.string().describe('Certificate status (active, expired, revoked)'),
+    source: z.string().nullable().describe('Certificate source (e.g. manual_upload, hubject)'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
+
+const csrItem = z
+  .object({
+    id: z.number().describe('CSR request ID'),
+    stationId: z.string().nullable().describe('Charging station ID associated with this CSR'),
+    csr: z.string().describe('PEM-encoded certificate signing request'),
+    certificateType: z.string().describe('Certificate type requested'),
+    requestId: z.number().nullable().describe('OCPP request ID from the station'),
+    status: z.string().describe('CSR status (pending, submitted, signed, rejected, expired)'),
+    signedCertificateChain: z
+      .string()
+      .nullable()
+      .describe('PEM-encoded signed certificate chain (when signed)'),
+    providerReference: z.string().nullable().describe('Reference ID from the PKI provider'),
+    errorMessage: z.string().nullable().describe('Error message if signing failed'),
+    submittedAt: z
+      .string()
+      .nullable()
+      .describe('Timestamp when CSR was submitted to provider (ISO 8601)'),
+    completedAt: z
+      .string()
+      .nullable()
+      .describe('Timestamp when CSR processing completed (ISO 8601)'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
+
+const stationCertItem = z
+  .object({
+    id: z.number().describe('Station certificate ID'),
+    stationId: z.string().describe('Charging station ID'),
+    certificateType: z.string().describe('Certificate type'),
+    certificate: z.string().describe('PEM-encoded certificate'),
+    serialNumber: z.string().nullable().describe('Certificate serial number'),
+    issuer: z.string().nullable().describe('Issuer distinguished name'),
+    subject: z.string().nullable().describe('Subject distinguished name'),
+    validFrom: z.string().nullable().describe('Validity start timestamp (ISO 8601)'),
+    validTo: z.string().nullable().describe('Validity end timestamp (ISO 8601)'),
+    hashAlgorithm: z.string().nullable().describe('Hash algorithm used'),
+    issuerNameHash: z.string().nullable().describe('Hash of the issuer distinguished name'),
+    issuerKeyHash: z.string().nullable().describe('Hash of the issuer public key'),
+    parentCaId: z.number().nullable().describe('FK to parent CA certificate'),
+    source: z.string().nullable().describe('Certificate source'),
+    status: z.string().describe('Certificate status (active, expired, revoked)'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
 
 const caCertQuery = paginationQuery.extend({
   certificateType: z.string().optional().describe('Filter by certificate type'),

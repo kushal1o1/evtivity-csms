@@ -439,7 +439,10 @@ describe('Firmware campaign routes', () => {
         id: 'camp-001',
         name: 'Draft campaign',
         firmwareUrl: 'https://example.com/fw.bin',
+        version: '1.0.0',
         status: 'draft',
+        targetFilter: null,
+        createdById: 'test-user-id',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -581,6 +584,7 @@ describe('Firmware campaign routes', () => {
           stationId: 'STATION-001',
           model: 'Terra AC',
           firmwareVersion: '1.0.0',
+          isOnline: true,
           siteName: 'Downtown',
           vendorName: 'ABB',
         },

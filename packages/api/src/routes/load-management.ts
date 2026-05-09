@@ -41,20 +41,32 @@ const historyQuery = z.object({
     .describe('Number of history entries to return, max 200'),
 });
 
+const hierarchyStationSchema = z
+  .object({
+    id: z.string().describe('Station database ID'),
+    stationId: z.string().describe('Human-readable OCPP station ID'),
+    currentDrawKw: z.number().describe('Current power draw in kW'),
+    allocatedLimitKw: z.number().nullable().describe('Allocated power limit in kW'),
+    maxPowerKw: z.number().describe('Maximum power capability in kW'),
+    isOnline: z.boolean().describe('Whether the station is online'),
+    hasActiveSession: z.boolean().describe('Whether the station has an active charging session'),
+  })
+  .passthrough();
+
 const hierarchyNodeSchema: z.ZodType = z.lazy(() =>
   z
     .object({
-      type: z.enum(['panel', 'circuit']),
-      id: z.string(),
-      name: z.string(),
-      maxContinuousKw: z.number(),
-      safetyMarginKw: z.number(),
-      unmanagedLoadKw: z.number(),
-      currentDrawKw: z.number(),
-      availableKw: z.number(),
-      utilization: z.number(),
-      stations: z.array(z.object({}).passthrough()),
-      children: z.array(hierarchyNodeSchema),
+      type: z.enum(['panel', 'circuit']).describe('Hierarchy node type'),
+      id: z.string().describe('Node ID'),
+      name: z.string().describe('Node name'),
+      maxContinuousKw: z.number().describe('Maximum continuous power capacity in kW'),
+      safetyMarginKw: z.number().describe('Safety margin reserved from capacity in kW'),
+      unmanagedLoadKw: z.number().describe('Unmanaged load drawing from this node in kW'),
+      currentDrawKw: z.number().describe('Current power draw in kW'),
+      availableKw: z.number().describe('Available power capacity in kW'),
+      utilization: z.number().describe('Utilization ratio (0 to 1)'),
+      stations: z.array(hierarchyStationSchema).describe('Stations attached to this node'),
+      children: z.array(hierarchyNodeSchema).describe('Child hierarchy nodes'),
     })
     .passthrough(),
 );
@@ -79,12 +91,21 @@ const loadManagementItem = z
         isEnabled: z.boolean(),
       })
       .nullable(),
-    hierarchy: z.array(z.object({}).passthrough()),
+    hierarchy: z.array(hierarchyNodeSchema),
     stations: z.array(loadStationItem),
   })
   .passthrough();
 
-const siteLoadManagementRecord = z.object({}).passthrough();
+const siteLoadManagementRecord = z
+  .object({
+    id: z.number().describe('Site load management config row ID'),
+    siteId: z.string().describe('Site ID'),
+    strategy: z.string().describe('Load distribution strategy (equal_share or priority_based)'),
+    isEnabled: z.boolean().describe('Whether load management is active for this site'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
 
 const loadPriorityItem = z
   .object({ id: z.string(), stationId: z.string(), loadPriority: z.number() })

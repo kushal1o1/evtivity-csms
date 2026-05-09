@@ -3268,7 +3268,17 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Station events ---
 
-  const stationEventItem = z.object({}).passthrough();
+  const stationEventItem = z
+    .object({
+      id: z.number().describe('Event row ID'),
+      stationId: z.string().describe('Station ID'),
+      generatedAt: z.string().describe('Timestamp when the event was generated on the station'),
+      seqNo: z.number().describe('Per-station sequence number'),
+      tbc: z.boolean().describe('To-be-continued flag for multi-part reports'),
+      eventData: z.record(z.unknown()).describe('Raw OCPP event payload'),
+      createdAt: z.string().describe('When the row was inserted'),
+    })
+    .passthrough();
 
   app.get(
     '/stations/:id/events',
@@ -3326,7 +3336,23 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Station variables ---
 
-  const stationVariableItem = z.object({}).passthrough();
+  const stationVariableItem = z
+    .object({
+      id: z.number().describe('Configuration row ID'),
+      stationId: z.string().describe('Station ID'),
+      component: z.string().describe('OCPP component name'),
+      instance: z.string().nullable().describe('Component instance label'),
+      evseId: z.number().nullable().describe('EVSE ID this variable belongs to'),
+      connectorId: z.number().nullable().describe('Connector ID this variable belongs to'),
+      variable: z.string().describe('OCPP variable name'),
+      variableInstance: z.string().nullable().describe('Variable instance label'),
+      value: z.string().nullable().describe('Reported variable value'),
+      attributeType: z.string().describe('OCPP attribute type (Actual, Target, MinSet, MaxSet)'),
+      source: z.string().describe('Where the row originated (e.g., NotifyReport, GetVariables)'),
+      createdAt: z.string().describe('When the row was first observed'),
+      updatedAt: z.string().describe('When the row was last updated'),
+    })
+    .passthrough();
 
   app.get(
     '/stations/:id/variables',
@@ -3394,7 +3420,29 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Firmware history ---
 
-  const firmwareHistoryItem = z.object({}).passthrough();
+  const firmwareHistoryItem = z
+    .object({
+      id: z.number().describe('Firmware update row ID'),
+      stationId: z.string().describe('Station ID'),
+      requestId: z.number().nullable().describe('OCPP request ID'),
+      firmwareUrl: z.string().describe('URL the station downloads firmware from'),
+      retrieveDateTime: z
+        .string()
+        .nullable()
+        .describe('When the station should retrieve the firmware'),
+      status: z.string().nullable().describe('Latest firmware update status reported by station'),
+      statusInfo: z.record(z.unknown()).nullable().describe('Additional OCPP status info'),
+      campaignId: z.string().nullable().describe('Linked firmware campaign ID, if any'),
+      initiatedAt: z.string().describe('When the firmware update was initiated'),
+      lastStatusAt: z.string().nullable().describe('When the most recent status was received'),
+      createdAt: z.string().describe('Row creation timestamp'),
+      updatedAt: z.string().describe('Row update timestamp'),
+      version: z
+        .string()
+        .nullable()
+        .describe('Target firmware version from the linked campaign, if any'),
+    })
+    .passthrough();
 
   app.get(
     '/stations/:id/firmware-history',
@@ -3467,7 +3515,29 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Charging profiles ---
 
-  const chargingProfileItem = z.object({}).passthrough();
+  const chargingProfileItem = z
+    .object({
+      id: z.number().describe('Charging profile row ID'),
+      stationId: z.string().describe('Station ID'),
+      source: z.string().describe('Where the profile originated (csms_set or station_reported)'),
+      evseId: z.number().nullable().describe('EVSE ID the profile applies to (0 = whole station)'),
+      requestId: z.number().nullable().describe('OCPP request ID'),
+      chargingLimitSource: z.string().nullable().describe('OCPP charging limit source'),
+      tbc: z.boolean().describe('To-be-continued flag for multi-part reports'),
+      profileData: z.unknown().describe('Raw OCPP charging profile payload (object or array)'),
+      sentAt: z.string().nullable().describe('When the CSMS sent the profile to the station'),
+      reportedAt: z.string().nullable().describe('When the station reported the profile'),
+      createdAt: z.string().describe('Row creation timestamp'),
+      templateId: z
+        .string()
+        .nullable()
+        .describe('Linked charging profile template ID, if any (csms_set rows only)'),
+      templateName: z
+        .string()
+        .nullable()
+        .describe('Linked charging profile template name, if any (csms_set rows only)'),
+    })
+    .passthrough();
 
   app.get(
     '/stations/:id/charging-profiles',
@@ -3622,6 +3692,15 @@ export function stationRoutes(app: FastifyInstance): void {
     chargingRateUnit: z.string().optional().describe('Charging rate unit (W or A)'),
   });
 
+  // OCPP GetCompositeScheduleResponse passes through unchanged.
+  const compositeScheduleResponse = z
+    .object({
+      status: z.string().optional().describe('OCPP composite schedule status (Accepted/Rejected)'),
+      statusInfo: z.record(z.unknown()).optional().describe('Additional OCPP status info'),
+      schedule: z.record(z.unknown()).optional().describe('Composite charging schedule payload'),
+    })
+    .passthrough();
+
   app.post(
     '/stations/:id/charging-profiles/composite',
     {
@@ -3634,7 +3713,7 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(stationParams),
         body: zodSchema(compositeBody),
         response: {
-          200: itemResponse(z.object({}).passthrough()),
+          200: itemResponse(compositeScheduleResponse),
           400: errorResponse,
           404: errorResponse,
           502: errorResponse,
@@ -3705,6 +3784,16 @@ export function stationRoutes(app: FastifyInstance): void {
     evseId: z.number().int().optional().describe('EVSE ID to clear profiles for'),
   });
 
+  // OCPP ClearChargingProfileResponse passes through. When the station never
+  // returned a payload, the handler falls back to `{ success: true }`.
+  const clearChargingProfileResponse = z
+    .object({
+      status: z.string().optional().describe('OCPP clear status (Accepted/Unknown)'),
+      statusInfo: z.record(z.unknown()).optional().describe('Additional OCPP status info'),
+      success: z.boolean().optional().describe('Set when no station response was available'),
+    })
+    .passthrough();
+
   app.post(
     '/stations/:id/charging-profiles/clear',
     {
@@ -3717,7 +3806,7 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(stationParams),
         body: zodSchema(clearProfileBody),
         response: {
-          200: itemResponse(z.object({}).passthrough()),
+          200: itemResponse(clearChargingProfileResponse),
           400: errorResponse,
           404: errorResponse,
           502: errorResponse,
@@ -4174,7 +4263,23 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- EV Charging Needs ---
 
-  const evChargingNeedsItem = z.object({}).passthrough();
+  const evChargingNeedsItem = z
+    .object({
+      id: z.number().describe('EV charging needs row ID'),
+      stationId: z.string().describe('Station ID'),
+      evseId: z.number().describe('EVSE ID the needs apply to'),
+      chargingNeeds: z.record(z.unknown()).describe('Raw OCPP NotifyEVChargingNeeds payload'),
+      departureTime: z.string().nullable().describe('Driver-provided departure time'),
+      requestedEnergyTransfer: z
+        .string()
+        .nullable()
+        .describe('Requested energy transfer mode (e.g., DC, AC_single_phase)'),
+      controlMode: z.string().nullable().describe('Control mode (e.g., ScheduledControl)'),
+      maxScheduleTuples: z.number().nullable().describe('Maximum number of schedule tuples'),
+      createdAt: z.string().describe('Row creation timestamp'),
+      updatedAt: z.string().describe('Row update timestamp'),
+    })
+    .passthrough();
 
   app.get(
     '/stations/:id/ev-charging-needs',
@@ -4218,7 +4323,25 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Variable Monitoring Rules ---
 
-  const monitoringRuleItem = z.object({}).passthrough();
+  const monitoringRuleItem = z
+    .object({
+      id: z.number().describe('Monitoring rule row ID'),
+      stationId: z.string().describe('Station ID'),
+      monitoringId: z
+        .number()
+        .nullable()
+        .describe('OCPP monitor ID assigned by the station, if any'),
+      component: z.string().describe('OCPP component name being monitored'),
+      variable: z.string().describe('OCPP variable name being monitored'),
+      type: z.string().describe('Monitor type (UpperThreshold, LowerThreshold, Delta, Periodic)'),
+      value: z.string().describe('Threshold or interval value (numeric stored as string)'),
+      severity: z.number().describe('OCPP severity level 0-9'),
+      status: z.string().describe('Rule status (pending, active, cleared, error)'),
+      errorInfo: z.string().nullable().describe('Error info when status is error'),
+      createdAt: z.string().describe('Row creation timestamp'),
+      updatedAt: z.string().describe('Row update timestamp'),
+    })
+    .passthrough();
 
   const createMonitoringRuleBody = z.object({
     component: z.string().min(1).describe('OCPP component name'),
@@ -4440,7 +4563,29 @@ export function stationRoutes(app: FastifyInstance): void {
 
   // --- Event Alerts ---
 
-  const eventAlertItem = z.object({}).passthrough();
+  const eventAlertItem = z
+    .object({
+      id: z.number().describe('Event alert row ID'),
+      stationId: z.string().describe('Station ID'),
+      stationEventId: z
+        .number()
+        .nullable()
+        .describe('Linked station_events row ID, if alert was raised by an event'),
+      ruleId: z.number().nullable().describe('Linked event_alert_rules row ID, if any'),
+      component: z.string().nullable().describe('OCPP component name that triggered the alert'),
+      variable: z.string().nullable().describe('OCPP variable name that triggered the alert'),
+      severity: z.number().nullable().describe('Severity level 0-9'),
+      trigger: z
+        .string()
+        .nullable()
+        .describe('Trigger reason (e.g., Alerting, Delta, Periodic, UpperThreshold)'),
+      actualValue: z.string().nullable().describe('Reported value at the time of the alert'),
+      techInfo: z.string().nullable().describe('Vendor-specific technical info'),
+      acknowledgedAt: z.string().nullable().describe('When the alert was acknowledged'),
+      acknowledgedBy: z.string().nullable().describe('User ID that acknowledged the alert'),
+      createdAt: z.string().describe('Row creation timestamp'),
+    })
+    .passthrough();
 
   const eventAlertsQuery = paginationQuery.extend({
     severity: z.coerce.number().int().min(0).max(9).optional().describe('Filter by max severity'),

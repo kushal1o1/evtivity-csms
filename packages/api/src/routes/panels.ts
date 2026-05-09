@@ -71,6 +71,34 @@ const panelItem = z
   })
   .passthrough();
 
+const panelCircuitItem = z
+  .object({
+    id: z.string().describe('Circuit ID'),
+    panelId: z.string().describe('Parent panel ID'),
+    name: z.string().describe('Circuit name'),
+    breakerRatingAmps: z.number().describe('Circuit breaker rating in amps'),
+    maxContinuousKw: z.number().describe('Computed max continuous power in kW'),
+    phaseConnections: z.string().nullable().describe('Phase connection assignment'),
+    sortOrder: z.number().describe('Display sort order'),
+    createdAt: z.coerce.date().describe('Row creation timestamp'),
+    updatedAt: z.coerce.date().describe('Row last update timestamp'),
+    stationCount: z.number().describe('Number of stations attached to this circuit'),
+  })
+  .passthrough();
+
+const panelUnmanagedLoadItem = z
+  .object({
+    id: z.number().describe('Unmanaged load ID'),
+    panelId: z.string().nullable().describe('Parent panel ID, if attached to a panel'),
+    circuitId: z.string().nullable().describe('Parent circuit ID, if attached to a circuit'),
+    name: z.string().describe('Unmanaged load name'),
+    estimatedDrawKw: z.number().describe('Estimated load draw in kW'),
+    meterDeviceId: z.string().nullable().describe('Optional meter device identifier'),
+    createdAt: z.coerce.date().describe('Row creation timestamp'),
+    updatedAt: z.coerce.date().describe('Row last update timestamp'),
+  })
+  .passthrough();
+
 const panelDetailItem = z
   .object({
     id: z.string(),
@@ -86,8 +114,8 @@ const panelDetailItem = z
     sortOrder: z.number(),
     createdAt: z.coerce.date(),
     updatedAt: z.coerce.date(),
-    circuits: z.array(z.object({}).passthrough()),
-    unmanagedLoads: z.array(z.object({}).passthrough()),
+    circuits: z.array(panelCircuitItem),
+    unmanagedLoads: z.array(panelUnmanagedLoadItem),
   })
   .passthrough();
 

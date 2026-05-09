@@ -27,10 +27,27 @@ import { isPrivateUrl } from '@evtivity/lib';
 import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
 
-const ocpiPartnerItem = z.object({}).passthrough();
+const ocpiPartnerItem = z
+  .object({
+    id: z.string().describe('OCPI partner ID'),
+    name: z.string().describe('Partner name'),
+    countryCode: z.string().describe('ISO 3166-1 alpha-2 country code'),
+    partyId: z.string().describe('OCPI party identifier'),
+    roles: z.unknown().describe('OCPI roles advertised by the partner'),
+    ourRoles: z.unknown().describe('OCPI roles advertised by this CSMS to the partner'),
+    status: z.string().describe('Partner connection status'),
+    version: z.string().nullable().describe('Negotiated OCPI version'),
+    versionUrl: z.string().nullable().describe('OCPI versions endpoint URL'),
+    createdAt: z.string().describe('Row creation timestamp'),
+    updatedAt: z.string().describe('Row last update timestamp'),
+  })
+  .passthrough();
 
 const createPartnerResponse = z
-  .object({ partner: z.object({}).passthrough(), registrationToken: z.string() })
+  .object({
+    partner: ocpiPartnerItem.describe('Created partner record'),
+    registrationToken: z.string().describe('One-time registration token to share with the partner'),
+  })
   .passthrough();
 
 const syncLogItem = z

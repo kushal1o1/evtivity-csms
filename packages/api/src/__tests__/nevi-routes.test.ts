@@ -141,7 +141,26 @@ describe('NEVI routes', () => {
   });
 
   it('GET /v1/nevi/station-data returns station data list', async () => {
-    setupDbResults([{ id: 1, stationId: VALID_STATION_ID, operatorName: 'Test' }]);
+    setupDbResults([
+      {
+        id: 1,
+        stationId: VALID_STATION_ID,
+        operatorName: 'Test',
+        operatorAddress: null,
+        operatorPhone: null,
+        operatorEmail: null,
+        installationCost: null,
+        gridConnectionCost: null,
+        maintenanceCostAnnual: null,
+        maintenanceCostYear: null,
+        derCapacityKw: null,
+        derCapacityKwh: null,
+        derType: null,
+        programParticipation: null,
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+    ]);
     const response = await app.inject({
       method: 'GET',
       url: '/nevi/station-data',
@@ -169,7 +188,26 @@ describe('NEVI routes', () => {
   it('PUT /v1/nevi/station-data/:stationId upserts station data when found', async () => {
     setupDbResults(
       [{ id: 1 }],
-      [{ id: 1, stationId: VALID_STATION_ID, operatorName: 'Test Operator' }],
+      [
+        {
+          id: 1,
+          stationId: VALID_STATION_ID,
+          operatorName: 'Test Operator',
+          operatorAddress: null,
+          operatorPhone: null,
+          operatorEmail: 'test@example.com',
+          installationCost: null,
+          gridConnectionCost: null,
+          maintenanceCostAnnual: null,
+          maintenanceCostYear: null,
+          derCapacityKw: null,
+          derCapacityKwh: null,
+          derType: null,
+          programParticipation: null,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ],
     );
     const response = await app.inject({
       method: 'PUT',
@@ -184,7 +222,18 @@ describe('NEVI routes', () => {
 
   it('GET /v1/nevi/excluded-downtime returns paginated list', async () => {
     setupDbResults(
-      [{ id: 1, stationId: VALID_STATION_ID, reason: 'utility_outage' }],
+      [
+        {
+          id: 1,
+          stationId: VALID_STATION_ID,
+          evseId: 1,
+          reason: 'utility_outage',
+          startedAt: '2026-01-01T00:00:00Z',
+          endedAt: null,
+          notes: null,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
       [{ count: 1 }],
     );
     const response = await app.inject({
@@ -207,6 +256,10 @@ describe('NEVI routes', () => {
           stationId: VALID_STATION_ID,
           evseId: 1,
           reason: 'utility_outage',
+          startedAt: '2025-01-01T00:00:00Z',
+          endedAt: null,
+          notes: null,
+          createdAt: '2026-01-01T00:00:00Z',
         },
       ],
     );
@@ -240,7 +293,21 @@ describe('NEVI routes', () => {
   });
 
   it('PATCH /v1/nevi/excluded-downtime/:id updates record when found', async () => {
-    setupDbResults([{ id: 1 }], [{ id: 1, reason: 'vandalism' }]);
+    setupDbResults(
+      [{ id: 1 }],
+      [
+        {
+          id: 1,
+          stationId: VALID_STATION_ID,
+          evseId: 1,
+          reason: 'vandalism',
+          startedAt: '2025-01-01T00:00:00Z',
+          endedAt: null,
+          notes: null,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    );
     const response = await app.inject({
       method: 'PATCH',
       url: `/nevi/excluded-downtime/1`,

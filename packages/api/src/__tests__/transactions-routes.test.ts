@@ -112,6 +112,62 @@ import { transactionRoutes } from '../routes/transactions.js';
 
 const VALID_SESSION_ID = 'ses_000000000001';
 
+function makeEvent(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: 1,
+    sessionId: VALID_SESSION_ID,
+    eventType: 'Updated',
+    seqNo: 1,
+    timestamp: '2024-01-01T00:00:00Z',
+    triggerReason: 'Authorized',
+    offline: false,
+    numberOfPhasesUsed: null,
+    cableMaxCurrent: null,
+    payload: null,
+    createdAt: '2024-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeSession(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: VALID_SESSION_ID,
+    stationId: 'station-1',
+    evseId: null,
+    connectorId: null,
+    driverId: null,
+    transactionId: 'txn-001',
+    status: 'completed',
+    startedAt: '2024-01-01T00:00:00Z',
+    endedAt: '2024-01-01T01:00:00Z',
+    meterStart: 0,
+    meterStop: 1000,
+    energyDeliveredWh: '1000',
+    stoppedReason: null,
+    isRoaming: false,
+    remoteStartId: null,
+    reservationId: null,
+    currentCostCents: null,
+    finalCostCents: 100,
+    currency: 'USD',
+    tariffId: null,
+    tariffPricePerKwh: null,
+    tariffPricePerMinute: null,
+    tariffPricePerSession: null,
+    tariffIdleFeePricePerMinute: null,
+    tariffTaxRate: null,
+    idleStartedAt: null,
+    idleMinutes: '0',
+    lastUpdateNotifiedAt: null,
+    metadata: null,
+    freeVend: false,
+    co2AvoidedKg: null,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T01:00:00Z',
+    ...overrides,
+  };
+}
+
 async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify();
   await registerAuth(app);
@@ -148,8 +204,8 @@ describe('Transaction routes', () => {
 
     it('returns paginated transaction events with defaults', async () => {
       const events = [
-        { id: '1', triggerReason: 'Authorized', createdAt: '2024-01-01' },
-        { id: '2', triggerReason: 'EVConnected', createdAt: '2024-01-02' },
+        makeEvent({ id: 1, triggerReason: 'Authorized', createdAt: '2024-01-01T00:00:00Z' }),
+        makeEvent({ id: 2, triggerReason: 'EVConnected', createdAt: '2024-01-02T00:00:00Z' }),
       ];
       // First chain: data query (wrapped in event key), second chain: count query
       setupDbResults(
@@ -169,7 +225,9 @@ describe('Transaction routes', () => {
     });
 
     it('returns paginated results with explicit page and limit', async () => {
-      const events = [{ id: '3', triggerReason: 'EVDeparted', createdAt: '2024-02-01' }];
+      const events = [
+        makeEvent({ id: 3, triggerReason: 'EVDeparted', createdAt: '2024-02-01T00:00:00Z' }),
+      ];
       setupDbResults(
         events.map((e) => ({ event: e })),
         [{ count: 11 }],
@@ -187,7 +245,9 @@ describe('Transaction routes', () => {
     });
 
     it('returns filtered results when search is provided', async () => {
-      const events = [{ id: '4', triggerReason: 'Authorized', createdAt: '2024-03-01' }];
+      const events = [
+        makeEvent({ id: 4, triggerReason: 'Authorized', createdAt: '2024-03-01T00:00:00Z' }),
+      ];
       setupDbResults(
         events.map((e) => ({ event: e })),
         [{ count: 1 }],
@@ -265,8 +325,8 @@ describe('Transaction routes', () => {
 
     it('returns transaction events for a valid session', async () => {
       const events = [
-        { id: '1', sessionId: VALID_SESSION_ID, seqNo: 1, triggerReason: 'Authorized' },
-        { id: '2', sessionId: VALID_SESSION_ID, seqNo: 2, triggerReason: 'EVConnected' },
+        makeEvent({ id: 1, sessionId: VALID_SESSION_ID, seqNo: 1, triggerReason: 'Authorized' }),
+        makeEvent({ id: 2, sessionId: VALID_SESSION_ID, seqNo: 2, triggerReason: 'EVConnected' }),
       ];
       setupDbResults(events);
 
@@ -315,12 +375,12 @@ describe('Transaction routes', () => {
     });
 
     it('returns session when found', async () => {
-      const session = {
+      const session = makeSession({
         id: VALID_SESSION_ID,
         transactionId: 'txn-001',
         stationId: 'station-1',
         status: 'completed',
-      };
+      });
       setupDbResults([session]);
 
       const res = await app.inject({
@@ -363,11 +423,11 @@ describe('Transaction routes', () => {
     });
 
     it('accepts any string as transactionId param', async () => {
-      const session = {
+      const session = makeSession({
         id: VALID_SESSION_ID,
         transactionId: 'some-special-chars_123',
         status: 'active',
-      };
+      });
       setupDbResults([session]);
 
       const res = await app.inject({

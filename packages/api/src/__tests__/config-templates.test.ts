@@ -208,8 +208,10 @@ describe('Config template routes', () => {
           id: 'tpl-1',
           name: 'Default Config',
           description: 'Default station config',
+          ocppVersion: '2.1',
           variables: [{ component: 'EVSE', variable: 'MaxCurrent', value: '32' }],
           targetFilter: null,
+          stationId: null,
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
         },
@@ -275,8 +277,10 @@ describe('Config template routes', () => {
         id: 'tpl-1',
         name: 'Default Config',
         description: 'Default station config',
+        ocppVersion: '2.1',
         variables: [{ component: 'EVSE', variable: 'MaxCurrent', value: '32' }],
         targetFilter: { siteId: 'site-1' },
+        stationId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -316,6 +320,7 @@ describe('Config template routes', () => {
         ocppVersion: '2.1',
         variables: [{ component: 'EVSE', variable: 'MaxCurrent', value: '32' }],
         targetFilter: { siteId: 'site-1' },
+        stationId: null,
         createdAt: '2026-01-15T00:00:00Z',
         updatedAt: '2026-01-15T00:00:00Z',
       };
@@ -344,9 +349,11 @@ describe('Config template routes', () => {
       const created = {
         id: 'tpl-16',
         name: '1.6 Template',
+        description: null,
         ocppVersion: '1.6',
         variables: [{ component: '', variable: 'HeartbeatInterval', value: '60' }],
         targetFilter: null,
+        stationId: null,
         createdAt: '2026-01-15T00:00:00Z',
         updatedAt: '2026-01-15T00:00:00Z',
       };
@@ -419,6 +426,7 @@ describe('Config template routes', () => {
         ocppVersion: '1.6',
         variables: [{ component: 'EVSE', variable: 'MaxCurrent', value: '64' }],
         targetFilter: { vendorId: 'vnd-1' },
+        stationId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-02-01T00:00:00Z',
       };
@@ -516,6 +524,7 @@ describe('Config template routes', () => {
           id: 'sta-1',
           stationId: 'STATION-001',
           model: 'Model X',
+          isOnline: true,
           siteName: 'Site A',
           vendorName: 'Vendor Y',
         },

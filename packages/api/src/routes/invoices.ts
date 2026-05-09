@@ -28,7 +28,45 @@ const invoiceListItem = z
   })
   .passthrough();
 
-const invoiceDetailItem = z.object({}).passthrough();
+const invoiceRecord = z
+  .object({
+    id: z.string().describe('Invoice ID'),
+    invoiceNumber: z.string().describe('Human-readable invoice number'),
+    driverId: z.string().nullable().describe('Driver ID this invoice is billed to'),
+    status: z.string().describe('Invoice status (draft, issued, paid, void)'),
+    issuedAt: z.string().nullable().describe('Timestamp when the invoice was issued'),
+    dueAt: z.string().nullable().describe('Timestamp when payment is due'),
+    currency: z.string().describe('ISO 4217 currency code'),
+    subtotalCents: z.number().describe('Subtotal amount in cents (pre-tax)'),
+    taxCents: z.number().describe('Tax amount in cents'),
+    totalCents: z.number().describe('Total amount in cents (subtotal + tax)'),
+    metadata: z.record(z.unknown()).nullable().describe('Free-form invoice metadata'),
+    createdAt: z.string().describe('Timestamp when the invoice was created'),
+    updatedAt: z.string().describe('Timestamp when the invoice was last updated'),
+  })
+  .passthrough();
+
+const invoiceLineItem = z
+  .object({
+    id: z.number().describe('Line item ID'),
+    invoiceId: z.string().describe('Invoice ID this line item belongs to'),
+    sessionId: z.string().nullable().describe('Charging session ID linked to this line item'),
+    description: z.string().describe('Line item description'),
+    quantity: z.string().describe('Quantity (numeric string)'),
+    unitPriceCents: z.number().describe('Unit price in cents'),
+    totalCents: z.number().describe('Line item total in cents'),
+    taxCents: z.number().describe('Tax amount in cents for this line item'),
+    metadata: z.record(z.unknown()).nullable().describe('Free-form line item metadata'),
+    createdAt: z.string().describe('Timestamp when the line item was created'),
+  })
+  .passthrough();
+
+const invoiceDetailItem = z
+  .object({
+    invoice: invoiceRecord.describe('Invoice header record'),
+    lineItems: z.array(invoiceLineItem).describe('Line items associated with the invoice'),
+  })
+  .passthrough();
 import { authorize } from '../middleware/rbac.js';
 import {
   createSessionInvoice,

@@ -72,7 +72,25 @@ const reorderBody = z.object({
   imageIds: z.array(z.number().int().min(1)).min(1),
 });
 
-const imageItem = z.object({}).passthrough();
+const imageItem = z
+  .object({
+    id: z.number().describe('Image ID'),
+    stationId: z.string().describe('Station ID'),
+    fileName: z.string().describe('Original file name'),
+    fileSize: z.number().describe('File size in bytes'),
+    contentType: z.string().describe('MIME type of the file'),
+    s3Key: z.string().describe('S3 object key'),
+    s3Bucket: z.string().describe('S3 bucket name'),
+    caption: z.string().nullable().describe('Optional caption text'),
+    tags: z.array(z.string()).describe('Tags for filtering and grouping'),
+    isDriverVisible: z.boolean().describe('Whether the image is shown to drivers in the portal'),
+    isMainImage: z.boolean().describe('Whether this is the primary image for the station'),
+    sortOrder: z.number().describe('Display order within the station image gallery'),
+    uploadedBy: z.string().nullable().describe('User ID of the operator who uploaded the image'),
+    createdAt: z.string().describe('Timestamp when the image was uploaded'),
+    updatedAt: z.string().describe('Timestamp when the image was last updated'),
+  })
+  .passthrough();
 
 export function stationImageRoutes(app: FastifyInstance): void {
   // List all images for a station

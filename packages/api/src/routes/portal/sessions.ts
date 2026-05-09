@@ -111,12 +111,35 @@ const monthlySummaryResponse = z
   })
   .passthrough();
 
+const monthlyStatementSessionItem = z
+  .object({
+    id: z.string().describe('Charging session ID'),
+    startedAt: z.coerce.date().nullable().describe('Session start timestamp'),
+    endedAt: z.coerce.date().nullable().describe('Session end timestamp'),
+    energyDeliveredWh: z.coerce.number().nullable().describe('Energy delivered in Wh'),
+    co2AvoidedKg: z.coerce.number().nullable().describe('Estimated CO2 avoided in kg'),
+    finalCostCents: z.number().nullable().describe('Final session cost in cents'),
+    currency: z.string().nullable().describe('Currency code (ISO 4217)'),
+    siteName: z.string().nullable().describe('Site name for the station'),
+    siteCity: z.string().nullable().describe('Site city'),
+  })
+  .passthrough();
+
+const monthlyStatementTotals = z
+  .object({
+    totalCostCents: z.number().describe('Total cost across the statement in cents'),
+    totalEnergyWh: z.number().describe('Total energy delivered across the statement in Wh'),
+    totalCo2AvoidedKg: z.number().describe('Total CO2 avoided across the statement in kg'),
+    sessionCount: z.number().describe('Number of completed sessions in the statement'),
+  })
+  .passthrough();
+
 const monthlyStatementResponse = z
   .object({
-    month: z.string(),
-    driverName: z.string(),
-    sessions: z.array(z.object({}).passthrough()),
-    totals: z.object({}).passthrough(),
+    month: z.string().describe('Statement month in YYYY-MM format'),
+    driverName: z.string().describe('Driver display name'),
+    sessions: z.array(monthlyStatementSessionItem).describe('Itemized session list for the month'),
+    totals: monthlyStatementTotals.describe('Aggregated totals for the statement'),
   })
   .passthrough();
 

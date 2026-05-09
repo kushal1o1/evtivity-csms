@@ -287,16 +287,22 @@ describe('Load management routes', () => {
     setupDbResults(
       [
         {
+          id: 1,
           siteId: VALID_SITE_ID,
           strategy: 'equal_share',
           isEnabled: false,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
         },
       ],
       [
         {
+          id: 1,
           siteId: VALID_SITE_ID,
           strategy: 'equal_share',
           isEnabled: true,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-02T00:00:00Z',
         },
       ],
     );
@@ -316,9 +322,12 @@ describe('Load management routes', () => {
       [],
       [
         {
+          id: 1,
           siteId: VALID_SITE_ID,
           strategy: 'priority_based',
           isEnabled: true,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
         },
       ],
     );

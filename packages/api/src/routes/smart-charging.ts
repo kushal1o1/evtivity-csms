@@ -24,8 +24,106 @@ import {
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
-const templateItem = z.object({}).passthrough();
+const templateItem = z
+  .object({
+    id: z.string().describe('Template ID'),
+    name: z.string().describe('Template name'),
+    description: z.string().nullable().describe('Template description'),
+    ocppVersion: z.string().describe('OCPP version (1.6 or 2.1)'),
+    profileId: z.number().describe('OCPP charging profile ID'),
+    profilePurpose: z.string().describe('Charging profile purpose'),
+    profileKind: z.string().describe('Charging profile kind (Absolute or Recurring)'),
+    recurrencyKind: z.string().nullable().describe('Recurrency kind (Daily or Weekly)'),
+    stackLevel: z.number().describe('Stack level'),
+    evseId: z.number().describe('EVSE ID (0 for station-wide)'),
+    chargingRateUnit: z.string().describe('Charging rate unit (W or A)'),
+    schedulePeriods: z.unknown().describe('Charging schedule periods (JSONB array)'),
+    startSchedule: z.string().nullable().describe('Schedule start time (ISO 8601)'),
+    duration: z.number().nullable().describe('Schedule duration in seconds'),
+    validFrom: z.string().nullable().describe('Profile validity start (ISO 8601)'),
+    validTo: z.string().nullable().describe('Profile validity end (ISO 8601)'),
+    targetFilter: z
+      .record(z.unknown())
+      .nullable()
+      .describe('Filter to select target stations (siteId/vendorId/model)'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+    matchingStationsCount: z
+      .number()
+      .optional()
+      .describe('Number of stations matching the target filter (only on list endpoint)'),
+  })
+  .passthrough();
 const templateParams = z.object({ id: z.string().describe('Template ID') });
+
+const filterOptionsItem = z
+  .object({
+    sites: z
+      .array(z.object({ id: z.string(), name: z.string() }).passthrough())
+      .describe('Sites the user can access'),
+    vendors: z
+      .array(z.object({ id: z.string(), name: z.string() }).passthrough())
+      .describe('All vendors'),
+    models: z.array(z.string()).describe('Distinct station model names'),
+  })
+  .passthrough();
+
+const matchingStationItem = z
+  .object({
+    id: z.string().describe('Station UUID'),
+    stationId: z.string().describe('OCPP station identifier'),
+    model: z.string().nullable().describe('Station model'),
+    siteName: z.string().nullable().describe('Site name'),
+    vendorName: z.string().nullable().describe('Vendor name'),
+  })
+  .passthrough();
+
+const pushItem = z
+  .object({
+    id: z.string().describe('Push ID'),
+    templateId: z.string().describe('Template ID'),
+    operation: z.string().describe('Push operation (set or clear)'),
+    status: z.string().describe('Push status (active or completed)'),
+    stationCount: z.number().describe('Number of stations targeted'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+    pendingCount: z.number().describe('Stations with pending status'),
+    acceptedCount: z.number().describe('Stations that accepted the profile'),
+    rejectedCount: z.number().describe('Stations that rejected the profile'),
+    failedCount: z.number().describe('Stations where dispatch failed'),
+  })
+  .passthrough();
+
+const pushDetailItem = z
+  .object({
+    id: z.string().describe('Push ID'),
+    templateId: z.string().describe('Template ID'),
+    operation: z.string().describe('Push operation (set or clear)'),
+    status: z.string().describe('Push status (active or completed)'),
+    stationCount: z.number().describe('Number of stations targeted'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+    pendingCount: z.number().describe('Stations with pending status'),
+    acceptedCount: z.number().describe('Stations that accepted the profile'),
+    rejectedCount: z.number().describe('Stations that rejected the profile'),
+    failedCount: z.number().describe('Stations where dispatch failed'),
+    stations: z
+      .array(
+        z
+          .object({
+            id: z.number().describe('Push-station row ID'),
+            stationId: z.string().describe('Station UUID'),
+            stationName: z.string().describe('OCPP station identifier'),
+            status: z.string().describe('Per-station push status'),
+            errorInfo: z.string().nullable().describe('Error info when failed/rejected'),
+            updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+          })
+          .passthrough(),
+      )
+      .describe('Per-station push results (paginated)'),
+    stationsTotal: z.number().describe('Total number of stations in this push'),
+  })
+  .passthrough();
 
 // Postgres unique-violation (23505) on the profile_id constraint. Used as a
 // race-safe backstop for the JS-side pre-check on concurrent inserts.
@@ -114,7 +212,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         summary: 'Get filter options for smart charging template targeting',
         operationId: 'getSmartChargingFilterOptions',
         security: [{ bearerAuth: [] }],
-        response: { 200: itemResponse(z.object({}).passthrough()) },
+        response: { 200: itemResponse(filterOptionsItem) },
       },
     },
     async (request) => {
@@ -562,7 +660,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(templateItem), 404: errorResponse },
+        response: { 200: paginatedResponse(matchingStationItem), 404: errorResponse },
       },
     },
     async (request, reply) => {
@@ -825,7 +923,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(z.object({}).passthrough()), 404: errorResponse },
+        response: { 200: paginatedResponse(pushItem), 404: errorResponse },
       },
     },
     async (request, reply) => {
@@ -902,7 +1000,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(z.object({ pushId: z.string().describe('Push ID') })),
         querystring: zodSchema(paginationQuery),
-        response: { 200: itemResponse(z.object({}).passthrough()), 404: errorResponse },
+        response: { 200: itemResponse(pushDetailItem), 404: errorResponse },
       },
     },
     async (request, reply) => {

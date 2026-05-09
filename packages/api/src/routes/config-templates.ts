@@ -27,7 +27,138 @@ import { processConfigPush } from '../lib/config-push.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
-const templateItem = z.object({}).passthrough();
+const templateVariableSchema = z
+  .object({
+    component: z.string().describe('OCPP component name'),
+    variable: z.string().describe('OCPP variable name'),
+    value: z.string().describe('Variable value to set'),
+  })
+  .passthrough();
+
+const targetFilterResponseSchema = z
+  .object({
+    siteId: z.string().optional(),
+    vendorId: z.string().optional(),
+    model: z.string().optional(),
+    stationId: z.string().optional(),
+  })
+  .passthrough();
+
+const templateItem = z
+  .object({
+    id: z.string().describe('Template ID'),
+    name: z.string().describe('Template name'),
+    description: z.string().nullable().describe('Template description'),
+    variables: z.array(templateVariableSchema).describe('Variable definitions'),
+    ocppVersion: z.string().describe('OCPP version (1.6 or 2.1)'),
+    targetFilter: targetFilterResponseSchema.nullable().describe('Target station filter'),
+    stationId: z
+      .string()
+      .nullable()
+      .describe('Station ID when template is auto-created for a single station'),
+    createdAt: z.string().describe('ISO timestamp when template was created'),
+    updatedAt: z.string().describe('ISO timestamp when template was last updated'),
+    matchingStationsCount: z
+      .number()
+      .optional()
+      .describe('Count of stations matching the target filter (list endpoint only)'),
+  })
+  .passthrough();
+
+const filterOptionSiteSchema = z
+  .object({
+    id: z.string().describe('Site ID'),
+    name: z.string().describe('Site name'),
+  })
+  .passthrough();
+
+const filterOptionVendorSchema = z
+  .object({
+    id: z.string().describe('Vendor ID'),
+    name: z.string().describe('Vendor name'),
+  })
+  .passthrough();
+
+const filterOptionStationSchema = z
+  .object({
+    id: z.string().describe('Station UUID'),
+    stationId: z.string().describe('Human-readable station identifier'),
+  })
+  .passthrough();
+
+const filterOptionsItem = z
+  .object({
+    sites: z.array(filterOptionSiteSchema).describe('Available sites for filtering'),
+    vendors: z.array(filterOptionVendorSchema).describe('Available vendors for filtering'),
+    models: z.array(z.string()).describe('Available station models for filtering'),
+    stations: z.array(filterOptionStationSchema).describe('Available stations for filtering'),
+  })
+  .passthrough();
+
+const matchingStationItem = z
+  .object({
+    id: z.string().describe('Station UUID'),
+    stationId: z.string().describe('Human-readable station identifier'),
+    model: z.string().nullable().describe('Station model'),
+    isOnline: z.boolean().describe('Whether the station is currently connected'),
+    siteName: z.string().nullable().describe('Site name'),
+    vendorName: z.string().nullable().describe('Vendor name'),
+  })
+  .passthrough();
+
+const configDriftItem = z
+  .object({
+    component: z.string().describe('OCPP component name'),
+    variable: z.string().describe('OCPP variable name'),
+    expectedValue: z.string().describe('Value the template expects for the variable'),
+    actualValue: z.string().nullable().describe('Value currently set on the station'),
+    hasDrift: z.boolean().describe('Whether the actual value differs from the expected value'),
+  })
+  .passthrough();
+
+const pushItem = z
+  .object({
+    id: z.string().describe('Push ID'),
+    templateId: z.string().describe('Source config template ID'),
+    status: z.string().describe('Push status (active or completed)'),
+    stationCount: z.number().describe('Total number of target stations'),
+    createdAt: z.string().describe('ISO timestamp when push was created'),
+    updatedAt: z.string().describe('ISO timestamp when push was last updated'),
+    pendingCount: z.number().describe('Stations still pending'),
+    acceptedCount: z.number().describe('Stations that accepted the configuration'),
+    rejectedCount: z.number().describe('Stations that rejected the configuration'),
+    failedCount: z.number().describe('Stations where the push failed'),
+  })
+  .passthrough();
+
+const pushStationItem = z
+  .object({
+    id: z.number().describe('Push station row ID'),
+    stationId: z.string().describe('Station UUID'),
+    stationName: z.string().describe('Human-readable station identifier'),
+    status: z.string().describe('Per-station push status'),
+    errorInfo: z.string().nullable().describe('Error details when status is rejected or failed'),
+    updatedAt: z.string().describe('ISO timestamp when this row was last updated'),
+  })
+  .passthrough();
+
+const pushDetailItem = z
+  .object({
+    id: z.string().describe('Push ID'),
+    templateId: z.string().describe('Source config template ID'),
+    status: z.string().describe('Push status (active or completed)'),
+    stationCount: z.number().describe('Total number of target stations'),
+    createdAt: z.string().describe('ISO timestamp when push was created'),
+    updatedAt: z.string().describe('ISO timestamp when push was last updated'),
+    pendingCount: z.number().describe('Stations still pending'),
+    acceptedCount: z.number().describe('Stations that accepted the configuration'),
+    rejectedCount: z.number().describe('Stations that rejected the configuration'),
+    failedCount: z.number().describe('Stations where the push failed'),
+    stations: z.array(pushStationItem).describe('Paginated per-station results'),
+    stationsTotal: z.number().describe('Total number of stations in this push'),
+  })
+  .passthrough();
+
 const templateParams = z.object({ id: z.string().describe('Template ID') });
 
 const targetFilterSchema = z
@@ -90,7 +221,7 @@ export function configTemplateRoutes(app: FastifyInstance): void {
         operationId: 'getConfigTemplateFilterOptions',
         security: [{ bearerAuth: [] }],
         querystring: zodSchema(filterOptionsQuery),
-        response: { 200: itemResponse(z.object({}).passthrough()) },
+        response: { 200: itemResponse(filterOptionsItem) },
       },
     },
     async (request) => {
@@ -379,7 +510,7 @@ export function configTemplateRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(matchingStationsQuery),
-        response: { 200: paginatedResponse(templateItem), 404: errorResponse },
+        response: { 200: paginatedResponse(matchingStationItem), 404: errorResponse },
       },
     },
     async (request, reply) => {
@@ -551,7 +682,7 @@ export function configTemplateRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(z.object({}).passthrough()), 404: errorResponse },
+        response: { 200: paginatedResponse(pushItem), 404: errorResponse },
       },
     },
     async (request, reply) => {
@@ -644,7 +775,7 @@ export function configTemplateRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(z.object({ pushId: z.string().describe('Push ID') })),
         querystring: zodSchema(paginationQuery),
-        response: { 200: itemResponse(z.object({}).passthrough()), 404: errorResponse },
+        response: { 200: itemResponse(pushDetailItem), 404: errorResponse },
       },
     },
     async (request, reply) => {
@@ -714,7 +845,7 @@ export function configTemplateRoutes(app: FastifyInstance): void {
         operationId: 'getStationConfigDrift',
         security: [{ bearerAuth: [] }],
         params: zodSchema(z.object({ id: z.string().describe('Station ID') })),
-        response: { 200: arrayResponse(templateItem) },
+        response: { 200: arrayResponse(configDriftItem) },
       },
     },
     async (request) => {

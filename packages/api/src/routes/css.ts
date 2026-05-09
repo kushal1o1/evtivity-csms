@@ -186,7 +186,34 @@ const stationIdParams = z.object({
   stationId: z.string().describe('CSS station ID'),
 });
 
-const stationItem = z.object({}).passthrough();
+const stationItem = z
+  .object({
+    id: z.string().describe('Internal CSS station ID'),
+    stationId: z.string().describe('Station identifier string used as the OCPP identity'),
+    targetUrl: z.string().describe('Target OCPP WebSocket URL the simulator connects to'),
+    password: z.string().nullable().describe('Basic auth password'),
+    clientCert: z.string().nullable().describe('Client certificate PEM (Security Profile 3)'),
+    clientKey: z.string().nullable().describe('Client private key PEM (Security Profile 3)'),
+    caCert: z.string().nullable().describe('CA certificate PEM (Security Profile 3)'),
+    status: z.string().describe('Connection status (connected, disconnected, etc.)'),
+    availabilityState: z
+      .string()
+      .describe('Operative or Inoperative availability state reported by the simulator'),
+    bootReason: z.string().nullable().describe('Most recent boot reason'),
+    lastHeartbeatAt: z
+      .string()
+      .nullable()
+      .describe('Timestamp of the most recent heartbeat received from the simulator'),
+    lastBootAt: z
+      .string()
+      .nullable()
+      .describe('Timestamp of the most recent boot notification from the simulator'),
+    sourceType: z.string().describe('Origin of the simulator entry (api, chaos, cli, etc.)'),
+    enabled: z.boolean().describe('Whether the simulator is enabled'),
+    createdAt: z.string().describe('Timestamp when the simulator station was created'),
+    updatedAt: z.string().describe('Timestamp when the simulator station was last updated'),
+  })
+  .passthrough();
 
 const actionResponse = z
   .object({

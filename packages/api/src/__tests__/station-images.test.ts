@@ -331,11 +331,18 @@ describe('Station image routes', () => {
         id: 1,
         stationId: VALID_STATION_ID,
         fileName: 'photo.jpg',
+        fileSize: 12345,
+        contentType: 'image/jpeg',
+        s3Key: 'stations/sta_000000000001/uuid-photo.jpg',
+        s3Bucket: 'my-bucket',
         caption: 'Updated caption',
         tags: ['new-tag'],
         isDriverVisible: true,
         isMainImage: false,
         sortOrder: 0,
+        uploadedBy: 'test-id',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-02T00:00:00Z',
       };
 
       // 1. update returning

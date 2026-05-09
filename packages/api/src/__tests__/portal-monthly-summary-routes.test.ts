@@ -169,10 +169,12 @@ describe('Portal monthly summary routes', () => {
             startedAt: '2026-02-10T10:00:00Z',
             endedAt: '2026-02-10T11:00:00Z',
             energyDeliveredWh: '30000',
+            co2AvoidedKg: '5.2',
             finalCostCents: 1500,
             currency: 'USD',
             stationName: 'Station A',
             siteName: 'Site Alpha',
+            siteCity: 'Austin',
           },
         ],
       );

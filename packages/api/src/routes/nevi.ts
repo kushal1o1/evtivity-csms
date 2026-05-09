@@ -18,9 +18,60 @@ import {
 import { authorize } from '../middleware/rbac.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 
-const neviStationDataItem = z.object({}).passthrough();
-const neviStationDataList = z.object({ data: z.array(z.object({}).passthrough()) }).passthrough();
-const neviExcludedDowntimeItem = z.object({}).passthrough();
+const neviStationDataItem = z
+  .object({
+    id: z.number().describe('NEVI station data row ID'),
+    stationId: z.string().describe('Charging station ID'),
+    stationName: z.string().optional().describe('Human-readable station ID (joined from station)'),
+    operatorName: z.string().nullable().describe('Operator name'),
+    operatorAddress: z.string().nullable().describe('Operator address'),
+    operatorPhone: z.string().nullable().describe('Operator phone number'),
+    operatorEmail: z.string().nullable().describe('Operator email address'),
+    installationCost: z.string().nullable().describe('Installation cost as a decimal string'),
+    gridConnectionCost: z.string().nullable().describe('Grid connection cost as a decimal string'),
+    maintenanceCostAnnual: z
+      .string()
+      .nullable()
+      .describe('Annual maintenance cost as a decimal string'),
+    maintenanceCostYear: z.number().nullable().describe('Year the maintenance cost applies to'),
+    derCapacityKw: z
+      .string()
+      .nullable()
+      .describe('Distributed energy resource capacity in kW (decimal string)'),
+    derCapacityKwh: z
+      .string()
+      .nullable()
+      .describe('Distributed energy resource capacity in kWh (decimal string)'),
+    derType: z.string().nullable().describe('Type of distributed energy resource'),
+    programParticipation: z
+      .unknown()
+      .describe('JSON array of NEVI program names the station participates in'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
+
+const neviStationDataList = z
+  .object({
+    data: z.array(neviStationDataItem).describe('NEVI station data rows for accessible stations'),
+  })
+  .passthrough();
+
+const neviExcludedDowntimeItem = z
+  .object({
+    id: z.number().describe('Excluded downtime row ID'),
+    stationId: z.string().describe('Charging station ID'),
+    stationName: z.string().optional().describe('Human-readable station ID (joined from station)'),
+    evseId: z.number().describe('EVSE ID on the station'),
+    reason: z.string().describe('Reason for the excluded downtime'),
+    startedAt: z.string().describe('Downtime start timestamp (ISO 8601)'),
+    endedAt: z.string().nullable().describe('Downtime end timestamp (ISO 8601), null if ongoing'),
+    notes: z.string().nullable().describe('Operator notes'),
+    createdById: z.string().nullable().optional().describe('User who created the record'),
+    createdAt: z.string().describe('Created timestamp (ISO 8601)'),
+    updatedAt: z.string().optional().describe('Updated timestamp (ISO 8601)'),
+  })
+  .passthrough();
 
 const upsertStationDataBody = z.object({
   operatorName: z.string().max(255).optional(),
