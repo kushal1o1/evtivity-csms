@@ -45,7 +45,9 @@ import {
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds, checkStationSiteAccess } from '../lib/site-access.js';
 import { sendOcppCommandAndWait, triggerAndWaitForStatus } from '../lib/ocpp-command.js';
 import { enableCssPair, disableCssPair } from '../lib/css-pairing.js';
@@ -780,7 +782,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'getStation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: itemResponse(stationDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(stationDetail),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -860,9 +865,9 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(stationParams),
         response: {
           200: successResponse,
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Ocpp command failed', [ERROR_CODES.OCPP_COMMAND_FAILED]),
         },
       },
     },
@@ -930,8 +935,8 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(createStationBody),
         response: {
           201: itemResponse(stationCreated),
-          404: errorResponse,
-          409: errorResponse,
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+          409: errorWith('Station id exists', [ERROR_CODES.STATION_ID_EXISTS]),
         },
       },
     },
@@ -1049,7 +1054,14 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(updateStationBody),
-        response: { 200: itemResponse(stationCreated), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(stationCreated),
+          400: errorWith('Password required', [ERROR_CODES.PASSWORD_REQUIRED]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.SITE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -1229,7 +1241,10 @@ export function stationRoutes(app: FastifyInstance): void {
         summary: 'Delete a station (marks as removed)',
         operationId: 'deleteStation',
         security: [{ bearerAuth: [] }],
-        response: { 200: zodSchema(stationCreated), 404: errorResponse },
+        response: {
+          200: zodSchema(stationCreated),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1276,7 +1291,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'listStationConnectors',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: arrayResponse(evseDetail), 404: errorResponse },
+        response: {
+          200: arrayResponse(evseDetail),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1400,9 +1418,9 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(createEvseBody),
         response: {
           201: itemResponse(evseResponse),
-          404: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorWith('Duplicate evse id', [ERROR_CODES.DUPLICATE_EVSE_ID]),
+          500: errorWith('Internal error', [ERROR_CODES.INTERNAL_ERROR]),
         },
       },
     },
@@ -1504,7 +1522,13 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(evseParams),
         body: zodSchema(updateEvseBody),
-        response: { 200: itemResponse(evseResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(evseResponse),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -1591,7 +1615,10 @@ export function stationRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.CONNECTOR_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -1678,8 +1705,11 @@ export function stationRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          504: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          504: errorWith('Station timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -1801,9 +1831,12 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(addConnectorBody),
         response: {
           201: itemResponse(connectorResponse),
-          404: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Duplicate connector id', [ERROR_CODES.DUPLICATE_CONNECTOR_ID]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
         },
       },
     },
@@ -1882,8 +1915,11 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(evseParams),
         response: {
           200: zodSchema(deleteResponse),
-          404: errorResponse,
-          409: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Connector occupied', [ERROR_CODES.CONNECTOR_OCCUPIED]),
         },
       },
     },
@@ -1952,8 +1988,12 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(connectorParams),
         response: {
           200: zodSchema(deleteResponse),
-          404: errorResponse,
-          409: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.CONNECTOR_NOT_FOUND,
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Connector occupied', [ERROR_CODES.CONNECTOR_OCCUPIED]),
         },
       },
     },
@@ -2034,7 +2074,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(meterValuesQuery),
-        response: { 200: arrayResponse(meterValueGroup), 404: errorResponse },
+        response: {
+          200: arrayResponse(meterValueGroup),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2093,7 +2136,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(energyHistoryQuery),
-        response: { 200: arrayResponse(energyHistoryItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(energyHistoryItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2143,7 +2189,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(revenueHistoryQuery),
-        response: { 200: arrayResponse(revenueHistoryItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(revenueHistoryItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2219,7 +2268,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(uptimeHistoryQuery),
-        response: { 200: arrayResponse(uptimeHistoryItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(uptimeHistoryItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2349,7 +2401,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(popularTimesQuery),
-        response: { 200: arrayResponse(popularTimesItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(popularTimesItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2410,7 +2465,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(metricsQuery),
-        response: { 200: zodSchema(stationMetricsResponse), 404: errorResponse },
+        response: {
+          200: zodSchema(stationMetricsResponse),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2564,7 +2622,7 @@ export function stationRoutes(app: FastifyInstance): void {
 
   const sessionsQuery = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(50).default(10),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     status: z
       .enum(['active', 'completed', 'faulted', 'idling'])
       .optional()
@@ -2582,7 +2640,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(sessionsQuery),
-        response: { 200: paginatedResponse(sessionItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(sessionItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2669,7 +2730,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(ocppLogsQuery),
-        response: { 200: zodSchema(ocppLogsResponse), 404: errorResponse },
+        response: {
+          200: zodSchema(ocppLogsResponse),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2734,7 +2798,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(setCredentialsBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2815,9 +2882,9 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(stationParams),
         response: {
           200: successResponse,
-          404: errorResponse,
-          409: errorResponse,
-          502: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
         },
       },
     },
@@ -2955,7 +3022,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(securityLogsQuery),
-        response: { 200: paginatedResponse(securityLogItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(securityLogItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3056,7 +3126,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(stationCertQuery),
-        response: { 200: paginatedResponse(certificateItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(certificateItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3106,7 +3179,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(installCertBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3155,7 +3231,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(deleteCertBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3203,7 +3282,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(getInstalledCertsBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3250,7 +3332,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'getStationPricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: itemResponse(stationPricingGroupItem.nullable()), 404: errorResponse },
+        response: {
+          200: itemResponse(stationPricingGroupItem.nullable()),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3287,7 +3372,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         body: zodSchema(addStationPricingGroupBody),
-        response: { 201: itemResponse(stationPricingGroupRecordItem), 404: errorResponse },
+        response: {
+          201: itemResponse(stationPricingGroupRecordItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3320,7 +3408,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'removeStationPricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationPricingGroupParams),
-        response: { 200: itemResponse(stationPricingGroupRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(stationPricingGroupRecordItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3361,7 +3452,11 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'approveStation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -3438,7 +3533,11 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'unblockStation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorWith('Not blocked', [ERROR_CODES.NOT_BLOCKED]),
+        },
       },
     },
     async (request, reply) => {
@@ -3484,7 +3583,11 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'rejectStation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -3569,7 +3672,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(securityEventsQuery),
-        response: { 200: paginatedResponse(securityEventItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(securityEventItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3645,7 +3751,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(stationEventItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(stationEventItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3721,7 +3830,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(stationVariableItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(stationVariableItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3811,7 +3923,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(firmwareHistoryItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(firmwareHistoryItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3906,7 +4021,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(chargingProfileItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(chargingProfileItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -3983,9 +4101,9 @@ export function stationRoutes(app: FastifyInstance): void {
         params: zodSchema(stationParams),
         response: {
           200: successResponse,
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Ocpp command failed', [ERROR_CODES.OCPP_COMMAND_FAILED]),
         },
       },
     },
@@ -4072,9 +4190,9 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(compositeBody),
         response: {
           200: itemResponse(compositeScheduleResponse),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Ocpp command failed', [ERROR_CODES.OCPP_COMMAND_FAILED]),
         },
       },
     },
@@ -4167,9 +4285,9 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(clearProfileBody),
         response: {
           200: itemResponse(clearChargingProfileResponse),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Ocpp command failed', [ERROR_CODES.OCPP_COMMAND_FAILED]),
         },
       },
     },
@@ -4319,9 +4437,12 @@ export function stationRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.STATION_NOT_FOUND,
+            ERROR_CODES.TEMPLATE_NOT_FOUND,
+          ]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
         },
       },
     },
@@ -4487,9 +4608,12 @@ export function stationRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.STATION_NOT_FOUND,
+            ERROR_CODES.TEMPLATE_NOT_FOUND,
+          ]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
         },
       },
     },
@@ -4672,7 +4796,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'listStationEvChargingNeeds',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: arrayResponse(evChargingNeedsItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(evChargingNeedsItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -4747,7 +4874,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(monitoringRuleItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(monitoringRuleItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -4805,9 +4935,9 @@ export function stationRoutes(app: FastifyInstance): void {
         body: zodSchema(createMonitoringRuleBody),
         response: {
           201: itemResponse(monitoringRuleItem),
-          404: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -4889,7 +5019,10 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'deleteStationMonitoringRule',
         security: [{ bearerAuth: [] }],
         params: zodSchema(monitoringRuleIdParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -4989,7 +5122,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(eventAlertsQuery),
-        response: { 200: paginatedResponse(eventAlertItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(eventAlertItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -5057,7 +5193,13 @@ export function stationRoutes(app: FastifyInstance): void {
         operationId: 'acknowledgeEventAlert',
         security: [{ bearerAuth: [] }],
         params: zodSchema(alertIdParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.ALERT_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -5098,7 +5240,10 @@ export function stationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
         querystring: zodSchema(stationMeterValueQuery),
-        response: { 200: paginatedResponse(stationMeterValueItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(stationMeterValueItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

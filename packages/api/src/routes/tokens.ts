@@ -17,7 +17,8 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 
 const tokenItem = z
@@ -237,7 +238,10 @@ export function tokenRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(tokenSessionItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(tokenSessionItem),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -307,7 +311,10 @@ export function tokenRoutes(app: FastifyInstance): void {
         operationId: 'getToken',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
-        response: { 200: itemResponse(tokenItem), 404: errorResponse },
+        response: {
+          200: itemResponse(tokenItem),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -352,7 +359,10 @@ export function tokenRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
         body: zodSchema(updateTokenBody),
-        response: { 200: itemResponse(tokenCreated), 404: errorResponse },
+        response: {
+          200: itemResponse(tokenCreated),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -377,7 +387,10 @@ export function tokenRoutes(app: FastifyInstance): void {
         operationId: 'deleteToken',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
-        response: { 200: itemResponse(tokenCreated), 404: errorResponse },
+        response: {
+          200: itemResponse(tokenCreated),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

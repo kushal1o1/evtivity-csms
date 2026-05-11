@@ -18,11 +18,12 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { isPrivateUrl } from '@evtivity/lib';
 import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
@@ -168,7 +169,10 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         operationId: 'getOcpiPartner',
         security: [{ bearerAuth: [] }],
         params: zodSchema(partnerParams),
-        response: { 200: itemResponse(ocpiPartnerItem), 404: errorResponse },
+        response: {
+          200: itemResponse(ocpiPartnerItem),
+          404: errorWith('Partner not found', [ERROR_CODES.PARTNER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -207,9 +211,9 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         body: zodSchema(createPartnerBody),
         response: {
           201: itemResponse(createPartnerResponse),
-          400: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
+          400: errorWith('Private url', [ERROR_CODES.PRIVATE_URL]),
+          409: errorWith('Duplicate partner', [ERROR_CODES.DUPLICATE_PARTNER]),
+          500: errorWith('Internal error', [ERROR_CODES.INTERNAL_ERROR]),
         },
       },
     },
@@ -293,7 +297,11 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(partnerParams),
         body: zodSchema(updatePartnerBody),
-        response: { 200: itemResponse(ocpiPartnerItem), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(ocpiPartnerItem),
+          400: errorWith('Private url', [ERROR_CODES.PRIVATE_URL]),
+          404: errorWith('Partner not found', [ERROR_CODES.PARTNER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -345,7 +353,10 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         operationId: 'deleteOcpiPartner',
         security: [{ bearerAuth: [] }],
         params: zodSchema(partnerParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Partner not found', [ERROR_CODES.PARTNER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -394,8 +405,8 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         params: zodSchema(partnerParams),
         response: {
           200: successResponse,
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Missing version url', [ERROR_CODES.MISSING_VERSION_URL]),
+          404: errorWith('Partner not found', [ERROR_CODES.PARTNER_NOT_FOUND]),
         },
       },
     },
@@ -447,8 +458,8 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         params: zodSchema(syncParams),
         response: {
           200: successResponse,
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Partner not connected', [ERROR_CODES.PARTNER_NOT_CONNECTED]),
+          404: errorWith('Partner not found', [ERROR_CODES.PARTNER_NOT_FOUND]),
         },
       },
     },

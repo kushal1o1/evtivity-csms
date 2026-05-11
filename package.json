@@ -47,11 +47,11 @@
     "build:prod": "node scripts/build.mjs all",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "license:fix": "node internal-scripts/add-license-headers.mjs",
-    "license:check": "node internal-scripts/add-license-headers.mjs --check",
+    "license:fix": "node scripts/add-license-headers.mjs",
+    "license:check": "node scripts/add-license-headers.mjs --check",
     "test:e2e": "npx playwright test",
     "prepare": "husky && tsc -b",
-    "check:openapi": "./internal-scripts/check-openapi-schemas.sh"
+    "check:openapi": "./scripts/check-openapi-schemas.sh"
   },
   "license": "BUSL-1.1",
   "engines": {

@@ -9,11 +9,12 @@ import { db } from '@evtivity/database';
 import { stationImages } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import {
-  errorResponse,
   successResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { checkStationSiteAccess } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 import {
@@ -141,7 +142,11 @@ export function stationImageRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationIdParams),
         body: zodSchema(uploadUrlBody),
-        response: { 200: itemResponse(uploadUrlResponse), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(uploadUrlResponse),
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -182,7 +187,11 @@ export function stationImageRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationIdParams),
         body: zodSchema(confirmUploadBody),
-        response: { 201: itemResponse(imageItem), 400: errorResponse, 404: errorResponse },
+        response: {
+          201: itemResponse(imageItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -245,7 +254,13 @@ export function stationImageRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(imageIdParams),
         body: zodSchema(updateImageBody),
-        response: { 200: itemResponse(imageItem), 404: errorResponse },
+        response: {
+          200: itemResponse(imageItem),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.IMAGE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -311,7 +326,13 @@ export function stationImageRoutes(app: FastifyInstance): void {
         operationId: 'deleteStationImage',
         security: [{ bearerAuth: [] }],
         params: zodSchema(imageIdParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.IMAGE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -364,8 +385,11 @@ export function stationImageRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.IMAGE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -411,7 +435,10 @@ export function stationImageRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationIdParams),
         body: zodSchema(reorderBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -448,7 +475,13 @@ export function stationImageRoutes(app: FastifyInstance): void {
         operationId: 'setMainStationImage',
         security: [{ bearerAuth: [] }],
         params: zodSchema(imageIdParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.IMAGE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {

@@ -9,8 +9,9 @@ import { generateId } from '@evtivity/lib';
 import { setAuthCookies } from '../lib/csms-cookies.js';
 import { createRefreshToken } from '../services/refresh-token.service.js';
 import { config as apiConfig } from '../lib/config.js';
-import { errorResponse } from '../lib/response-schemas.js';
+import { errorWith } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 function isSecureRequest(request: FastifyRequest): boolean {
   const proto = request.headers['x-forwarded-proto'];
   if (typeof proto === 'string') {
@@ -33,7 +34,7 @@ export function ssoAuthRoutes(app: FastifyInstance): void {
         summary: 'Initiate SAML SSO login',
         operationId: 'ssoLogin',
         security: [],
-        response: { 400: errorResponse },
+        response: { 400: errorWith('Sso disabled', [ERROR_CODES.SSO_DISABLED]) },
       },
     },
     async (request, reply) => {

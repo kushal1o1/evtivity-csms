@@ -12,12 +12,13 @@ import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import { authorize } from '../middleware/rbac.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 // OCPP 2.1 InstallCertificateUseEnumType + V2G CertificateUseEnumType
 const PKI_CERTIFICATE_TYPES = [
   'V2GRootCertificate',
@@ -254,7 +255,10 @@ export function pncCertificateRoutes(app: FastifyInstance): void {
         operationId: 'deletePncCaCertificate',
         security: [{ bearerAuth: [] }],
         params: zodSchema(idParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -335,7 +339,10 @@ export function pncCertificateRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(idParams),
         body: zodSchema(signCsrBody),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Csr not found', [ERROR_CODES.CSR_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -401,7 +408,10 @@ export function pncCertificateRoutes(app: FastifyInstance): void {
         operationId: 'rejectPncCsrRequest',
         security: [{ bearerAuth: [] }],
         params: zodSchema(idParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Csr not found', [ERROR_CODES.CSR_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

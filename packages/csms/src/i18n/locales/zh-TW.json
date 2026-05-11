@@ -1898,7 +1898,6 @@
     "reassignSuccess": "預約已重新分配。",
     "newStationOcppId": "新充電站 ID",
     "newEvseId": "EVSE ID（可選）",
-    "startsAt": "開始時間",
     "scheduledNote": "預約將在開始時間安排並啟用",
     "cancellationFeeWarning": "將向司機的預設支付方式收取 {{fee}} 取消費用。",
     "cancellationPolicy": "取消政策",
@@ -2119,7 +2118,11 @@
     "MESSAGE_REFRESH_FAILED": "重新整理顯示訊息失敗",
     "MESSAGE_SEND_FAILED": "傳送顯示訊息失敗",
     "MESSAGE_TIMEOUT": "顯示訊息命令逾時",
-    "RESERVATION_TIMEOUT": "預約命令逾時"
+    "RESERVATION_TIMEOUT": "預約命令逾時",
+    "PAYMENT_METHOD_IN_USE": "支付方式正被活躍充電工作階段使用",
+    "PAYMENT_PREAUTH_FAILED": "支付授權被拒絕",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "支付紀錄不處於可恢復狀態",
+    "STRIPE_TOP_UP_FAILED": "Stripe 拒絕了補足支付意圖"
   },
   "logs": {
     "title": "日誌",

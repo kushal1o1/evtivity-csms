@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { eq, and, sql } from 'drizzle-orm';
 import { db, panels, circuits, unmanagedLoads, chargingStations } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -181,9 +182,9 @@ export function panelRoutes(app: FastifyInstance): void {
         body: zodSchema(createPanelBody),
         response: {
           201: itemResponse(panelItem),
-          400: errorResponse,
-          404: errorResponse,
-          500: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+          500: errorWith('Create failed', [ERROR_CODES.CREATE_FAILED]),
         },
       },
     },
@@ -333,7 +334,7 @@ export function panelRoutes(app: FastifyInstance): void {
         params: zodSchema(panelIdParam),
         response: {
           200: itemResponse(panelDetailItem),
-          404: errorResponse,
+          404: errorWith('Panel not found', [ERROR_CODES.PANEL_NOT_FOUND]),
         },
       },
     },
@@ -410,7 +411,7 @@ export function panelRoutes(app: FastifyInstance): void {
         body: zodSchema(updatePanelBody),
         response: {
           200: itemResponse(panelItem),
-          404: errorResponse,
+          404: errorWith('Panel not found', [ERROR_CODES.PANEL_NOT_FOUND]),
         },
       },
     },
@@ -510,7 +511,7 @@ export function panelRoutes(app: FastifyInstance): void {
         params: zodSchema(panelIdParam),
         response: {
           200: itemResponse(z.object({ success: z.literal(true) }).passthrough()),
-          404: errorResponse,
+          404: errorWith('Panel not found', [ERROR_CODES.PANEL_NOT_FOUND]),
         },
       },
     },

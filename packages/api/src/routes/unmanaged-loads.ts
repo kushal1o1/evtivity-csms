@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, panels, circuits, unmanagedLoads } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -107,9 +108,13 @@ export function unmanagedLoadRoutes(app: FastifyInstance): void {
         body: zodSchema(createLoadBody),
         response: {
           201: itemResponse(loadItem),
-          400: errorResponse,
-          404: errorResponse,
-          500: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.INVALID_CIRCUIT,
+            ERROR_CODES.INVALID_PANEL,
+            ERROR_CODES.VALIDATION_ERROR,
+          ]),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+          500: errorWith('Create failed', [ERROR_CODES.CREATE_FAILED]),
         },
       },
     },
@@ -278,8 +283,8 @@ export function unmanagedLoadRoutes(app: FastifyInstance): void {
         body: zodSchema(updateLoadBody),
         response: {
           200: itemResponse(loadItem),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Bad request', [ERROR_CODES.INVALID_CIRCUIT, ERROR_CODES.INVALID_PANEL]),
+          404: errorWith('Load not found', [ERROR_CODES.LOAD_NOT_FOUND]),
         },
       },
     },
@@ -362,7 +367,7 @@ export function unmanagedLoadRoutes(app: FastifyInstance): void {
         params: zodSchema(loadIdParam),
         response: {
           200: itemResponse(z.object({ success: z.literal(true) }).passthrough()),
-          404: errorResponse,
+          404: errorWith('Load not found', [ERROR_CODES.LOAD_NOT_FOUND]),
         },
       },
     },

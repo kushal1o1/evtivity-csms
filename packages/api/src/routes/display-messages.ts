@@ -10,7 +10,8 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { sendOcppCommandAndWait } from '../lib/ocpp-command.js';
 import { getUserSiteIds, checkStationSiteAccess } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
@@ -168,11 +169,11 @@ export function displayMessageRoutes(app: FastifyInstance): void {
         body: zodSchema(createMessageBody),
         response: {
           200: itemResponse(displayMessageItem),
-          400: errorResponse,
-          404: errorResponse,
-          500: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -305,10 +306,13 @@ export function displayMessageRoutes(app: FastifyInstance): void {
         params: zodSchema(messageIdParams),
         response: {
           200: itemResponse(clearMessageResponse),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.MESSAGE_CLEAR_REJECTED,
+            ERROR_CODES.MESSAGE_NOT_CLEARABLE,
+          ]),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -393,10 +397,10 @@ export function displayMessageRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(refreshMessageResponse),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },

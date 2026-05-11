@@ -7,7 +7,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '@evtivity/database';
 import { pricingHolidays } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 
 const holidayItem = z
@@ -71,7 +72,10 @@ export function holidayRoutes(app: FastifyInstance): void {
         operationId: 'createPricingHoliday',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createHolidayBody),
-        response: { 201: itemResponse(holidayItem), 409: errorResponse },
+        response: {
+          201: itemResponse(holidayItem),
+          409: errorWith('Duplicate holiday', [ERROR_CODES.DUPLICATE_HOLIDAY]),
+        },
       },
     },
     async (request, reply) => {
@@ -108,7 +112,10 @@ export function holidayRoutes(app: FastifyInstance): void {
         operationId: 'deletePricingHoliday',
         security: [{ bearerAuth: [] }],
         params: zodSchema(idParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Holiday not found', [ERROR_CODES.HOLIDAY_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

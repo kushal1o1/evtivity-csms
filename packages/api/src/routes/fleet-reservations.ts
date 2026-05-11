@@ -15,7 +15,8 @@ import {
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { sendOcppCommandAndWait } from '../lib/ocpp-command.js';
 import { applyReservationCancellation } from '../lib/reservation-cancel.js';
 import { assertReservationsAllowed } from '../lib/reservation-eligibility.js';
@@ -126,8 +127,13 @@ export function fleetReservationRoutes(app: FastifyInstance): void {
         body: zodSchema(createFleetReservationBody),
         response: {
           201: itemResponse(createFleetReservationResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Fleet reservation create failed', [
+            ERROR_CODES.FLEET_RESERVATION_CREATE_FAILED,
+          ]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.FLEET_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -541,8 +547,10 @@ export function fleetReservationRoutes(app: FastifyInstance): void {
         params: zodSchema(fleetReservationIdParams),
         response: {
           200: itemResponse(cancelFleetReservationResponse),
-          404: errorResponse,
-          400: errorResponse,
+          404: errorWith('Fleet reservation not found', [ERROR_CODES.FLEET_RESERVATION_NOT_FOUND]),
+          400: errorWith('Fleet reservation already cancelled', [
+            ERROR_CODES.FLEET_RESERVATION_ALREADY_CANCELLED,
+          ]),
         },
       },
     },

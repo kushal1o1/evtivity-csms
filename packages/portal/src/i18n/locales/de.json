@@ -622,7 +622,11 @@
     "MESSAGE_REFRESH_FAILED": "Anzeige-Nachrichten konnten nicht aktualisiert werden",
     "MESSAGE_SEND_FAILED": "Anzeige-Nachricht konnte nicht gesendet werden",
     "MESSAGE_TIMEOUT": "Anzeige-Nachrichtbefehl hat das Zeitlimit überschritten",
-    "RESERVATION_TIMEOUT": "Reservierungsbefehl hat das Zeitlimit überschritten"
+    "RESERVATION_TIMEOUT": "Reservierungsbefehl hat das Zeitlimit überschritten",
+    "PAYMENT_METHOD_IN_USE": "Zahlungsmethode wird von einer aktiven Ladesitzung verwendet",
+    "PAYMENT_PREAUTH_FAILED": "Zahlungsautorisierung abgelehnt",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "Zahlungseintrag befindet sich nicht in einem wiederherstellbaren Zustand",
+    "STRIPE_TOP_UP_FAILED": "Stripe hat die Top-up-Zahlungsabsicht abgelehnt"
   },
   "validation": {
     "required": "Dieses Feld ist erforderlich",

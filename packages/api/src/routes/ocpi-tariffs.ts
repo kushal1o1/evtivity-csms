@@ -12,12 +12,13 @@ import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import { authorize } from '../middleware/rbac.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const tariffMappingItem = z
   .object({
     id: z.string().describe('Identifier'),
@@ -139,7 +140,10 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         operationId: 'getOcpiTariffMapping',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tariffMappingParams),
-        response: { 200: itemResponse(tariffMappingItem), 404: errorResponse },
+        response: {
+          200: itemResponse(tariffMappingItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -184,7 +188,10 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         operationId: 'createOcpiTariffMapping',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createTariffMappingBody),
-        response: { 201: itemResponse(tariffMappingItem), 404: errorResponse },
+        response: {
+          201: itemResponse(tariffMappingItem),
+          404: errorWith('Tariff not found', [ERROR_CODES.TARIFF_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -235,7 +242,10 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(tariffMappingParams),
         body: zodSchema(updateTariffMappingBody),
-        response: { 200: itemResponse(tariffMappingItem), 404: errorResponse },
+        response: {
+          200: itemResponse(tariffMappingItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -289,7 +299,10 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         operationId: 'deleteOcpiTariffMapping',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tariffMappingParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

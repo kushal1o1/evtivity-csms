@@ -8,7 +8,8 @@ import { db } from '@evtivity/database';
 import { vehicles, vehicleEfficiencyLookup } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import { ID_PARAMS } from '../../lib/id-validation.js';
-import { errorResponse, arrayResponse, itemResponse } from '../../lib/response-schemas.js';
+import { arrayResponse, itemResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 
 const vehicleItem = z
@@ -85,7 +86,10 @@ export function portalVehicleRoutes(app: FastifyInstance): void {
         operationId: 'portalCreateVehicle',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createVehicleBody),
-        response: { 201: itemResponse(vehicleItem), 400: errorResponse },
+        response: {
+          201: itemResponse(vehicleItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
     },
     async (request, reply) => {
@@ -116,7 +120,11 @@ export function portalVehicleRoutes(app: FastifyInstance): void {
         operationId: 'portalDeleteVehicle',
         security: [{ bearerAuth: [] }],
         params: zodSchema(vehicleParams),
-        response: { 204: { type: 'null' as const }, 403: errorResponse, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Vehicle not found', [ERROR_CODES.VEHICLE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

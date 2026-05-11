@@ -11,8 +11,42 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
       info: {
         title: 'EVtivity CSMS API',
         version: '2.0.0',
-        description: 'Charging Station Management System REST API',
+        description: [
+          'Charging Station Management System REST API.',
+          '',
+          '## Rate limits',
+          'Selected endpoints (auth, password reset, guest checkout, AI assistant, status-check) are rate limited per IP. When a request is throttled the response is `429 RATE_LIMITED`. All responses (including 200s) on rate-limited endpoints include these headers:',
+          '- `x-ratelimit-limit` - maximum requests allowed in the current window',
+          '- `x-ratelimit-remaining` - requests remaining in the current window',
+          '- `x-ratelimit-reset` - seconds until the window resets',
+          '',
+          '## Error responses',
+          'Every error response is JSON with shape `{ error: string, code: string }` where `code` is a stable UPPER_SNAKE_CASE identifier. See the [error code catalog](https://evtivity.com/api-reference/error-codes) for the full list of codes, their HTTP statuses, and localized messages.',
+          '',
+          '## Authentication',
+          'Operator endpoints accept JWT via `Authorization: Bearer <token>` header or the `csms_token` cookie. API keys (64-char hex) are passed via the same Bearer header. Driver portal endpoints use a separate driver JWT via `Authorization: Bearer <token>` or the `portal_token` cookie.',
+          '',
+          '## Pagination',
+          'List endpoints accept `page` (1-based, default 1) and `limit` (default 20, max 100) query parameters and return `{ data: T[], total: number }`.',
+        ].join('\n'),
       },
+      servers: [
+        {
+          url: 'https://api.{tenantId}.evtivity.com',
+          description: 'Production CSMS API. Replace {tenantId} with your tenant identifier.',
+          variables: {
+            tenantId: {
+              default: 'your-tenant',
+              description:
+                'Your tenant identifier. Each operator gets a unique subdomain (e.g. acme, demo, fleetops).',
+            },
+          },
+        },
+        {
+          url: 'http://localhost:3001',
+          description: 'Local development (docker compose default)',
+        },
+      ],
       tags: [
         { name: 'Health', description: 'Health check endpoints' },
         { name: 'Sites', description: 'Site management' },

@@ -15,7 +15,8 @@ import {
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import { ID_PARAMS } from '../../lib/id-validation.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import { paginationQuery } from '../../lib/pagination.js';
 import type { PaginatedResponse } from '../../lib/pagination.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
@@ -369,8 +370,8 @@ export function portalSessionRoutes(app: FastifyInstance): void {
         params: zodSchema(sessionParams),
         response: {
           200: itemResponse(portalSessionDetail),
-          403: errorResponse,
-          404: errorResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
         },
       },
     },
@@ -469,8 +470,8 @@ export function portalSessionRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          403: errorResponse,
-          404: errorResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
         },
       },
     },
@@ -524,8 +525,8 @@ export function portalSessionRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          403: errorResponse,
-          404: errorResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
         },
       },
     },

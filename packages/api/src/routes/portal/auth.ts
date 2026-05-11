@@ -21,7 +21,8 @@ import { zodSchema } from '../../lib/zod-schema.js';
 import { validatePasswordComplexity } from '../../lib/password-validation.js';
 import { ALL_TEMPLATES_DIRS } from '../../lib/template-dirs.js';
 import { getPubSub } from '../../lib/pubsub.js';
-import { errorResponse, itemResponse, successResponse } from '../../lib/response-schemas.js';
+import { itemResponse, successResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 import {
   createRefreshToken,
@@ -207,10 +208,10 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         body: zodSchema(registerBody),
         response: {
           201: itemResponse(portalAuthRegisterResponse),
-          400: errorResponse,
-          403: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          409: errorWith('Email exists', [ERROR_CODES.EMAIL_EXISTS]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
         },
       },
       config: {
@@ -317,9 +318,9 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         body: zodSchema(loginBody),
         response: {
           200: itemResponse(portalAuthLoginResponse),
-          400: errorResponse,
-          401: errorResponse,
-          403: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          401: errorWith('Invalid credentials', [ERROR_CODES.INVALID_CREDENTIALS]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
         },
       },
       config: {
@@ -453,7 +454,13 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           'Validates the portal_refresh cookie against refresh_tokens, ensures the driver is still active, rotates the refresh token (revokes old, issues new), and sets new portal session and refresh cookies. Rate limited to 30/min. Returns 401 if the refresh cookie is missing, expired, revoked, or the driver is deactivated.',
         operationId: 'portalRefreshToken',
         security: [],
-        response: { 200: successResponse, 401: errorResponse },
+        response: {
+          200: successResponse,
+          401: errorWith('Unauthorized', [
+            ERROR_CODES.ACCOUNT_DISABLED,
+            ERROR_CODES.NO_REFRESH_TOKEN,
+          ]),
+        },
       },
       config: {
         rateLimit: {
@@ -509,7 +516,10 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         summary: 'Get the current authenticated driver profile',
         operationId: 'portalGetMe',
         security: [{ bearerAuth: [] }],
-        response: { 200: itemResponse(portalDriverItem), 404: errorResponse },
+        response: {
+          200: itemResponse(portalDriverItem),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -548,8 +558,13 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         body: zodSchema(mfaVerifyBody),
         response: {
           200: itemResponse(portalMfaLoginResponse),
-          400: errorResponse,
-          401: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.MFA_CHALLENGE_EXHAUSTED,
+            ERROR_CODES.MFA_NOT_CONFIGURED,
+            ERROR_CODES.MFA_TOKEN_INVALID,
+            ERROR_CODES.TOTP_NOT_CONFIGURED,
+          ]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -658,8 +673,11 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         body: zodSchema(mfaResendBody),
         response: {
           200: itemResponse(z.object({ challengeId: z.number() }).passthrough()),
-          400: errorResponse,
-          401: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.MFA_NOT_CONFIGURED,
+            ERROR_CODES.MFA_TOKEN_INVALID,
+          ]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -831,7 +849,10 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         operationId: 'portalResetPassword',
         security: [],
         body: zodSchema(resetPasswordBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+        },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     },
@@ -898,7 +919,10 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         operationId: 'portalVerifyEmail',
         security: [],
         body: zodSchema(verifyEmailBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     },
@@ -979,7 +1003,13 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         summary: 'Resend email verification link',
         operationId: 'portalResendVerification',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.ALREADY_VERIFIED,
+            ERROR_CODES.DRIVER_NOT_FOUND,
+          ]),
+        },
       },
       config: {
         rateLimit: {

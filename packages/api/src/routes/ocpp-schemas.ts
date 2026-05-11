@@ -11,7 +11,8 @@ import {
   ActionRegistry16,
   type ActionName16,
 } from '@evtivity/ocpp';
-import { errorResponse } from '../lib/response-schemas.js';
+import { errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url));
@@ -263,7 +264,12 @@ export function ocppSchemaRoutes(app: FastifyInstance): void {
         summary: 'Get JSON schema for an OCPP action',
         operationId: 'getOcppSchema',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorResponse },
+        response: {
+          404: errorWith('Resource not found', [
+            ERROR_CODES.SCHEMA_NOT_FOUND,
+            ERROR_CODES.UNKNOWN_ACTION,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -359,7 +365,7 @@ export function ocppSchemaRoutes(app: FastifyInstance): void {
         summary: 'Get processed schema for an OCPP 2.1 command',
         operationId: 'getOcppV21CommandSchema',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorResponse },
+        response: { 404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]) },
       },
     },
     async (request, reply) =>
@@ -383,7 +389,7 @@ export function ocppSchemaRoutes(app: FastifyInstance): void {
         summary: 'Get processed schema for an OCPP 1.6 command',
         operationId: 'getOcppV16CommandSchema',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorResponse },
+        response: { 404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]) },
       },
     },
     async (request, reply) =>

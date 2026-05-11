@@ -16,7 +16,8 @@ import {
   connectors,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, paginatedResponse } from '../lib/response-schemas.js';
+import { itemResponse, paginatedResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { paginationQuery } from '../lib/pagination.js';
 import { getPubSub } from '../lib/pubsub.js';
 import {
@@ -779,9 +780,16 @@ function actionRoute(
         body: zodSchema(mergedBody),
         response: {
           200: itemResponse(actionResponse),
-          400: errorResponse,
-          404: errorResponse,
-          504: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.CONNECTOR_NOT_AVAILABLE,
+            ERROR_CODES.CSS_ACTION_REJECTED,
+            ERROR_CODES.OCPP_VERSION_MISMATCH,
+          ]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          504: errorWith('Css action timeout', [ERROR_CODES.CSS_ACTION_TIMEOUT]),
         },
       },
     },
@@ -980,8 +988,8 @@ export function cssRoutes(app: FastifyInstance): void {
         body: zodSchema(createStationBody),
         response: {
           201: itemResponse(stationItem),
-          409: errorResponse,
-          500: errorResponse,
+          409: errorWith('Duplicate station id', [ERROR_CODES.DUPLICATE_STATION_ID]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
         },
       },
     },
@@ -1129,7 +1137,7 @@ export function cssRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(stationItem),
-          404: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },
@@ -1173,7 +1181,7 @@ export function cssRoutes(app: FastifyInstance): void {
         body: zodSchema(updateStationBody),
         response: {
           200: itemResponse(stationItem),
-          404: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },
@@ -1243,7 +1251,7 @@ export function cssRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           204: { type: 'null' as const },
-          404: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },
@@ -1278,7 +1286,7 @@ export function cssRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(stationItem),
-          404: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },
@@ -1317,7 +1325,7 @@ export function cssRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(stationItem),
-          404: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },

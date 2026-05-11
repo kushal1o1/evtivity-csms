@@ -625,7 +625,11 @@
     "MESSAGE_REFRESH_FAILED": "Failed to refresh display messages",
     "MESSAGE_SEND_FAILED": "Failed to send display message",
     "MESSAGE_TIMEOUT": "Display message command timed out",
-    "RESERVATION_TIMEOUT": "Reservation command timed out"
+    "RESERVATION_TIMEOUT": "Reservation command timed out",
+    "PAYMENT_METHOD_IN_USE": "Payment method is in use by an active charging session",
+    "PAYMENT_PREAUTH_FAILED": "Payment authorization declined",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "Payment record is not in a recoverable state",
+    "STRIPE_TOP_UP_FAILED": "Stripe rejected the top-up payment intent"
   },
   "validation": {
     "required": "This field is required",

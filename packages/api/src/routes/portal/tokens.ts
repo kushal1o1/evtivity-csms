@@ -13,7 +13,9 @@ import {
   arrayResponse,
   itemResponse,
   successResponse,
+  errorWith,
 } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 
 const tokenItem = z
@@ -86,7 +88,11 @@ export function portalTokenRoutes(app: FastifyInstance): void {
         operationId: 'portalCreateToken',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createTokenBody),
-        response: { 201: itemResponse(tokenItem), 400: errorResponse, 409: errorResponse },
+        response: {
+          201: itemResponse(tokenItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -130,7 +136,11 @@ export function portalTokenRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
         body: zodSchema(updateTokenBody),
-        response: { 200: itemResponse(tokenItem), 403: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(tokenItem),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -173,7 +183,11 @@ export function portalTokenRoutes(app: FastifyInstance): void {
         operationId: 'portalDeleteToken',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tokenParams),
-        response: { 200: successResponse, 403: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

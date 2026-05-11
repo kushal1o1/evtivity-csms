@@ -23,7 +23,9 @@ import {
   paginatedResponse,
   itemResponse,
   successResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
@@ -238,7 +240,10 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: itemResponse(campaignItem), 404: errorResponse },
+        response: {
+          200: itemResponse(campaignItem),
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -348,7 +353,11 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
         body: zodSchema(updateCampaignBody),
-        response: { 200: itemResponse(campaignItem), 404: errorResponse, 409: errorResponse },
+        response: {
+          200: itemResponse(campaignItem),
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -391,7 +400,11 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         operationId: 'deleteFirmwareCampaign',
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse, 409: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -433,7 +446,10 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
         querystring: zodSchema(fwMatchingStationsQuery),
-        response: { 200: paginatedResponse(fwMatchingStationItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(fwMatchingStationItem),
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -512,7 +528,11 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         operationId: 'startFirmwareCampaign',
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
-        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+          409: errorWith('No targets', [ERROR_CODES.NO_TARGETS]),
+        },
       },
     },
     async (request, reply) => {
@@ -654,7 +674,10 @@ export function firmwareCampaignRoutes(app: FastifyInstance): void {
         operationId: 'cancelFirmwareCampaign',
         security: [{ bearerAuth: [] }],
         params: zodSchema(campaignParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Campaign not found', [ERROR_CODES.CAMPAIGN_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

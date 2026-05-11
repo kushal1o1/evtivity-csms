@@ -14,11 +14,12 @@ import {
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import {
-  errorResponse,
   successResponse,
   arrayResponse,
   itemResponse,
+  errorWith,
 } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 
 const favoriteItem = z
@@ -196,8 +197,8 @@ export function portalFavoriteRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          409: errorResponse,
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          409: errorWith('Already favorited', [ERROR_CODES.ALREADY_FAVORITED]),
         },
       },
     },
@@ -253,7 +254,10 @@ export function portalFavoriteRoutes(app: FastifyInstance): void {
         operationId: 'portalRemoveFavorite',
         security: [{ bearerAuth: [] }],
         params: zodSchema(removeFavoriteParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Favorite not found', [ERROR_CODES.FAVORITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

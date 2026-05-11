@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { db, octtRuns, octtTestResults } from '@evtivity/database';
-import { itemResponse, paginatedResponse, errorResponse } from '../lib/response-schemas.js';
+import { itemResponse, paginatedResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { zodSchema } from '../lib/zod-schema.js';
 import { getPubSub } from '../lib/pubsub.js';
 import type { JwtPayload } from '../plugins/auth.js';
@@ -83,7 +84,11 @@ export function octtRoutes(app: FastifyInstance): void {
               .describe('System under test: csms or cs'),
           }),
         ),
-        response: { 201: itemResponse(runResponseSchema), 400: errorResponse, 500: errorResponse },
+        response: {
+          201: itemResponse(runResponseSchema),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          500: errorWith('Insert failed', [ERROR_CODES.INSERT_FAILED]),
+        },
       },
     },
     async (request, reply) => {
@@ -222,7 +227,7 @@ export function octtRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
+          404: errorWith('Not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -290,7 +295,10 @@ export function octtRoutes(app: FastifyInstance): void {
         operationId: 'getOcttRunSummary',
         security: [{ bearerAuth: [] }],
         params: zodSchema(z.object({ id: z.coerce.number().int().describe('Run ID') })),
-        response: { 200: zodSchema(z.array(moduleSummarySchema)), 404: errorResponse },
+        response: {
+          200: zodSchema(z.array(moduleSummarySchema)),
+          404: errorWith('Not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

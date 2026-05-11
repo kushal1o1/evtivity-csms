@@ -625,7 +625,11 @@
     "MESSAGE_REFRESH_FAILED": "重新整理顯示訊息失敗",
     "MESSAGE_SEND_FAILED": "傳送顯示訊息失敗",
     "MESSAGE_TIMEOUT": "顯示訊息命令逾時",
-    "RESERVATION_TIMEOUT": "預約命令逾時"
+    "RESERVATION_TIMEOUT": "預約命令逾時",
+    "PAYMENT_METHOD_IN_USE": "支付方式正被活躍充電工作階段使用",
+    "PAYMENT_PREAUTH_FAILED": "支付授權被拒絕",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "支付紀錄不處於可恢復狀態",
+    "STRIPE_TOP_UP_FAILED": "Stripe 拒絕了補足支付意圖"
   },
   "validation": {
     "required": "此欄位為必填項",

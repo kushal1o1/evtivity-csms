@@ -23,7 +23,8 @@ import { zodSchema } from '../../lib/zod-schema.js';
 import { validatePasswordComplexity } from '../../lib/password-validation.js';
 import { ALL_TEMPLATES_DIRS } from '../../lib/template-dirs.js';
 import { getPubSub } from '../../lib/pubsub.js';
-import { errorResponse, successResponse, itemResponse } from '../../lib/response-schemas.js';
+import { successResponse, itemResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 import { config as apiConfig } from '../../lib/config.js';
 import { revokeAllDriverRefreshTokens } from '../../services/refresh-token.service.js';
@@ -85,7 +86,10 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         operationId: 'portalUpdateProfile',
         security: [{ bearerAuth: [] }],
         body: zodSchema(updateProfileBody),
-        response: { 200: itemResponse(portalDriverProfile), 404: errorResponse },
+        response: {
+          200: itemResponse(portalDriverProfile),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -138,7 +142,11 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         operationId: 'portalChangePassword',
         security: [{ bearerAuth: [] }],
         body: zodSchema(changePasswordBody),
-        response: { 200: successResponse, 400: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -344,7 +352,10 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         operationId: 'portalSetupMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaSetupBody),
-        response: { 200: itemResponse(mfaSetupResponse), 400: errorResponse },
+        response: {
+          200: itemResponse(mfaSetupResponse),
+          400: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -415,7 +426,10 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         operationId: 'portalConfirmMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaConfirmBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Totp not configured', [ERROR_CODES.TOTP_NOT_CONFIGURED]),
+        },
       },
     },
     async (request, reply) => {
@@ -469,7 +483,13 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         operationId: 'portalDisableMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaDisableBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.DRIVER_NOT_FOUND,
+            ERROR_CODES.INVALID_PASSWORD,
+          ]),
+        },
       },
     },
     async (request, reply) => {

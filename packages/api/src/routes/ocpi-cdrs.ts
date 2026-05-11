@@ -9,7 +9,8 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 
 const cdrListItem = z
@@ -126,7 +127,11 @@ export function ocpiCdrRoutes(app: FastifyInstance): void {
         operationId: 'createOcpiCreditCdr',
         security: [{ bearerAuth: [] }],
         body: zodSchema(creditCdrBody),
-        response: { 201: itemResponse(creditCdrResponse), 400: errorResponse, 404: errorResponse },
+        response: {
+          201: itemResponse(creditCdrResponse),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Cdr not found', [ERROR_CODES.CDR_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

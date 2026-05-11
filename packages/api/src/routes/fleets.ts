@@ -9,12 +9,13 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import { authorize } from '../middleware/rbac.js';
 import {
-  errorResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const fleetListItem = z
   .object({
     id: z.string().describe('Fleet identifier'),
@@ -250,7 +251,7 @@ const pricingGroupParams = z.object({
 
 const sessionsQuery = z.object({
   page: z.coerce.number().int().min(1).default(1).describe('Page number'),
-  limit: z.coerce.number().int().min(1).max(50).default(10).describe('Items per page'),
+  limit: z.coerce.number().int().min(1).max(100).default(10).describe('Items per page'),
 });
 
 const metricsQuery = z.object({
@@ -303,7 +304,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         operationId: 'getFleet',
         security: [{ bearerAuth: [] }],
         params: zodSchema(fleetParams),
-        response: { 200: itemResponse(fleetItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetItem),
+          404: errorWith('Fleet not found', [ERROR_CODES.FLEET_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -351,7 +355,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(fleetParams),
         body: zodSchema(updateFleetBody),
-        response: { 200: itemResponse(fleetItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetItem),
+          404: errorWith('Fleet not found', [ERROR_CODES.FLEET_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -379,7 +386,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         operationId: 'deleteFleet',
         security: [{ bearerAuth: [] }],
         params: zodSchema(fleetParams),
-        response: { 200: itemResponse(fleetItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetItem),
+          404: errorWith('Fleet not found', [ERROR_CODES.FLEET_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -448,7 +458,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         operationId: 'removeFleetDriver',
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
-        response: { 200: itemResponse(fleetDriverRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetDriverRecordItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -517,7 +530,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         operationId: 'removeFleetStation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: itemResponse(fleetStationRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetStationRecordItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -569,7 +585,7 @@ export function fleetRoutes(app: FastifyInstance): void {
         querystring: zodSchema(
           z.object({
             search: z.string().default(''),
-            limit: z.coerce.number().int().min(1).max(50).default(10),
+            limit: z.coerce.number().int().min(1).max(100).default(10),
           }),
         ),
         response: { 200: arrayResponse(fleetVehicleItem) },
@@ -704,7 +720,10 @@ export function fleetRoutes(app: FastifyInstance): void {
         operationId: 'removeFleetPricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(pricingGroupParams),
-        response: { 200: itemResponse(fleetPricingGroupRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(fleetPricingGroupRecordItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

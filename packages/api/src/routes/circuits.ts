@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { db, panels, circuits, chargingStations, connectors, evses } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -112,8 +113,8 @@ export function circuitRoutes(app: FastifyInstance): void {
         body: zodSchema(createCircuitBody),
         response: {
           201: itemResponse(circuitItem),
-          404: errorResponse,
-          500: errorResponse,
+          404: errorWith('Panel not found', [ERROR_CODES.PANEL_NOT_FOUND]),
+          500: errorWith('Create failed', [ERROR_CODES.CREATE_FAILED]),
         },
       },
     },
@@ -233,7 +234,7 @@ export function circuitRoutes(app: FastifyInstance): void {
         body: zodSchema(updateCircuitBody),
         response: {
           200: itemResponse(circuitItem),
-          404: errorResponse,
+          404: errorWith('Circuit not found', [ERROR_CODES.CIRCUIT_NOT_FOUND]),
         },
       },
     },
@@ -323,7 +324,7 @@ export function circuitRoutes(app: FastifyInstance): void {
         params: zodSchema(circuitParams),
         response: {
           200: itemResponse(z.object({ success: z.literal(true) }).passthrough()),
-          404: errorResponse,
+          404: errorWith('Circuit not found', [ERROR_CODES.CIRCUIT_NOT_FOUND]),
         },
       },
     },
@@ -374,8 +375,11 @@ export function circuitRoutes(app: FastifyInstance): void {
         body: zodSchema(assignCircuitBody),
         response: {
           200: itemResponse(stationCircuitItem),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.INVALID_CIRCUIT,
+            ERROR_CODES.OVERSUBSCRIPTION_EXCEEDED,
+          ]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },

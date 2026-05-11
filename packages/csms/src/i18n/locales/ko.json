@@ -1898,7 +1898,6 @@
     "reassignSuccess": "예약이 재할당되었습니다.",
     "newStationOcppId": "새 충전기 ID",
     "newEvseId": "EVSE ID (선택 사항)",
-    "startsAt": "시작 시간",
     "scheduledNote": "예약은 시작 시간에 활성화됩니다",
     "cancellationFeeWarning": "{{fee}} 취소 수수료가 운전자의 기본 결제 수단으로 청구됩니다.",
     "cancellationPolicy": "취소 정책",
@@ -2119,7 +2118,11 @@
     "MESSAGE_REFRESH_FAILED": "디스플레이 메시지 새로고침 실패",
     "MESSAGE_SEND_FAILED": "디스플레이 메시지 전송 실패",
     "MESSAGE_TIMEOUT": "디스플레이 메시지 명령 시간 초과",
-    "RESERVATION_TIMEOUT": "예약 명령 시간 초과"
+    "RESERVATION_TIMEOUT": "예약 명령 시간 초과",
+    "PAYMENT_METHOD_IN_USE": "결제 수단이 활성 충전 세션에서 사용 중입니다",
+    "PAYMENT_PREAUTH_FAILED": "결제 승인이 거부되었습니다",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "결제 기록이 복구 가능한 상태가 아닙니다",
+    "STRIPE_TOP_UP_FAILED": "Stripe가 추가 결제 인텐트를 거부했습니다"
   },
   "logs": {
     "title": "로그",

@@ -16,11 +16,12 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import {
-  errorResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -155,7 +156,10 @@ export function transactionRoutes(app: FastifyInstance): void {
         operationId: 'getTransactionsBySession',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionParams),
-        response: { 200: arrayResponse(transactionEventItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(transactionEventItem),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -181,7 +185,10 @@ export function transactionRoutes(app: FastifyInstance): void {
         operationId: 'getTransactionById',
         security: [{ bearerAuth: [] }],
         params: zodSchema(transactionIdParams),
-        response: { 200: itemResponse(transactionSessionItem), 404: errorResponse },
+        response: {
+          200: itemResponse(transactionSessionItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

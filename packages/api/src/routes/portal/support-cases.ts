@@ -21,7 +21,8 @@ import {
 import { zodSchema } from '../../lib/zod-schema.js';
 import { ID_PARAMS } from '../../lib/id-validation.js';
 import { getPubSub } from '../../lib/pubsub.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import { paginationQuery } from '../../lib/pagination.js';
 import type { PaginatedResponse } from '../../lib/pagination.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
@@ -254,8 +255,8 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(caseIdParams),
         response: {
           200: itemResponse(portalSupportCaseDetail),
-          403: errorResponse,
-          404: errorResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -444,8 +445,8 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         body: zodSchema(createMessageBody),
         response: {
           200: itemResponse(portalMessageResponse),
-          403: errorResponse,
-          404: errorResponse,
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -508,9 +509,9 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         body: zodSchema(requestUploadUrlBody),
         response: {
           200: itemResponse(uploadUrlResponse),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
         },
       },
     },
@@ -572,7 +573,11 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(messageIdParams),
         body: zodSchema(confirmAttachmentBody),
-        response: { 200: itemResponse(attachmentItem), 403: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(attachmentItem),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -630,9 +635,9 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(attachmentIdParams),
         response: {
           200: itemResponse(downloadUrlResponse),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
         },
       },
     },

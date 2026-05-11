@@ -12,7 +12,8 @@ import {
   sites,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, arrayResponse, itemResponse } from '../lib/response-schemas.js';
+import { arrayResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 
@@ -140,7 +141,10 @@ export function carbonRoutes(app: FastifyInstance): void {
         operationId: 'getCarbonFactor',
         security: [{ bearerAuth: [] }],
         params: zodSchema(regionCodeParams),
-        response: { 200: itemResponse(carbonFactorItem), 404: errorResponse },
+        response: {
+          200: itemResponse(carbonFactorItem),
+          404: errorWith('Region not found', [ERROR_CODES.REGION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

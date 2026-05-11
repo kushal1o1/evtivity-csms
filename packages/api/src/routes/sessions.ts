@@ -22,7 +22,8 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import type { JwtPayload } from '../plugins/auth.js';
 import { authorize } from '../middleware/rbac.js';
@@ -377,7 +378,10 @@ export function sessionRoutes(app: FastifyInstance): void {
         operationId: 'getSession',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionParams),
-        response: { 200: itemResponse(sessionDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(sessionDetail),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -505,7 +509,10 @@ export function sessionRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(transactionEventItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(transactionEventItem),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -570,7 +577,10 @@ export function sessionRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionParams),
         querystring: zodSchema(meterValueQuery),
-        response: { 200: paginatedResponse(meterValueItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(meterValueItem),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

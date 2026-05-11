@@ -7,7 +7,8 @@ import { like } from 'drizzle-orm';
 import { db, settings, clearSecuritySettingsCache } from '@evtivity/database';
 import { encryptString } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, successResponse, itemResponse } from '../lib/response-schemas.js';
+import { successResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import { config as apiConfig } from '../lib/config.js';
 
@@ -85,7 +86,10 @@ export function securitySettingsRoutes(app: FastifyInstance): void {
         operationId: 'updateRecaptchaSettings',
         security: [{ bearerAuth: [] }],
         body: zodSchema(recaptchaBody),
-        response: { 200: successResponse, 500: errorResponse },
+        response: {
+          200: successResponse,
+          500: errorWith('Encryption key missing', [ERROR_CODES.ENCRYPTION_KEY_MISSING]),
+        },
       },
     },
     async (request, reply) => {

@@ -22,12 +22,13 @@ import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import { authorize } from '../middleware/rbac.js';
 import {
-  errorResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const driverItem = z
   .object({
     id: z.string().describe('Driver identifier'),
@@ -234,7 +235,7 @@ const vehicleParams = z.object({
 
 const sessionsQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(50).default(10),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 const driverListQuery = paginationQuery.extend({
@@ -302,7 +303,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'getDriver',
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
-        response: { 200: itemResponse(driverItem), 404: errorResponse },
+        response: {
+          200: itemResponse(driverItem),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -326,7 +330,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'createDriver',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createDriverBody),
-        response: { 201: itemResponse(driverItem), 409: errorResponse },
+        response: {
+          201: itemResponse(driverItem),
+          409: errorWith('Duplicate email', [ERROR_CODES.DUPLICATE_EMAIL]),
+        },
       },
     },
     async (request, reply) => {
@@ -360,7 +367,10 @@ export function driverRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
         body: zodSchema(updateDriverBody),
-        response: { 200: itemResponse(driverItem), 404: errorResponse },
+        response: {
+          200: itemResponse(driverItem),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -461,7 +471,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'getDriverVehicle',
         security: [{ bearerAuth: [] }],
         params: zodSchema(vehicleParams),
-        response: { 200: itemResponse(vehicleItem), 404: errorResponse },
+        response: {
+          200: itemResponse(vehicleItem),
+          404: errorWith('Vehicle not found', [ERROR_CODES.VEHICLE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -514,7 +527,10 @@ export function driverRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(vehicleParams),
         body: zodSchema(updateVehicleBody),
-        response: { 200: itemResponse(vehicleItem), 404: errorResponse },
+        response: {
+          200: itemResponse(vehicleItem),
+          404: errorWith('Vehicle not found', [ERROR_CODES.VEHICLE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -553,7 +569,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'deleteDriverVehicle',
         security: [{ bearerAuth: [] }],
         params: zodSchema(vehicleParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Vehicle not found', [ERROR_CODES.VEHICLE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -583,7 +602,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'deleteDriver',
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -615,7 +637,10 @@ export function driverRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
         querystring: zodSchema(sessionsQuery),
-        response: { 200: paginatedResponse(driverSessionItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(driverSessionItem),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -684,7 +709,10 @@ export function driverRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(driverReservationItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(driverReservationItem),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -808,7 +836,10 @@ export function driverRoutes(app: FastifyInstance): void {
         operationId: 'removeDriverPricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(driverPricingGroupParams),
-        response: { 200: itemResponse(driverPricingGroupRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(driverPricingGroupRecordItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

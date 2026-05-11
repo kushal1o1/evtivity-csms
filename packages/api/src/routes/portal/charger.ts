@@ -21,7 +21,13 @@ import {
 import { zodSchema } from '../../lib/zod-schema.js';
 import { ID_PARAMS } from '../../lib/id-validation.js';
 import { getPubSub } from '../../lib/pubsub.js';
-import { errorResponse, itemResponse, arrayResponse } from '../../lib/response-schemas.js';
+import {
+  errorResponse,
+  itemResponse,
+  arrayResponse,
+  errorWith,
+} from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import { getS3Config, generateDownloadUrl } from '../../services/s3.service.js';
 import { sendOcppCommandAndWait, triggerAndWaitForStatus } from '../../lib/ocpp-command.js';
 import { applyReservationCancellation } from '../../lib/reservation-cancel.js';
@@ -330,7 +336,7 @@ const nearbyQuery = z.object({
   lat: z.coerce.number().min(-90).max(90).describe('Latitude'),
   lng: z.coerce.number().min(-180).max(180).describe('Longitude'),
   radius: z.coerce.number().min(1).max(200).default(50).describe('Radius in km (default 50)'),
-  limit: z.coerce.number().int().min(1).max(50).default(20).describe('Max results (default 20)'),
+  limit: z.coerce.number().int().min(1).max(100).default(20).describe('Max results (default 20)'),
 });
 
 const portalNearbyStation = z
@@ -369,7 +375,13 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         operationId: 'portalGetChargerEvse',
         security: [],
         params: zodSchema(chargerParams),
-        response: { 200: itemResponse(portalChargerDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(portalChargerDetail),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
       config: {
         rateLimit: {
@@ -494,7 +506,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(portalPricingInfo),
-          404: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.PRICING_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -832,7 +847,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         operationId: 'portalGetLocationDetail',
         security: [],
         params: zodSchema(siteIdParams),
-        response: { 200: itemResponse(portalLocationDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(portalLocationDetail),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -964,7 +982,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.IMAGE_NOT_FOUND,
+            ERROR_CODES.S3_NOT_CONFIGURED,
+          ]),
         },
       },
     },
@@ -1014,7 +1035,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         security: [],
         params: zodSchema(siteIdParams),
         querystring: zodSchema(popularTimesQuery),
-        response: { 200: arrayResponse(popularTimesItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(popularTimesItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1073,7 +1097,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         operationId: 'portalGetStationDetail',
         security: [],
         params: zodSchema(stationIdParams),
-        response: { 200: itemResponse(portalStationDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(portalStationDetail),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
       config: {
         rateLimit: {
@@ -1257,8 +1284,11 @@ export function portalChargerRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          429: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.CONNECTOR_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          429: errorWith('Rate limit exceeded', [ERROR_CODES.RATE_LIMITED]),
         },
       },
     },
@@ -1333,14 +1363,29 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         body: zodSchema(startChargingBody),
         response: {
           200: itemResponse(startChargingResponse),
-          400: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.CONNECTOR_NOT_AVAILABLE,
+            ERROR_CODES.PAYMENT_METHOD_REQUIRED,
+            ERROR_CODES.SESSION_ALREADY_ACTIVE,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
           402: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          403: errorWith('Forbidden', [
+            ERROR_CODES.CONNECTOR_RESERVED,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.PAYMENT_METHOD_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Conflict', [
+            ERROR_CODES.EVSE_IN_USE,
+            ERROR_CODES.RESERVATION_BUFFER_ACTIVE,
+          ]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
+          502: errorWith('Start rejected', [ERROR_CODES.START_REJECTED]),
+          504: errorWith('Station timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -1849,8 +1894,8 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         params: zodSchema(sessionIdParams),
         response: {
           200: itemResponse(stopSessionResponse),
-          404: errorResponse,
-          504: errorResponse,
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+          504: errorWith('Station timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -1985,7 +2030,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         params: zodSchema(reservationIdParams),
         response: {
           200: itemResponse(reservationDetail),
-          404: errorResponse,
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -2077,11 +2122,21 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         body: zodSchema(createDriverReservationBody),
         response: {
           200: itemResponse(reservationCreated),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.PAYMENT_METHOD_REQUIRED,
+            ERROR_CODES.RESERVATION_EXPIRES_TOO_SOON,
+            ERROR_CODES.RESERVATION_STARTS_IN_PAST,
+            ERROR_CODES.RESERVATION_TOO_LONG,
+            ERROR_CODES.RESERVATION_WINDOW_TOO_SHORT,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Conflict', [ERROR_CODES.EVSE_IN_USE, ERROR_CODES.RESERVATION_CONFLICT]),
+          500: errorWith('Reservation create failed', [ERROR_CODES.RESERVATION_CREATE_FAILED]),
         },
       },
     },
@@ -2376,8 +2431,8 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         params: zodSchema(reservationIdParams),
         response: {
           200: itemResponse(cancelReservationResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },

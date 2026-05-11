@@ -16,7 +16,8 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { sendOcppCommandAndWait } from '../lib/ocpp-command.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
@@ -151,7 +152,10 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationIdParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: itemResponse(versionInfoItem), 404: errorResponse },
+        response: {
+          200: itemResponse(versionInfoItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -244,7 +248,10 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationIdParams),
         querystring: zodSchema(availableTokensQuery),
-        response: { 200: paginatedResponse(availableTokenItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(availableTokenItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -343,10 +350,10 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         params: zodSchema(stationIdParams),
         response: {
           200: itemResponse(pushResponse),
-          400: errorResponse,
-          404: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Station offline', [ERROR_CODES.STATION_OFFLINE]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+          502: errorWith('Push rejected', [ERROR_CODES.PUSH_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -493,8 +500,8 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         body: zodSchema(addTokensBody),
         response: {
           200: itemResponse(mutateResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('No valid tokens', [ERROR_CODES.NO_VALID_TOKENS]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },
@@ -573,8 +580,8 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         body: zodSchema(removeEntriesBody),
         response: {
           200: itemResponse(mutateResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('No valid entries', [ERROR_CODES.NO_VALID_ENTRIES]),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
         },
       },
     },

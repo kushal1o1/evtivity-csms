@@ -9,8 +9,9 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const invoiceListItem = z
   .object({
     id: z.string().describe('Invoice ID'),
@@ -169,7 +170,10 @@ export function invoiceRoutes(app: FastifyInstance): void {
         operationId: 'getInvoice',
         security: [{ bearerAuth: [] }],
         params: zodSchema(invoiceIdParams),
-        response: { 200: itemResponse(invoiceDetailItem), 404: errorResponse },
+        response: {
+          200: itemResponse(invoiceDetailItem),
+          404: errorWith('Invoice not found', [ERROR_CODES.INVOICE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -198,7 +202,10 @@ export function invoiceRoutes(app: FastifyInstance): void {
         operationId: 'createSessionInvoice',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionIdParams),
-        response: { 201: itemResponse(invoiceDetailItem), 400: errorResponse },
+        response: {
+          201: itemResponse(invoiceDetailItem),
+          400: errorWith('Invoice creation failed', [ERROR_CODES.INVOICE_CREATION_FAILED]),
+        },
       },
     },
     async (request, reply) => {
@@ -227,7 +234,10 @@ export function invoiceRoutes(app: FastifyInstance): void {
         operationId: 'createAggregatedInvoice',
         security: [{ bearerAuth: [] }],
         body: zodSchema(aggregatedInvoiceBody),
-        response: { 201: itemResponse(invoiceDetailItem), 400: errorResponse },
+        response: {
+          201: itemResponse(invoiceDetailItem),
+          400: errorWith('Invoice creation failed', [ERROR_CODES.INVOICE_CREATION_FAILED]),
+        },
       },
     },
     async (request, reply) => {
@@ -260,7 +270,10 @@ export function invoiceRoutes(app: FastifyInstance): void {
         operationId: 'voidInvoice',
         security: [{ bearerAuth: [] }],
         params: zodSchema(invoiceIdParams),
-        response: { 200: itemResponse(invoiceRecord), 404: errorResponse },
+        response: {
+          200: itemResponse(invoiceRecord),
+          404: errorWith('Invoice not found', [ERROR_CODES.INVOICE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -287,7 +300,7 @@ export function invoiceRoutes(app: FastifyInstance): void {
         operationId: 'downloadInvoice',
         security: [{ bearerAuth: [] }],
         params: zodSchema(invoiceIdParams),
-        response: { 404: errorResponse },
+        response: { 404: errorWith('Invoice not found', [ERROR_CODES.INVOICE_NOT_FOUND]) },
       },
     },
     async (request, reply) => {

@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { db, settings } from '@evtivity/database';
 import { encryptString, isPrivateUrl } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
-import { successResponse, itemResponse, errorResponse } from '../lib/response-schemas.js';
+import { successResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import { config as apiConfig } from '../lib/config.js';
 
@@ -98,7 +99,10 @@ export function pncSettingsRoutes(app: FastifyInstance): void {
         operationId: 'updatePncSettings',
         security: [{ bearerAuth: [] }],
         body: zodSchema(updatePncSettingsBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Private url', [ERROR_CODES.PRIVATE_URL]),
+        },
       },
     },
     async (request, reply) => {

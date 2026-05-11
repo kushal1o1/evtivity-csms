@@ -16,7 +16,13 @@ import {
 import { zodSchema } from '../lib/zod-schema.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import {
+  errorResponse,
+  paginatedResponse,
+  itemResponse,
+  errorWith,
+} from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import {
   processChargingProfilePush,
   processChargingProfileClear,
@@ -327,7 +333,10 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         operationId: 'getChargingProfileTemplate',
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
-        response: { 200: itemResponse(templateItem), 404: errorResponse },
+        response: {
+          200: itemResponse(templateItem),
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -359,8 +368,8 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         body: zodSchema(createTemplateBody),
         response: {
           201: itemResponse(templateItem),
-          400: errorResponse,
-          409: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          409: errorWith('Profile id in use', [ERROR_CODES.PROFILE_ID_IN_USE]),
         },
       },
     },
@@ -449,9 +458,9 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         body: zodSchema(updateTemplateBody),
         response: {
           200: itemResponse(templateItem),
-          400: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
+          409: errorWith('Profile id in use', [ERROR_CODES.PROFILE_ID_IN_USE]),
         },
       },
     },
@@ -557,7 +566,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         params: zodSchema(templateParams),
         response: {
           201: itemResponse(templateItem),
-          404: errorResponse,
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
           409: errorResponse,
         },
       },
@@ -638,7 +647,10 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         operationId: 'deleteChargingProfileTemplate',
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -670,7 +682,10 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(matchingStationItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(matchingStationItem),
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -748,7 +763,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         params: zodSchema(templateParams),
         response: {
           200: itemResponse(z.object({ success: z.boolean(), pushId: z.string() }).passthrough()),
-          404: errorResponse,
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
         },
       },
     },
@@ -842,7 +857,7 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         params: zodSchema(templateParams),
         response: {
           200: itemResponse(z.object({ success: z.boolean(), pushId: z.string() }).passthrough()),
-          404: errorResponse,
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
         },
       },
     },
@@ -933,7 +948,10 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(templateParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(pushItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(pushItem),
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1010,7 +1028,10 @@ export function smartChargingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(z.object({ pushId: z.string().describe('Push ID') })),
         querystring: zodSchema(paginationQuery),
-        response: { 200: itemResponse(pushDetailItem), 404: errorResponse },
+        response: {
+          200: itemResponse(pushDetailItem),
+          404: errorWith('Push not found', [ERROR_CODES.PUSH_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

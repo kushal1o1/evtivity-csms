@@ -26,7 +26,8 @@ import { sendOcppCommandAndWait } from '../lib/ocpp-command.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { ALL_TEMPLATES_DIRS } from '../lib/template-dirs.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { errorResponse, paginatedResponse, itemResponse } from '../lib/response-schemas.js';
+import { paginatedResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { applyReservationCancellation } from '../lib/reservation-cancel.js';
 import { assertReservationsAllowed } from '../lib/reservation-eligibility.js';
 import { authorize } from '../middleware/rbac.js';
@@ -371,7 +372,10 @@ export function reservationRoutes(app: FastifyInstance): void {
         operationId: 'getReservation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(reservationIdParams),
-        response: { 200: itemResponse(reservationDetailItem), 404: errorResponse },
+        response: {
+          200: itemResponse(reservationDetailItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -449,7 +453,10 @@ export function reservationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(reservationIdParams),
         querystring: zodSchema(paginationQuery),
-        response: { 200: paginatedResponse(reservationCommandItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(reservationCommandItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -580,13 +587,25 @@ export function reservationRoutes(app: FastifyInstance): void {
         body: zodSchema(createReservationBody),
         response: {
           200: itemResponse(reservationCreatedItem),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
-          500: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.DRIVER_NOT_FOUND,
+            ERROR_CODES.PAYMENT_METHOD_REQUIRED,
+            ERROR_CODES.RESERVATION_EXPIRES_TOO_SOON,
+            ERROR_CODES.RESERVATION_REJECTED,
+            ERROR_CODES.RESERVATION_STARTS_IN_PAST,
+            ERROR_CODES.RESERVATION_TOO_LONG,
+            ERROR_CODES.RESERVATION_WINDOW_TOO_SHORT,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Conflict', [ERROR_CODES.EVSE_IN_USE, ERROR_CODES.RESERVATION_CONFLICT]),
+          500: errorWith('Reservation create failed', [ERROR_CODES.RESERVATION_CREATE_FAILED]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
     },
@@ -1014,9 +1033,9 @@ export function reservationRoutes(app: FastifyInstance): void {
         body: zodSchema(updateReservationBody),
         response: {
           200: itemResponse(reservationDetailItem),
-          400: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Evse not found', [ERROR_CODES.EVSE_NOT_FOUND]),
+          409: errorWith('Reservation conflict', [ERROR_CODES.RESERVATION_CONFLICT]),
         },
       },
     },
@@ -1185,8 +1204,8 @@ export function reservationRoutes(app: FastifyInstance): void {
         // cancelReservationBody and parsed manually in the handler.
         response: {
           200: itemResponse(cancelReservationResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -1336,9 +1355,15 @@ export function reservationRoutes(app: FastifyInstance): void {
         ),
         response: {
           200: itemResponse(reassignReservationResponse),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.RESERVATION_REJECTED,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
         },
       },
     },

@@ -4,7 +4,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse } from '../lib/response-schemas.js';
+import { errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { handleAssistantChat } from '../services/ai/assistant.service.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -48,8 +49,8 @@ export function assistantRoutes(app: FastifyInstance): void {
         body: zodSchema(chatBody),
         response: {
           200: zodSchema(chatResponse),
-          400: errorResponse,
-          500: errorResponse,
+          400: errorWith('Ai not configured', [ERROR_CODES.AI_NOT_CONFIGURED]),
+          500: errorWith('Ai error', [ERROR_CODES.AI_ERROR]),
         },
       },
       config: {

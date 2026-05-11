@@ -11,7 +11,8 @@ import {
   type StationMessageState,
 } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse } from '../lib/response-schemas.js';
+import { itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import type { JwtPayload } from '../plugins/auth.js';
 
@@ -111,7 +112,7 @@ export function stationMessageTemplateRoutes(app: FastifyInstance): void {
         body: zodSchema(updateBody),
         response: {
           200: itemResponse(templateItem),
-          404: errorResponse,
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
         },
       },
     },

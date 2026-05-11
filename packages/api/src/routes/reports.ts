@@ -30,11 +30,12 @@ const REPORT_TYPES = [
 const REPORT_FORMATS = ['csv', 'pdf', 'xlsx'] as const;
 import { zodSchema } from '../lib/zod-schema.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import { queueReport } from '../services/report.service.js';
@@ -202,7 +203,10 @@ export function reportRoutes(app: FastifyInstance): void {
         summary: 'Get a report by ID',
         operationId: 'getReport',
         security: [{ bearerAuth: [] }],
-        response: { 200: itemResponse(reportDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(reportDetail),
+          404: errorWith('Report not found', [ERROR_CODES.REPORT_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -245,7 +249,7 @@ export function reportRoutes(app: FastifyInstance): void {
         summary: 'Download a report file',
         operationId: 'downloadReport',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorResponse },
+        response: { 404: errorWith('Report not found', [ERROR_CODES.REPORT_NOT_FOUND]) },
       },
     },
     async (request, reply) => {
@@ -330,7 +334,10 @@ export function reportRoutes(app: FastifyInstance): void {
         summary: 'Delete a report',
         operationId: 'deleteReport',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Report not found', [ERROR_CODES.REPORT_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -423,7 +430,10 @@ export function reportRoutes(app: FastifyInstance): void {
         operationId: 'updateReportSchedule',
         security: [{ bearerAuth: [] }],
         body: zodSchema(updateScheduleBody),
-        response: { 200: itemResponse(scheduleItem), 404: errorResponse },
+        response: {
+          200: itemResponse(scheduleItem),
+          404: errorWith('Schedule not found', [ERROR_CODES.SCHEDULE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -479,7 +489,10 @@ export function reportRoutes(app: FastifyInstance): void {
         summary: 'Delete a report schedule',
         operationId: 'deleteReportSchedule',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Schedule not found', [ERROR_CODES.SCHEDULE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -510,7 +523,10 @@ export function reportRoutes(app: FastifyInstance): void {
         summary: 'Run a report schedule immediately',
         operationId: 'runReportScheduleNow',
         security: [{ bearerAuth: [] }],
-        response: { 200: itemResponse(reportQueuedResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(reportQueuedResponse),
+          404: errorWith('Schedule not found', [ERROR_CODES.SCHEDULE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

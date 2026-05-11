@@ -10,12 +10,13 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
 import {
-  errorResponse,
   successResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const locationPublishListItem = z
   .object({
     id: z.string().describe('Site identifier'),
@@ -125,7 +126,10 @@ export function ocpiLocationRoutes(app: FastifyInstance): void {
         operationId: 'getOcpiLocation',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: itemResponse(locationPublishDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(locationPublishDetail),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -180,7 +184,11 @@ export function ocpiLocationRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         body: zodSchema(publishBody),
-        response: { 200: successResponse, 404: errorResponse, 500: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
+        },
       },
     },
     async (request, reply) => {

@@ -48,12 +48,13 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { paginationQuery } from '../lib/pagination.js';
 import nodemailer from 'nodemailer';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { config as apiConfig } from '../lib/config.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -495,7 +496,10 @@ export function notificationRoutes(app: FastifyInstance): void {
         operationId: 'getOcppEventTemplate',
         security: [{ bearerAuth: [] }],
         querystring: zodSchema(templateQuery),
-        response: { 200: itemResponse(ocppEventTemplateResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(ocppEventTemplateResponse),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -599,7 +603,10 @@ export function notificationRoutes(app: FastifyInstance): void {
             channel: z.enum(['email', 'webhook']).describe('Notification delivery channel'),
           }),
         ),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Setting not found', [ERROR_CODES.SETTING_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -690,7 +697,14 @@ export function notificationRoutes(app: FastifyInstance): void {
         operationId: 'sendTestNotification',
         security: [{ bearerAuth: [] }],
         body: zodSchema(testBody),
-        response: { 200: successResponse, 400: errorResponse, 500: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          500: errorWith('Server error', [
+            ERROR_CODES.EMAIL_SEND_FAILED,
+            ERROR_CODES.SMS_SEND_FAILED,
+          ]),
+        },
       },
     },
     async (request, reply) => {

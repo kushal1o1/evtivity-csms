@@ -5,11 +5,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { zodSchema } from '../lib/zod-schema.js';
 import {
-  errorResponse,
   successResponse,
   arrayResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import type { JwtPayload } from '../plugins/auth.js';
 import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-key.service.js';
@@ -66,7 +67,9 @@ const apiKeyCreatedItem = z
     rawToken: z
       .string()
       .length(64)
-      .describe('Raw bearer token. Shown once at creation; cannot be retrieved later.'),
+      .describe(
+        'WARNING: shown only in this response. The full token cannot be retrieved later (only its SHA-256 hash is stored). Copy and store it securely on the client immediately.',
+      ),
     expiresAt: z.coerce
       .date()
       .nullable()
@@ -105,15 +108,15 @@ export function apiKeyRoutes(app: FastifyInstance): void {
         tags: ['API Keys'],
         summary: 'Create a new API key',
         description:
-          'Generates a 64-character hex API token, stores its SHA-256 hash in refresh_tokens with type=api_key, and returns the raw token in the response. The raw token is shown ONCE and never retrievable again. Optional permissions array scopes the key to a subset of the creator current permissions; expiresInDays sets a hard expiry. Returns 403 if requested permissions exceed the creator permissions.',
+          'Generates a 64-character hex API token. The raw token is shown ONLY in this response and cannot be retrieved later (only its SHA-256 hash is stored). Copy it immediately on the client. Optional `permissions` scopes the key to a subset of the creator current permissions; `expiresInDays` sets a hard expiry. Returns 403 if requested permissions exceed the creator permissions.',
         operationId: 'createApiKey',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createApiKeyBody),
         response: {
           201: itemResponse(apiKeyCreatedItem),
-          400: errorResponse,
-          403: errorResponse,
-          409: errorResponse,
+          400: errorWith('Invalid permissions', [ERROR_CODES.INVALID_PERMISSIONS]),
+          403: errorWith('Permissions exceed own', [ERROR_CODES.PERMISSIONS_EXCEED_OWN]),
+          409: errorWith('Duplicate api key name', [ERROR_CODES.DUPLICATE_API_KEY_NAME]),
         },
       },
     },
@@ -201,7 +204,10 @@ export function apiKeyRoutes(app: FastifyInstance): void {
         operationId: 'revokeApiKey',
         security: [{ bearerAuth: [] }],
         params: zodSchema(idParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Api key not found', [ERROR_CODES.API_KEY_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -230,9 +236,9 @@ export function apiKeyRoutes(app: FastifyInstance): void {
         body: zodSchema(updateApiKeyBody),
         response: {
           200: successResponse,
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
+          400: errorWith('Invalid permissions', [ERROR_CODES.INVALID_PERMISSIONS]),
+          403: errorWith('Permissions exceed own', [ERROR_CODES.PERMISSIONS_EXCEED_OWN]),
+          404: errorWith('Api key not found', [ERROR_CODES.API_KEY_NOT_FOUND]),
         },
       },
     },

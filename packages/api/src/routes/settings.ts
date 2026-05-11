@@ -13,7 +13,8 @@ import {
 import { settings } from '@evtivity/database';
 import { encryptString } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, successResponse, itemResponse } from '../lib/response-schemas.js';
+import { successResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { clearS3ConfigCache } from '../services/s3.service.js';
 import { DEFAULT_CONTENT } from './default-content.js';
 import { authorize } from '../middleware/rbac.js';
@@ -194,7 +195,10 @@ export function settingsRoutes(app: FastifyInstance): void {
         operationId: 'getSetting',
         security: [{ bearerAuth: [] }],
         params: zodSchema(settingParams),
-        response: { 200: itemResponse(settingItem), 404: errorResponse },
+        response: {
+          200: itemResponse(settingItem),
+          404: errorWith('Setting not found', [ERROR_CODES.SETTING_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -219,7 +223,10 @@ export function settingsRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(settingParams),
         body: zodSchema(updateSettingBody),
-        response: { 200: itemResponse(settingItem), 404: errorResponse },
+        response: {
+          200: itemResponse(settingItem),
+          404: errorWith('Setting not found', [ERROR_CODES.SETTING_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -281,7 +288,10 @@ export function settingsRoutes(app: FastifyInstance): void {
         operationId: 'deleteSetting',
         security: [{ bearerAuth: [] }],
         params: zodSchema(settingParams),
-        response: { 200: itemResponse(settingItem), 404: errorResponse },
+        response: {
+          200: itemResponse(settingItem),
+          404: errorWith('Setting not found', [ERROR_CODES.SETTING_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -351,7 +361,10 @@ export function settingsRoutes(app: FastifyInstance): void {
         operationId: 'updateS3Settings',
         security: [{ bearerAuth: [] }],
         body: zodSchema(s3SettingsBody),
-        response: { 200: successResponse, 500: errorResponse },
+        response: {
+          200: successResponse,
+          500: errorWith('Encryption key missing', [ERROR_CODES.ENCRYPTION_KEY_MISSING]),
+        },
       },
     },
     async (request, reply) => {
@@ -396,7 +409,13 @@ export function settingsRoutes(app: FastifyInstance): void {
         summary: 'Test S3 connection',
         operationId: 'testS3Connection',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.S3_CONNECTION_FAILED,
+            ERROR_CODES.S3_NOT_CONFIGURED,
+          ]),
+        },
       },
     },
     async (_request, reply) => {

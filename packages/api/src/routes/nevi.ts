@@ -10,11 +10,12 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize } from '../middleware/rbac.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 
@@ -200,7 +201,10 @@ export function neviRoutes(app: FastifyInstance): void {
         operationId: 'upsertNeviStationData',
         security: [{ bearerAuth: [] }],
         body: zodSchema(upsertStationDataBody),
-        response: { 200: itemResponse(neviStationDataItem), 404: errorResponse },
+        response: {
+          200: itemResponse(neviStationDataItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -337,7 +341,10 @@ export function neviRoutes(app: FastifyInstance): void {
         operationId: 'createNeviExcludedDowntime',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createExcludedDowntimeBody),
-        response: { 200: itemResponse(neviExcludedDowntimeItem), 404: errorResponse },
+        response: {
+          200: itemResponse(neviExcludedDowntimeItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -388,7 +395,10 @@ export function neviRoutes(app: FastifyInstance): void {
         operationId: 'updateNeviExcludedDowntime',
         security: [{ bearerAuth: [] }],
         body: zodSchema(updateExcludedDowntimeBody),
-        response: { 200: itemResponse(neviExcludedDowntimeItem), 404: errorResponse },
+        response: {
+          200: itemResponse(neviExcludedDowntimeItem),
+          404: errorWith('Downtime not found', [ERROR_CODES.DOWNTIME_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -452,7 +462,10 @@ export function neviRoutes(app: FastifyInstance): void {
         summary: 'Delete an excluded downtime record',
         operationId: 'deleteNeviExcludedDowntime',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Downtime not found', [ERROR_CODES.DOWNTIME_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

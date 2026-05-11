@@ -15,7 +15,8 @@ import {
 import type { TariffRestrictions, TariffWithRestrictions } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { resolveTariffGroup } from '../services/tariff.service.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -240,7 +241,10 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'getPricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(groupParams),
-        response: { 200: itemResponse(pricingGroupItem), 404: errorResponse },
+        response: {
+          200: itemResponse(pricingGroupItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -287,7 +291,10 @@ export function pricingRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(groupParams),
         body: zodSchema(updateGroupBody),
-        response: { 200: itemResponse(pricingGroupItem), 404: errorResponse },
+        response: {
+          200: itemResponse(pricingGroupItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -321,7 +328,13 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'deletePricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(groupParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse, 409: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          409: errorWith('Pricing group tariffs in use', [
+            ERROR_CODES.PRICING_GROUP_TARIFFS_IN_USE,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -385,7 +398,10 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'getGroupTariff',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tariffParams),
-        response: { 200: itemResponse(tariffItem), 404: errorResponse },
+        response: {
+          200: itemResponse(tariffItem),
+          404: errorWith('Tariff not found', [ERROR_CODES.TARIFF_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -412,8 +428,8 @@ export function pricingRoutes(app: FastifyInstance): void {
         body: zodSchema(createTariffBody),
         response: {
           201: itemResponse(tariffItem),
-          400: errorResponse,
-          409: errorResponse,
+          400: errorWith('Invalid restrictions', [ERROR_CODES.INVALID_RESTRICTIONS]),
+          409: errorWith('Tariff overlap', [ERROR_CODES.TARIFF_OVERLAP]),
         },
       },
     },
@@ -514,9 +530,9 @@ export function pricingRoutes(app: FastifyInstance): void {
         body: zodSchema(updateTariffBody),
         response: {
           200: itemResponse(tariffItem),
-          400: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
+          400: errorWith('Invalid restrictions', [ERROR_CODES.INVALID_RESTRICTIONS]),
+          404: errorWith('Tariff not found', [ERROR_CODES.TARIFF_NOT_FOUND]),
+          409: errorWith('Tariff overlap', [ERROR_CODES.TARIFF_OVERLAP]),
         },
       },
     },
@@ -630,7 +646,11 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'deleteGroupTariff',
         security: [{ bearerAuth: [] }],
         params: zodSchema(tariffParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse, 409: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('Tariff not found', [ERROR_CODES.TARIFF_NOT_FOUND]),
+          409: errorWith('Tariff in use', [ERROR_CODES.TARIFF_IN_USE]),
+        },
       },
     },
     async (request, reply) => {
@@ -670,7 +690,10 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'getPricingGroupSchedule',
         security: [{ bearerAuth: [] }],
         params: zodSchema(groupParams),
-        response: { 200: arrayResponse(scheduleItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(scheduleItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -740,7 +763,10 @@ export function pricingRoutes(app: FastifyInstance): void {
         operationId: 'getStationActiveTariff',
         security: [{ bearerAuth: [] }],
         params: zodSchema(stationParams),
-        response: { 200: itemResponse(activeTariffItem), 404: errorResponse },
+        response: {
+          200: itemResponse(activeTariffItem),
+          404: errorWith('No tariffs', [ERROR_CODES.NO_TARIFFS]),
+        },
       },
     },
     async (request, reply) => {

@@ -33,12 +33,13 @@ import type { PaginatedResponse } from '../lib/pagination.js';
 import type { JwtPayload } from '../plugins/auth.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const supportCaseListItem = z
   .object({
     id: z.string().describe('Support case ID'),
@@ -532,7 +533,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         operationId: 'getSupportCase',
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
-        response: { 200: itemResponse(supportCaseDetail), 404: errorResponse },
+        response: {
+          200: itemResponse(supportCaseDetail),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -666,7 +670,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         operationId: 'markSupportCaseRead',
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -716,7 +723,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         operationId: 'createSupportCase',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createCaseBody),
-        response: { 200: itemResponse(supportCaseItem), 404: errorResponse },
+        response: {
+          200: itemResponse(supportCaseItem),
+          404: errorWith('Station not found', [ERROR_CODES.STATION_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -802,7 +812,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
         body: zodSchema(updateCaseBody),
-        response: { 200: itemResponse(supportCaseItem), 404: errorResponse },
+        response: {
+          200: itemResponse(supportCaseItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -937,7 +950,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
         body: zodSchema(createMessageBody),
-        response: { 200: itemResponse(supportCaseMessageItem), 404: errorResponse },
+        response: {
+          200: itemResponse(supportCaseMessageItem),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1007,7 +1023,11 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(messageIdParams),
         body: zodSchema(requestUploadUrlBody),
-        response: { 200: itemResponse(uploadUrlResponse), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(uploadUrlResponse),
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1071,7 +1091,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(messageIdParams),
         body: zodSchema(confirmAttachmentBody),
-        response: { 200: itemResponse(attachmentItem), 404: errorResponse },
+        response: {
+          200: itemResponse(attachmentItem),
+          404: errorWith('Message not found', [ERROR_CODES.MESSAGE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1138,8 +1161,8 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(attachmentIdParams),
         response: {
           200: itemResponse(downloadUrlResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('S3 not configured', [ERROR_CODES.S3_NOT_CONFIGURED]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -1203,8 +1226,8 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(attachmentIdParams),
         response: {
           204: { type: 'null' as const },
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
         },
       },
     },
@@ -1274,7 +1297,17 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
         body: zodSchema(refundBody),
-        response: { 200: itemResponse(paymentRecordItem), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(paymentRecordItem),
+          400: errorWith('Bad request', [
+            ERROR_CODES.MISSING_PAYMENT_INTENT,
+            ERROR_CODES.NO_CAPTURED_PAYMENT,
+            ERROR_CODES.REFUND_EXCEEDS_REMAINING,
+            ERROR_CODES.SESSION_NOT_LINKED,
+            ERROR_CODES.STRIPE_NOT_CONFIGURED,
+          ]),
+          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1465,7 +1498,11 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(caseIdParams),
         body: zodSchema(aiAssistBody),
-        response: { 200: itemResponse(aiAssistResponse), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(aiAssistResponse),
+          400: errorWith('Support ai not configured', [ERROR_CODES.SUPPORT_AI_NOT_CONFIGURED]),
+          404: errorWith('Case not found', [ERROR_CODES.CASE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

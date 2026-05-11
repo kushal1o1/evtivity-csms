@@ -27,13 +27,14 @@ import { getUserSiteIds } from '../lib/site-access.js';
 import { config as apiConfig } from '../lib/config.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
 
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 const sitePaymentConfigItem = z
   .object({
     id: z.string().describe('Site payment configuration ID'),
@@ -353,7 +354,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         operationId: 'getSitePaymentConfig',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteIdParams),
-        response: { 200: itemResponse(sitePaymentConfigItem), 404: errorResponse },
+        response: {
+          200: itemResponse(sitePaymentConfigItem),
+          404: errorWith('Payment config not found', [ERROR_CODES.PAYMENT_CONFIG_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -406,7 +410,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteIdParams),
         body: zodSchema(upsertSitePaymentConfigBody),
-        response: { 200: itemResponse(sitePaymentConfigItem), 404: errorResponse },
+        response: {
+          200: itemResponse(sitePaymentConfigItem),
+          404: errorWith('Payment config not found', [ERROR_CODES.PAYMENT_CONFIG_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -473,7 +480,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         operationId: 'deleteSitePaymentConfig',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteIdParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Payment config not found', [ERROR_CODES.PAYMENT_CONFIG_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -601,7 +611,13 @@ export function paymentRoutes(app: FastifyInstance): void {
         summary: 'Test Stripe API connection',
         operationId: 'testStripeConnection',
         security: [{ bearerAuth: [] }],
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.STRIPE_CONNECTION_FAILED,
+            ERROR_CODES.STRIPE_NOT_CONFIGURED,
+          ]),
+        },
       },
     },
     async (_request, reply) => {
@@ -689,8 +705,8 @@ export function paymentRoutes(app: FastifyInstance): void {
         params: zodSchema(driverIdParams),
         response: {
           200: itemResponse(setupIntentResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Stripe not configured', [ERROR_CODES.STRIPE_NOT_CONFIGURED]),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
         },
       },
     },
@@ -819,7 +835,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         operationId: 'deleteDriverPaymentMethod',
         security: [{ bearerAuth: [] }],
         params: zodSchema(paymentMethodParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Payment method not found', [ERROR_CODES.PAYMENT_METHOD_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -864,7 +883,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         operationId: 'setDefaultDriverPaymentMethod',
         security: [{ bearerAuth: [] }],
         params: zodSchema(paymentMethodParams),
-        response: { 200: itemResponse(driverPaymentMethodItem), 404: errorResponse },
+        response: {
+          200: itemResponse(driverPaymentMethodItem),
+          404: errorWith('Payment method not found', [ERROR_CODES.PAYMENT_METHOD_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -916,7 +938,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(paymentRecordItem),
           400: itemResponse(preAuthFailedResponse),
-          404: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.PAYMENT_METHOD_NOT_FOUND,
+            ERROR_CODES.SESSION_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -1029,7 +1054,14 @@ export function paymentRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionIdParams),
         body: zodSchema(captureBody),
-        response: { 200: itemResponse(paymentRecordItem), 400: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(paymentRecordItem),
+          400: errorWith('Bad request', [
+            ERROR_CODES.MISSING_PAYMENT_INTENT,
+            ERROR_CODES.STRIPE_NOT_CONFIGURED,
+          ]),
+          404: errorWith('No pre auth', [ERROR_CODES.NO_PRE_AUTH]),
+        },
       },
     },
     async (request, reply) => {
@@ -1132,9 +1164,13 @@ export function paymentRoutes(app: FastifyInstance): void {
         body: zodSchema(refundBody),
         response: {
           200: itemResponse(paymentRecordItem),
-          400: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.MISSING_PAYMENT_INTENT,
+            ERROR_CODES.NO_CAPTURED_PAYMENT,
+            ERROR_CODES.STRIPE_NOT_CONFIGURED,
+          ]),
+          404: errorWith('Payment not found', [ERROR_CODES.PAYMENT_NOT_FOUND]),
+          409: errorWith('Refund exceeds remaining', [ERROR_CODES.REFUND_EXCEEDS_REMAINING]),
         },
       },
     },
@@ -1282,7 +1318,10 @@ export function paymentRoutes(app: FastifyInstance): void {
         operationId: 'getSessionPayment',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionIdParams),
-        response: { 200: itemResponse(paymentRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(paymentRecordItem),
+          404: errorWith('Payment not found', [ERROR_CODES.PAYMENT_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1317,9 +1356,14 @@ export function paymentRoutes(app: FastifyInstance): void {
         params: zodSchema(z.object({ id: z.coerce.number().int().min(1) })),
         response: {
           200: itemResponse(paymentRecordItem),
-          404: errorResponse,
-          409: errorResponse,
-          502: errorResponse,
+          404: errorWith('Payment not found', [ERROR_CODES.PAYMENT_NOT_FOUND]),
+          409: errorWith('Payment record cannot be recovered or Stripe not configured', [
+            ERROR_CODES.PAYMENT_RECORD_NOT_RECOVERABLE,
+            ERROR_CODES.STRIPE_NOT_CONFIGURED,
+          ]),
+          502: errorWith('Stripe rejected the top-up payment intent', [
+            ERROR_CODES.STRIPE_TOP_UP_FAILED,
+          ]),
         },
       },
     },

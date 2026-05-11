@@ -27,12 +27,13 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import {
   exportSitesCsv,
   exportSitesTemplateCsv,
@@ -649,7 +650,10 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'getSite',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: itemResponse(siteItem), 404: errorResponse },
+        response: {
+          200: itemResponse(siteItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -706,7 +710,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         body: zodSchema(updateSiteBody),
-        response: { 200: itemResponse(siteBase), 404: errorResponse },
+        response: {
+          200: itemResponse(siteBase),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -741,7 +748,11 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'deleteSite',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: itemResponse(siteBase), 404: errorResponse, 409: errorResponse },
+        response: {
+          200: itemResponse(siteBase),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+          409: errorWith('Site has stations', [ERROR_CODES.SITE_HAS_STATIONS]),
+        },
       },
     },
     async (request, reply) => {
@@ -797,7 +808,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(siteMetricsQuery),
-        response: { 200: zodSchema(siteMetricsResponse), 404: errorResponse },
+        response: {
+          200: zodSchema(siteMetricsResponse),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -978,7 +992,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(stationsQuery),
-        response: { 200: paginatedResponse(siteStationItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(siteStationItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1059,7 +1076,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(energyHistoryQuery),
-        response: { 200: arrayResponse(energyHistoryItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(energyHistoryItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1110,7 +1130,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(revenueHistoryQuery),
-        response: { 200: arrayResponse(revenueHistoryItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(revenueHistoryItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1188,7 +1211,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(popularTimesQuery),
-        response: { 200: arrayResponse(popularTimesItem), 404: errorResponse },
+        response: {
+          200: arrayResponse(popularTimesItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1250,7 +1276,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(meterValuesQuery),
-        response: { 200: arrayResponse(meterValueGroup), 404: errorResponse },
+        response: {
+          200: arrayResponse(meterValueGroup),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1298,7 +1327,7 @@ export function siteRoutes(app: FastifyInstance): void {
 
   const sessionsQuery = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(50).default(10),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     status: z
       .enum(['active', 'completed', 'faulted', 'idling'])
       .optional()
@@ -1317,7 +1346,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         querystring: zodSchema(sessionsQuery),
-        response: { 200: paginatedResponse(siteSessionItem), 404: errorResponse },
+        response: {
+          200: paginatedResponse(siteSessionItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1394,7 +1426,10 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'getSiteLayout',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: arrayResponse(layoutStation), 404: errorResponse },
+        response: {
+          200: arrayResponse(layoutStation),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1576,7 +1611,7 @@ export function siteRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
         },
       },
     },
@@ -1631,7 +1666,10 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'getSitePricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: itemResponse(sitePricingGroupItem.nullable()), 404: errorResponse },
+        response: {
+          200: itemResponse(sitePricingGroupItem.nullable()),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1669,7 +1707,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         body: zodSchema(addSitePricingGroupBody),
-        response: { 201: itemResponse(sitePricingGroupRecordItem), 404: errorResponse },
+        response: {
+          201: itemResponse(sitePricingGroupRecordItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1703,7 +1744,10 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'removeSitePricingGroup',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sitePricingGroupParams),
-        response: { 200: itemResponse(sitePricingGroupRecordItem), 404: errorResponse },
+        response: {
+          200: itemResponse(sitePricingGroupRecordItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1767,7 +1811,10 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         body: zodSchema(freeVendBody),
-        response: { 200: itemResponse(freeVendResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(freeVendResponse),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1900,7 +1947,10 @@ export function siteRoutes(app: FastifyInstance): void {
         operationId: 'getSiteCarbonRegion',
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
-        response: { 200: itemResponse(carbonRegionResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(carbonRegionResponse),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1947,7 +1997,11 @@ export function siteRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(siteParams),
         body: zodSchema(carbonRegionBody),
-        response: { 200: successResponse, 400: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

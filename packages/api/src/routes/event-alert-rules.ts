@@ -7,11 +7,12 @@ import { eq, count } from 'drizzle-orm';
 import { db, eventAlertRules } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import { authorize } from '../middleware/rbac.js';
@@ -90,7 +91,10 @@ export function eventAlertRuleRoutes(app: FastifyInstance): void {
       operationId: 'createEventAlertRule',
       security: [{ bearerAuth: [] }],
       body: zodSchema(createRuleBody),
-      response: { 201: itemResponse(ruleItem), 400: errorResponse },
+      response: {
+        201: itemResponse(ruleItem),
+        400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+      },
     },
     handler: async (request, reply) => {
       const body = request.body as z.infer<typeof createRuleBody>;
@@ -108,7 +112,10 @@ export function eventAlertRuleRoutes(app: FastifyInstance): void {
       security: [{ bearerAuth: [] }],
       params: zodSchema(ruleIdParams),
       body: zodSchema(updateRuleBody),
-      response: { 200: itemResponse(ruleItem), 404: errorResponse },
+      response: {
+        200: itemResponse(ruleItem),
+        404: errorWith('Rule not found', [ERROR_CODES.RULE_NOT_FOUND]),
+      },
     },
     handler: async (request, reply) => {
       const { id } = request.params as z.infer<typeof ruleIdParams>;
@@ -135,7 +142,10 @@ export function eventAlertRuleRoutes(app: FastifyInstance): void {
       operationId: 'deleteEventAlertRule',
       security: [{ bearerAuth: [] }],
       params: zodSchema(ruleIdParams),
-      response: { 200: successResponse, 404: errorResponse },
+      response: {
+        200: successResponse,
+        404: errorWith('Rule not found', [ERROR_CODES.RULE_NOT_FOUND]),
+      },
     },
     handler: async (request, reply) => {
       const { id } = request.params as z.infer<typeof ruleIdParams>;

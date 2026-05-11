@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, paymentRecords, webhookEvents } from '@evtivity/database';
 import { verifyWebhookSignature } from '../services/stripe.service.js';
-import { itemResponse, errorResponse } from '../lib/response-schemas.js';
+import { itemResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { config as apiConfig } from '../lib/config.js';
 
 const webhookResponse = z
@@ -29,7 +30,11 @@ export function webhookRoutes(app: FastifyInstance): void {
         summary: 'Handle Stripe webhook events',
         operationId: 'handleStripeWebhook',
         security: [],
-        response: { 200: itemResponse(webhookResponse), 400: errorResponse, 500: errorResponse },
+        response: {
+          200: itemResponse(webhookResponse),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
+        },
       },
     },
     async (request, reply) => {

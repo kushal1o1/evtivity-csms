@@ -19,7 +19,8 @@ import {
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import { getPubSub } from '../../lib/pubsub.js';
-import { errorResponse, successResponse, itemResponse } from '../../lib/response-schemas.js';
+import { successResponse, itemResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import { sendOcppCommandAndWait, triggerAndWaitForStatus } from '../../lib/ocpp-command.js';
 import { isStationCheckRateLimited, isGuestSessionRateLimited } from '../../lib/rate-limiters.js';
 import { getStripeConfig } from '../../services/stripe.service.js';
@@ -197,8 +198,11 @@ export function portalGuestRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          429: errorResponse,
+          404: errorWith('Resource not found', [
+            ERROR_CODES.CONNECTOR_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          429: errorWith('Rate limit exceeded', [ERROR_CODES.RATE_LIMITED]),
         },
       },
     },
@@ -264,7 +268,13 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         operationId: 'portalGuestGetChargerConfig',
         security: [],
         params: zodSchema(chargerConfigParams),
-        response: { 200: itemResponse(chargerConfigResponse), 404: errorResponse },
+        response: {
+          200: itemResponse(chargerConfigResponse),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+        },
       },
     },
     async (request, reply) => {
@@ -342,12 +352,28 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         body: zodSchema(guestStartBody),
         response: {
           200: itemResponse(guestStartResponse),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
-          409: errorResponse,
-          502: errorResponse,
-          504: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.CONNECTOR_NOT_AVAILABLE,
+            ERROR_CODES.EMAIL_REQUIRED,
+            ERROR_CODES.PAYMENT_FAILED,
+            ERROR_CODES.PAYMENT_METHOD_REQUIRED,
+            ERROR_CODES.PAYMENT_NOT_CONFIGURED,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          403: errorWith('Forbidden', [
+            ERROR_CODES.CONNECTOR_RESERVED,
+            ERROR_CODES.STATION_OFFLINE,
+          ]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.EVSE_NOT_FOUND,
+            ERROR_CODES.STATION_NOT_FOUND,
+          ]),
+          409: errorWith('Conflict', [
+            ERROR_CODES.EVSE_IN_USE,
+            ERROR_CODES.RESERVATION_BUFFER_ACTIVE,
+          ]),
+          502: errorWith('Station rejected', [ERROR_CODES.STATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
         },
       },
       config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
@@ -640,8 +666,8 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         params: zodSchema(sessionTokenParams),
         response: {
           200: itemResponse(guestStatusResponse),
-          404: errorResponse,
-          429: errorResponse,
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+          429: errorWith('Rate limited', [ERROR_CODES.RATE_LIMITED]),
         },
       },
     },
@@ -730,7 +756,15 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         operationId: 'portalGuestStopCharging',
         security: [],
         params: zodSchema(sessionTokenParams),
-        response: { 200: successResponse, 400: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.NOT_CHARGING,
+            ERROR_CODES.NO_CHARGING_SESSION,
+            ERROR_CODES.SESSION_NOT_FOUND,
+          ]),
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+        },
       },
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     },
@@ -813,8 +847,8 @@ export function portalGuestRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          429: errorResponse,
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+          429: errorWith('Rate limited', [ERROR_CODES.RATE_LIMITED]),
         },
       },
     },
@@ -878,8 +912,8 @@ export function portalGuestRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          404: errorResponse,
-          429: errorResponse,
+          404: errorWith('Session not found', [ERROR_CODES.SESSION_NOT_FOUND]),
+          429: errorWith('Rate limited', [ERROR_CODES.RATE_LIMITED]),
         },
       },
     },

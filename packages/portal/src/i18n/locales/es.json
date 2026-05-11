@@ -625,7 +625,11 @@
     "MESSAGE_REFRESH_FAILED": "Error al actualizar los mensajes de pantalla",
     "MESSAGE_SEND_FAILED": "Error al enviar el mensaje de pantalla",
     "MESSAGE_TIMEOUT": "Tiempo de espera del comando de mensaje agotado",
-    "RESERVATION_TIMEOUT": "Tiempo de espera del comando de reserva agotado"
+    "RESERVATION_TIMEOUT": "Tiempo de espera del comando de reserva agotado",
+    "PAYMENT_METHOD_IN_USE": "El método de pago está en uso por una sesión de carga activa",
+    "PAYMENT_PREAUTH_FAILED": "Autorización de pago rechazada",
+    "PAYMENT_RECORD_NOT_RECOVERABLE": "El registro de pago no está en un estado recuperable",
+    "STRIPE_TOP_UP_FAILED": "Stripe rechazó la intención de pago de recarga"
   },
   "validation": {
     "required": "Este campo es obligatorio",

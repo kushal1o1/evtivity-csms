@@ -12,7 +12,9 @@ import {
   successResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 import {
   getStripeConfig,
@@ -134,8 +136,8 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         response: {
           200: itemResponse(setupIntentResponse),
-          400: errorResponse,
-          404: errorResponse,
+          400: errorWith('Stripe not configured', [ERROR_CODES.STRIPE_NOT_CONFIGURED]),
+          404: errorWith('Driver not found', [ERROR_CODES.DRIVER_NOT_FOUND]),
         },
       },
     },
@@ -283,7 +285,11 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
         operationId: 'portalDeletePaymentMethod',
         security: [{ bearerAuth: [] }],
         params: zodSchema(paymentMethodParams),
-        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('Payment method not found', [ERROR_CODES.PAYMENT_METHOD_NOT_FOUND]),
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
@@ -351,7 +357,10 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
         operationId: 'portalSetDefaultPaymentMethod',
         security: [{ bearerAuth: [] }],
         params: zodSchema(paymentMethodParams),
-        response: { 200: itemResponse(paymentMethodItem), 404: errorResponse },
+        response: {
+          200: itemResponse(paymentMethodItem),
+          404: errorWith('Payment method not found', [ERROR_CODES.PAYMENT_METHOD_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {

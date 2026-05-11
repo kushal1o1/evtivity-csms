@@ -47,12 +47,13 @@ import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
 import {
-  errorResponse,
   successResponse,
   paginatedResponse,
   itemResponse,
   arrayResponse,
+  errorWith,
 } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { authorize, invalidatePermissionCache } from '../middleware/rbac.js';
 import { invalidateUserActiveCache } from '../plugins/auth.js';
 import { invalidateSiteAccessCache } from '../lib/site-access.js';
@@ -300,9 +301,9 @@ export function userRoutes(app: FastifyInstance): void {
         body: zodSchema(loginBody),
         response: {
           200: zodSchema(loginResponse),
-          400: errorResponse,
-          401: errorResponse,
-          403: errorResponse,
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          401: errorWith('Invalid credentials', [ERROR_CODES.INVALID_CREDENTIALS]),
+          403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
         },
       },
       config: {
@@ -452,7 +453,13 @@ export function userRoutes(app: FastifyInstance): void {
         summary: 'Refresh access token using refresh token cookie',
         operationId: 'refreshToken',
         security: [],
-        response: { 200: successResponse, 401: errorResponse },
+        response: {
+          200: successResponse,
+          401: errorWith('Unauthorized', [
+            ERROR_CODES.ACCOUNT_DISABLED,
+            ERROR_CODES.NO_REFRESH_TOKEN,
+          ]),
+        },
       },
       config: {
         rateLimit: {
@@ -639,7 +646,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'resetPassword',
         security: [],
         body: zodSchema(resetPasswordWithTokenBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+        },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     },
@@ -734,9 +744,9 @@ export function userRoutes(app: FastifyInstance): void {
         body: zodSchema(forceChangePasswordBody),
         response: {
           200: zodSchema(loginResponse),
-          400: errorResponse,
-          401: errorResponse,
-          403: errorResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+          401: errorWith('Invalid credentials', [ERROR_CODES.INVALID_CREDENTIALS]),
+          403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
         },
       },
       config: {
@@ -825,7 +835,10 @@ export function userRoutes(app: FastifyInstance): void {
         summary: 'Get the currently authenticated user',
         operationId: 'getCurrentUser',
         security: [{ bearerAuth: [] }],
-        response: { 200: itemResponse(userWithRole), 404: errorResponse },
+        response: {
+          200: itemResponse(userWithRole),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1057,7 +1070,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'getUser',
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
-        response: { 200: itemResponse(userItem), 404: errorResponse },
+        response: {
+          200: itemResponse(userItem),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1100,7 +1116,11 @@ export function userRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
         body: zodSchema(updateUserBody),
-        response: { 200: itemResponse(userItem), 403: errorResponse, 404: errorResponse },
+        response: {
+          200: itemResponse(userItem),
+          403: errorWith('Self edit forbidden', [ERROR_CODES.SELF_EDIT_FORBIDDEN]),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1223,7 +1243,11 @@ export function userRoutes(app: FastifyInstance): void {
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
         body: zodSchema(resetPasswordBody),
-        response: { 200: successResponse, 400: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1263,7 +1287,11 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'changePassword',
         security: [{ bearerAuth: [] }],
         body: zodSchema(changePasswordBody),
-        response: { 200: successResponse, 400: errorResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1314,7 +1342,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'deleteUser',
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
-        response: { 204: { type: 'null' as const }, 404: errorResponse },
+        response: {
+          204: { type: 'null' as const },
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1351,7 +1382,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'resendUserInvite',
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: {
+          200: successResponse,
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1456,7 +1490,16 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'verifyMfa',
         security: [],
         body: zodSchema(mfaVerifyBody),
-        response: { 200: zodSchema(loginResponse), 400: errorResponse, 401: errorResponse },
+        response: {
+          200: zodSchema(loginResponse),
+          400: errorWith('Bad request', [
+            ERROR_CODES.MFA_CHALLENGE_EXHAUSTED,
+            ERROR_CODES.MFA_NOT_CONFIGURED,
+            ERROR_CODES.MFA_TOKEN_INVALID,
+            ERROR_CODES.TOTP_NOT_CONFIGURED,
+          ]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
+        },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     },
@@ -1575,8 +1618,11 @@ export function userRoutes(app: FastifyInstance): void {
               })
               .passthrough(),
           ),
-          400: errorResponse,
-          401: errorResponse,
+          400: errorWith('Bad request', [
+            ERROR_CODES.MFA_NOT_CONFIGURED,
+            ERROR_CODES.MFA_TOKEN_INVALID,
+          ]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -1704,7 +1750,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'setupMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaSetupBody),
-        response: { 200: itemResponse(mfaSetupResponse), 400: errorResponse },
+        response: {
+          200: itemResponse(mfaSetupResponse),
+          400: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -1769,7 +1818,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'confirmMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaConfirmBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Totp not configured', [ERROR_CODES.TOTP_NOT_CONFIGURED]),
+        },
       },
     },
     async (request, reply) => {
@@ -1825,7 +1877,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'disableMfa',
         security: [{ bearerAuth: [] }],
         body: zodSchema(mfaDisableBody),
-        response: { 200: successResponse, 400: errorResponse },
+        response: {
+          200: successResponse,
+          400: errorWith('Bad request', [ERROR_CODES.INVALID_PASSWORD, ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2353,7 +2408,10 @@ export function userRoutes(app: FastifyInstance): void {
         operationId: 'getUserPermissions',
         security: [{ bearerAuth: [] }],
         params: zodSchema(userParams),
-        response: { 200: arrayResponse(z.string()), 404: errorResponse },
+        response: {
+          200: arrayResponse(z.string()),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
@@ -2388,9 +2446,9 @@ export function userRoutes(app: FastifyInstance): void {
         body: zodSchema(permissionsArraySchema),
         response: {
           200: arrayResponse(z.string()),
-          400: errorResponse,
-          403: errorResponse,
-          404: errorResponse,
+          400: errorWith('Invalid permissions', [ERROR_CODES.INVALID_PERMISSIONS]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          404: errorWith('User not found', [ERROR_CODES.USER_NOT_FOUND]),
         },
       },
     },

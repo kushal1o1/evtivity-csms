@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 import { db, ocpiExternalLocations } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
-import { errorResponse, arrayResponse } from '../../lib/response-schemas.js';
+import { arrayResponse, errorWith } from '../../lib/response-schemas.js';
+import { ERROR_CODES } from '../../lib/error-codes.generated.js';
 
 const roamingChargerItem = z
   .object({
@@ -163,7 +164,10 @@ export function portalRoamingChargerRoutes(app: FastifyInstance): void {
             connectorId: z.string().optional().describe('OCPI connector ID'),
           }),
         ),
-        response: { 404: errorResponse, 501: errorResponse },
+        response: {
+          404: errorWith('Location not found', [ERROR_CODES.LOCATION_NOT_FOUND]),
+          501: errorWith('Not implemented', [ERROR_CODES.NOT_IMPLEMENTED]),
+        },
       },
     },
     async (request, reply) => {

@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { eq, desc } from 'drizzle-orm';
 import { db, siteLoadManagement, chargingStations, loadAllocationLog } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
-import { errorResponse, itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import {
   getSitePowerStatus,
   buildSiteHierarchy,
@@ -282,7 +283,7 @@ export function loadManagementRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(siteLoadManagementRecord),
           201: itemResponse(siteLoadManagementRecord),
-          404: errorResponse,
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
         },
       },
     },
@@ -339,7 +340,10 @@ export function loadManagementRoutes(app: FastifyInstance): void {
         operationId: 'updateStationLoadPriority',
         security: [{ bearerAuth: [] }],
         body: zodSchema(patchPriorityBody),
-        response: { 200: itemResponse(loadPriorityItem), 404: errorResponse },
+        response: {
+          200: itemResponse(loadPriorityItem),
+          404: errorWith('Not found', [ERROR_CODES.NOT_FOUND]),
+        },
       },
     },
     async (request, reply) => {
