@@ -1,6 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, desc, sql, and, inArray } from 'drizzle-orm';
@@ -20,6 +21,7 @@ import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import { ALL_TEMPLATES_DIRS } from '../lib/template-dirs.js';
+import type { JwtPayload } from '../plugins/auth.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { config as apiConfig } from '../lib/config.js';
@@ -152,6 +154,17 @@ const paymentRecordItem = z
       .max(500)
       .nullable()
       .describe('Error message returned by Stripe when the payment failed'),
+    lastActorUserId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Operator user ID that performed the most recent action (refund, retry capture)'),
+    lastActionReason: z
+      .string()
+      .max(500)
+      .nullable()
+      .optional()
+      .describe('Reason recorded for the most recent operator action'),
     createdAt: z.coerce.date().describe('Timestamp when the payment record was created'),
     updatedAt: z.coerce.date().describe('Timestamp when the payment record was last updated'),
   })
@@ -300,6 +313,11 @@ const refundBody = z.object({
     .min(0)
     .optional()
     .describe('Partial refund amount in cents, defaults to full refund'),
+  reason: z
+    .string()
+    .max(500)
+    .optional()
+    .describe('Free-text reason recorded on the audit trail for this refund'),
 });
 
 // --- System Stripe settings ---
@@ -1079,7 +1097,12 @@ export function paymentRoutes(app: FastifyInstance): void {
         return updated;
       }
 
-      await capturePayment(config, record.stripePaymentIntentId, amountCents);
+      await capturePayment(
+        config,
+        record.stripePaymentIntentId,
+        amountCents,
+        `capture_${String(record.id)}`,
+      );
       const [updated] = await db
         .update(paymentRecords)
         .set({
@@ -1102,81 +1125,128 @@ export function paymentRoutes(app: FastifyInstance): void {
         tags: ['Payments'],
         summary: 'Refund a captured payment for a session',
         description:
-          'Issues a Stripe refund against the payment record for the session. Supports partial refunds via amountCents; defaults to a full refund. Updates the payment record to refunded or partially_refunded and writes an audit log entry on success. Returns 409 if the payment is not refundable (uncaptured, already fully refunded).',
+          'Issues a Stripe refund against the payment record for the session. Supports partial refunds via amountCents; defaults to a full refund of the remaining captured balance. Validates that the requested refund does not exceed the unrefunded captured amount. Locks the payment record row with SELECT FOR UPDATE so a concurrent capture or refund cannot interleave. Returns 409 REFUND_EXCEEDS_REMAINING when the requested amount is greater than what is still refundable.',
         operationId: 'refundSessionPayment',
         security: [{ bearerAuth: [] }],
         params: zodSchema(sessionIdParams),
         body: zodSchema(refundBody),
-        response: { 200: itemResponse(paymentRecordItem), 400: errorResponse },
+        response: {
+          200: itemResponse(paymentRecordItem),
+          400: errorResponse,
+          409: errorResponse,
+        },
       },
     },
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof sessionIdParams>;
       const body = request.body as z.infer<typeof refundBody>;
+      const { userId } = request.user as JwtPayload;
 
-      const [record] = await db
-        .select()
-        .from(paymentRecords)
-        .where(eq(paymentRecords.sessionId, id));
+      // Lock the payment record for the duration of the refund so a concurrent
+      // capture or refund can't read a stale captured/refunded amount and
+      // double-spend.
+      const updated = await db.transaction(async (tx) => {
+        const lockedRows = await tx.execute<{
+          id: number;
+          status: string;
+          stripe_payment_intent_id: string | null;
+          captured_amount_cents: number | null;
+          refunded_amount_cents: number;
+          driver_id: string | null;
+          currency: string;
+          session_id: string | null;
+        }>(sql`
+          SELECT id, status, stripe_payment_intent_id, captured_amount_cents,
+                 refunded_amount_cents, driver_id, currency, session_id
+          FROM payment_records
+          WHERE session_id = ${id}
+          FOR UPDATE
+        `);
+        const locked = lockedRows[0];
 
-      if (record == null || record.status !== 'captured') {
-        await reply.status(400).send({
-          error: 'No captured payment to refund',
-          code: 'NO_CAPTURED_PAYMENT',
-        });
-        return;
-      }
+        if (
+          locked == null ||
+          (locked.status !== 'captured' && locked.status !== 'partially_refunded')
+        ) {
+          await reply.status(400).send({
+            error: 'No captured payment to refund',
+            code: 'NO_CAPTURED_PAYMENT',
+          });
+          return null;
+        }
+        if (locked.stripe_payment_intent_id == null) {
+          await reply.status(400).send({
+            error: 'Payment intent missing',
+            code: 'MISSING_PAYMENT_INTENT',
+          });
+          return null;
+        }
 
-      if (record.stripePaymentIntentId == null) {
-        await reply.status(400).send({
-          error: 'Payment intent missing',
-          code: 'MISSING_PAYMENT_INTENT',
-        });
-        return;
-      }
+        const captured = locked.captured_amount_cents ?? 0;
+        const alreadyRefunded = locked.refunded_amount_cents;
+        const remaining = captured - alreadyRefunded;
+        const requestedAmount = body.amountCents ?? remaining;
+        if (requestedAmount <= 0 || requestedAmount > remaining) {
+          await reply.status(409).send({
+            error: `Refund amount ${String(requestedAmount)} exceeds remaining refundable balance ${String(remaining)}`,
+            code: 'REFUND_EXCEEDS_REMAINING',
+          });
+          return null;
+        }
 
-      const [station] = await db
-        .select({ siteId: chargingStations.siteId })
-        .from(chargingStations)
-        .innerJoin(chargingSessions, eq(chargingSessions.stationId, chargingStations.id))
-        .where(eq(chargingSessions.id, id));
+        const [station] = await tx
+          .select({ siteId: chargingStations.siteId })
+          .from(chargingStations)
+          .innerJoin(chargingSessions, eq(chargingSessions.stationId, chargingStations.id))
+          .where(eq(chargingSessions.id, id));
 
-      const config = await getStripeConfig(station?.siteId ?? null);
-      if (config == null) {
-        await reply.status(400).send({
-          error: 'No Stripe configuration available',
-          code: 'STRIPE_NOT_CONFIGURED',
-        });
-        return;
-      }
+        const config = await getStripeConfig(station?.siteId ?? null);
+        if (config == null) {
+          await reply.status(400).send({
+            error: 'No Stripe configuration available',
+            code: 'STRIPE_NOT_CONFIGURED',
+          });
+          return null;
+        }
 
-      await createRefund(config, record.stripePaymentIntentId, body.amountCents);
+        const refundRequestId = crypto.randomUUID();
+        await createRefund(
+          config,
+          locked.stripe_payment_intent_id,
+          requestedAmount,
+          refundRequestId,
+        );
 
-      const refundedTotal =
-        record.refundedAmountCents + (body.amountCents ?? record.capturedAmountCents ?? 0);
-      const isFullRefund = refundedTotal >= (record.capturedAmountCents ?? 0);
+        const refundedTotal = alreadyRefunded + requestedAmount;
+        const isFullRefund = refundedTotal >= captured;
 
-      const [updated] = await db
-        .update(paymentRecords)
-        .set({
-          status: isFullRefund ? 'refunded' : 'partially_refunded',
-          refundedAmountCents: refundedTotal,
-          updatedAt: new Date(),
-        })
-        .where(eq(paymentRecords.id, record.id))
-        .returning();
+        const [row] = await tx
+          .update(paymentRecords)
+          .set({
+            status: isFullRefund ? 'refunded' : 'partially_refunded',
+            refundedAmountCents: refundedTotal,
+            lastActorUserId: userId,
+            lastActionReason: body.reason ?? (isFullRefund ? 'Full refund' : 'Partial refund'),
+            updatedAt: new Date(),
+          })
+          .where(eq(paymentRecords.id, locked.id))
+          .returning();
+        return row;
+      });
+
+      if (updated == null) return;
 
       // Driver notification: payment refunded
-      if (record.driverId != null) {
+      if (updated.driverId != null) {
         try {
           void dispatchDriverNotification(
             client,
             'payment.Refunded',
-            record.driverId,
+            updated.driverId,
             {
-              amountCents: body.amountCents ?? record.capturedAmountCents ?? 0,
-              currency: record.currency,
-              transactionId: record.sessionId,
+              amountCents: body.amountCents ?? updated.capturedAmountCents ?? 0,
+              currency: updated.currency,
+              transactionId: updated.sessionId,
             },
             ALL_TEMPLATES_DIRS,
             getPubSub(),
@@ -1218,6 +1288,146 @@ export function paymentRoutes(app: FastifyInstance): void {
         return;
       }
       return record;
+    },
+  );
+
+  app.post(
+    '/payments/:id/retry-capture',
+    {
+      onRequest: [authorize('payments:write')],
+      schema: {
+        tags: ['Payments'],
+        summary: 'Retry capture or top-up for a payment record',
+        description:
+          'Re-attempts capture for a payment record where the final cost exceeded the pre-auth and the top-up PaymentIntent previously failed (status=captured AND captured_amount_cents < session.final_cost_cents). Creates a new PaymentIntent for the unpaid delta and captures it. Returns 409 PAYMENT_RECORD_NOT_RECOVERABLE when the record has no shortfall or is in an unsupported state.',
+        operationId: 'retryPaymentCapture',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(z.object({ id: z.coerce.number().int().min(1) })),
+        response: {
+          200: itemResponse(paymentRecordItem),
+          404: errorResponse,
+          409: errorResponse,
+          502: errorResponse,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: number };
+      const { userId } = request.user as JwtPayload;
+
+      const [record] = await db.select().from(paymentRecords).where(eq(paymentRecords.id, id));
+
+      if (record == null) {
+        await reply.status(404).send({ error: 'Payment not found', code: 'PAYMENT_NOT_FOUND' });
+        return;
+      }
+      if (record.stripePaymentIntentId == null) {
+        await reply.status(409).send({
+          error: 'Payment has no Stripe intent',
+          code: 'PAYMENT_RECORD_NOT_RECOVERABLE',
+        });
+        return;
+      }
+
+      // Look up the session's final cost to know the target amount.
+      const sessionId = record.sessionId;
+      if (sessionId == null) {
+        await reply.status(409).send({
+          error: 'Payment is not linked to a session',
+          code: 'PAYMENT_RECORD_NOT_RECOVERABLE',
+        });
+        return;
+      }
+      const [sessionRow] = await db.execute<{
+        final_cost_cents: number | null;
+        site_id: string | null;
+      }>(sql`
+        SELECT cs.final_cost_cents, cs2.site_id
+        FROM charging_sessions cs
+        JOIN charging_stations cs2 ON cs2.id = cs.station_id
+        WHERE cs.id = ${sessionId}
+      `);
+      const finalCostCents = sessionRow?.final_cost_cents ?? 0;
+      const captured = record.capturedAmountCents ?? 0;
+      const shortfall = finalCostCents - captured;
+      if (shortfall <= 0) {
+        await reply.status(409).send({
+          error: 'No shortfall to recover',
+          code: 'PAYMENT_RECORD_NOT_RECOVERABLE',
+        });
+        return;
+      }
+
+      const config = await getStripeConfig(sessionRow?.site_id ?? null);
+      if (config == null) {
+        await reply.status(409).send({
+          error: 'Stripe not configured',
+          code: 'STRIPE_NOT_CONFIGURED',
+        });
+        return;
+      }
+
+      let topUpId: string;
+      try {
+        const origIntent = await config.stripe.paymentIntents.retrieve(
+          record.stripePaymentIntentId,
+        );
+        const customerId =
+          typeof origIntent.customer === 'string'
+            ? origIntent.customer
+            : (origIntent.customer?.id ?? null);
+        const pmId =
+          typeof origIntent.payment_method === 'string'
+            ? origIntent.payment_method
+            : (origIntent.payment_method?.id ?? null);
+        if (customerId == null || pmId == null) {
+          throw new Error('Original PaymentIntent missing customer or payment_method');
+        }
+        const params: Record<string, unknown> = {
+          amount: shortfall,
+          currency: record.currency.toLowerCase(),
+          customer: customerId,
+          payment_method: pmId,
+          confirm: true,
+          off_session: true,
+          capture_method: 'automatic',
+          description: `Retry top-up for session ${sessionId}`,
+        };
+        if (origIntent.on_behalf_of != null) {
+          params['on_behalf_of'] = origIntent.on_behalf_of;
+          params['transfer_data'] = {
+            destination:
+              typeof origIntent.on_behalf_of === 'string'
+                ? origIntent.on_behalf_of
+                : origIntent.on_behalf_of.id,
+          };
+        }
+        const topUp = await config.stripe.paymentIntents.create(
+          params as unknown as Parameters<typeof config.stripe.paymentIntents.create>[0],
+          { idempotencyKey: `topup_retry_${String(record.id)}_${String(captured)}` },
+        );
+        topUpId = topUp.id;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message.slice(0, 400) : 'Top-up failed';
+        await reply.status(502).send({
+          error: `Stripe rejected top-up: ${message}`,
+          code: 'STRIPE_TOP_UP_FAILED',
+        });
+        return;
+      }
+
+      const [updated] = await db
+        .update(paymentRecords)
+        .set({
+          capturedAmountCents: finalCostCents,
+          failureReason: null,
+          lastActorUserId: userId,
+          lastActionReason: `Operator retry top-up; recovered ${String(shortfall)}c via ${topUpId}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentRecords.id, record.id))
+        .returning();
+      return updated;
     },
   );
 

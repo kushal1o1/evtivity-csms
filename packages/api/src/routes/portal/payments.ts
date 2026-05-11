@@ -3,7 +3,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '@evtivity/database';
 import { drivers, driverPaymentMethods } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
@@ -21,10 +21,7 @@ import {
   detachPaymentMethod,
   retrievePaymentMethod,
 } from '../../services/stripe.service.js';
-
-function isSimulatedCustomer(stripeCustomerId: string): boolean {
-  return stripeCustomerId.startsWith('cus_sim_');
-}
+import { isSimulatedCustomer } from '@evtivity/lib';
 
 const paymentMethodItem = z
   .object({
@@ -281,10 +278,12 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
       schema: {
         tags: ['Portal Payments'],
         summary: 'Delete a saved payment method',
+        description:
+          'Removes a saved payment method. Returns 409 PAYMENT_METHOD_IN_USE if the method is still attached to an active or pre-authorized session, since deleting it would orphan the in-flight Stripe PaymentIntent.',
         operationId: 'portalDeletePaymentMethod',
         security: [{ bearerAuth: [] }],
         params: zodSchema(paymentMethodParams),
-        response: { 200: successResponse, 404: errorResponse },
+        response: { 200: successResponse, 404: errorResponse, 409: errorResponse },
       },
     },
     async (request, reply) => {
@@ -300,6 +299,29 @@ export function portalPaymentRoutes(app: FastifyInstance): void {
         await reply.status(404).send({
           error: 'Payment method not found',
           code: 'PAYMENT_METHOD_NOT_FOUND',
+        });
+        return;
+      }
+
+      // Block delete when THIS specific PM is tied to an active or
+      // pre-authorized session. Match on stripe_payment_method_id (not
+      // stripe_customer_id) because a single Stripe customer can have
+      // multiple cards saved -- blocking on customer match would prevent
+      // deleting an unrelated card while another one had an in-flight
+      // pre-auth.
+      const inUse = await db.execute<{ count: number }>(sql`
+        SELECT COUNT(*)::int AS count
+        FROM payment_records pr
+        JOIN charging_sessions cs ON cs.id = pr.session_id
+        WHERE pr.driver_id = ${driverId}
+          AND pr.stripe_payment_method_id = ${method.stripePaymentMethodId}
+          AND pr.status IN ('pending', 'pre_authorized')
+          AND cs.status = 'active'
+      `);
+      if ((inUse[0]?.count ?? 0) > 0) {
+        await reply.status(409).send({
+          error: 'Payment method is in use by an active charging session',
+          code: 'PAYMENT_METHOD_IN_USE',
         });
         return;
       }

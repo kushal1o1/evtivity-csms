@@ -14,7 +14,7 @@ import {
   fleetDrivers,
   chargingStations,
 } from '@evtivity/database';
-import { resolveActiveTariff } from '@evtivity/lib';
+import { resolveActiveTariff, isTariffFree as isTariffFreeShared } from '@evtivity/lib';
 import type { TariffRestrictions, TariffWithRestrictions } from '@evtivity/lib';
 
 export interface ResolvedTariff {
@@ -105,13 +105,7 @@ async function loadHolidays(): Promise<Date[]> {
 }
 
 export function isTariffFree(tariff: ResolvedTariff | null): boolean {
-  if (tariff == null) return true;
-  return (
-    (tariff.pricePerKwh == null || Number(tariff.pricePerKwh) === 0) &&
-    (tariff.pricePerMinute == null || Number(tariff.pricePerMinute) === 0) &&
-    (tariff.pricePerSession == null || Number(tariff.pricePerSession) === 0) &&
-    (tariff.idleFeePricePerMinute == null || Number(tariff.idleFeePricePerMinute) === 0)
-  );
+  return isTariffFreeShared(tariff);
 }
 
 export async function resolveTariff(

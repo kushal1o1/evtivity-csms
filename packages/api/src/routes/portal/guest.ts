@@ -554,7 +554,9 @@ export function portalGuestRoutes(app: FastifyInstance): void {
             }
           }
 
-          paymentIntent = await config.stripe.paymentIntents.create(piParams);
+          paymentIntent = await config.stripe.paymentIntents.create(piParams, {
+            idempotencyKey: `guest_preauth_${sessionToken}`,
+          });
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : 'Payment failed';
           await reply.status(400).send({ error: message, code: 'PAYMENT_FAILED' });

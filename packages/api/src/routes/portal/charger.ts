@@ -29,10 +29,7 @@ import { assertReservationsAllowed } from '../../lib/reservation-eligibility.js'
 import { isStationCheckRateLimited } from '../../lib/rate-limiters.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 import { getStripeConfig, createPreAuthorization } from '../../services/stripe.service.js';
-
-function isSimulatedCustomer(stripeCustomerId: string): boolean {
-  return stripeCustomerId.startsWith('cus_sim_');
-}
+import { isSimulatedCustomer } from '@evtivity/lib';
 import { resolveTariff, isTariffFree } from '../../services/tariff.service.js';
 import { dispatchDriverNotification } from '@evtivity/lib';
 import { ALL_TEMPLATES_DIRS } from '../../lib/template-dirs.js';
@@ -1604,11 +1601,13 @@ export function portalChargerRoutes(app: FastifyInstance): void {
             config,
             pmForPreAuth.stripeCustomerId,
             pmForPreAuth.stripePaymentMethodId,
+            undefined,
+            `preauth_${session.id}`,
           );
           await db.execute(sql`
             INSERT INTO payment_records (
               session_id, driver_id, site_payment_config_id,
-              stripe_payment_intent_id, stripe_customer_id,
+              stripe_payment_intent_id, stripe_customer_id, stripe_payment_method_id,
               payment_source, currency, pre_auth_amount_cents, status
             )
             VALUES (
@@ -1617,6 +1616,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
               ${config.configId},
               ${paymentIntent.id},
               ${pmForPreAuth.stripeCustomerId},
+              ${pmForPreAuth.stripePaymentMethodId},
               'web_portal',
               ${config.currency},
               ${config.preAuthAmountCents},
@@ -1634,13 +1634,15 @@ export function portalChargerRoutes(app: FastifyInstance): void {
             await db.execute(sql`
               INSERT INTO payment_records (
                 session_id, driver_id, site_payment_config_id,
-                stripe_customer_id, payment_source, currency, status, failure_reason
+                stripe_customer_id, stripe_payment_method_id,
+                payment_source, currency, status, failure_reason
               )
               VALUES (
                 ${session.id},
                 ${driverId},
                 ${config.configId},
                 ${pmForPreAuth.stripeCustomerId},
+                ${pmForPreAuth.stripePaymentMethodId},
                 'web_portal',
                 ${config.currency},
                 'failed',

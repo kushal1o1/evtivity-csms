@@ -16,10 +16,17 @@ const VALID_PM_ID = '1';
 
 let dbResults: unknown[][] = [];
 let dbCallIndex = 0;
+let dbExecuteResults: unknown[][] = [];
+let dbExecuteCallIndex = 0;
 
 function setupDbResults(...results: unknown[][]) {
   dbResults = results;
   dbCallIndex = 0;
+}
+
+function setupDbExecuteResults(...results: unknown[][]) {
+  dbExecuteResults = results;
+  dbExecuteCallIndex = 0;
 }
 
 function makeChain() {
@@ -75,22 +82,32 @@ vi.mock('../middleware/rbac.js', () => ({
   invalidatePermissionCache: vi.fn(),
 }));
 
-vi.mock('@evtivity/database', () => ({
-  db: {
+vi.mock('@evtivity/database', () => {
+  const dbMock: Record<string, unknown> = {
     select: vi.fn(() => makeChain()),
     insert: vi.fn(() => makeChain()),
     update: vi.fn(() => makeChain()),
     delete: vi.fn(() => makeChain()),
-  },
-  sitePaymentConfigs: {},
-  driverPaymentMethods: {},
-  paymentRecords: {},
-  paymentReconciliationRuns: {},
-  chargingSessions: {},
-  settings: {},
-  drivers: {},
-  chargingStations: {},
-}));
+    execute: vi.fn(async () => {
+      const r = dbExecuteResults[dbExecuteCallIndex] ?? [];
+      dbExecuteCallIndex++;
+      return r;
+    }),
+    transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(dbMock)),
+  };
+  return {
+    db: dbMock,
+    client: {},
+    sitePaymentConfigs: {},
+    driverPaymentMethods: {},
+    paymentRecords: {},
+    paymentReconciliationRuns: {},
+    chargingSessions: {},
+    settings: {},
+    drivers: {},
+    chargingStations: {},
+  };
+});
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
@@ -164,6 +181,8 @@ describe('Payment routes - handler logic', () => {
   beforeEach(() => {
     dbResults = [];
     dbCallIndex = 0;
+    dbExecuteResults = [];
+    dbExecuteCallIndex = 0;
     vi.clearAllMocks();
     process.env['SETTINGS_ENCRYPTION_KEY'] = 'test-encryption-key-1234567890ab';
   });
@@ -778,15 +797,18 @@ describe('Payment routes - handler logic', () => {
 
   describe('POST /v1/sessions/:id/refund', () => {
     it('creates refund and returns updated record', async () => {
-      const record = {
+      // Production code locks the payment_records row via raw SQL SELECT FOR
+      // UPDATE inside a db.transaction. The execute mock returns the locked
+      // row; the chain mocks then handle the station lookup and final update.
+      const lockedRow = {
         id: 'pay-1',
-        sessionId: VALID_SESSION_ID,
         status: 'captured',
-        stripePaymentIntentId: 'pi_test_123',
-        capturedAmountCents: 1500,
-        refundedAmountCents: 0,
-        driverId: VALID_DRIVER_ID,
+        stripe_payment_intent_id: 'pi_test_123',
+        captured_amount_cents: 1500,
+        refunded_amount_cents: 0,
+        driver_id: VALID_DRIVER_ID,
         currency: 'USD',
+        session_id: VALID_SESSION_ID,
       };
       const updated = {
         id: 'pay-1',
@@ -806,8 +828,8 @@ describe('Payment routes - handler logic', () => {
         updatedAt: '2024-01-01T00:00:00.000Z',
       };
 
+      setupDbExecuteResults([lockedRow]);
       setupDbResults(
-        [record], // find captured record
         [{ siteId: 'site-1' }], // station lookup
         [updated], // update record
       );
@@ -824,7 +846,8 @@ describe('Payment routes - handler logic', () => {
     });
 
     it('returns 400 when no captured payment', async () => {
-      setupDbResults([]);
+      setupDbExecuteResults([]);
+      setupDbResults();
 
       const response = await app.inject({
         method: 'POST',
@@ -838,16 +861,19 @@ describe('Payment routes - handler logic', () => {
     });
 
     it('returns 400 when payment intent missing on refund', async () => {
-      setupDbResults([
+      setupDbExecuteResults([
         {
           id: 'pay-1',
-          sessionId: VALID_SESSION_ID,
           status: 'captured',
-          stripePaymentIntentId: null,
-          capturedAmountCents: 1000,
-          refundedAmountCents: 0,
+          stripe_payment_intent_id: null,
+          captured_amount_cents: 1000,
+          refunded_amount_cents: 0,
+          driver_id: null,
+          currency: 'USD',
+          session_id: VALID_SESSION_ID,
         },
       ]);
+      setupDbResults();
 
       const response = await app.inject({
         method: 'POST',
@@ -858,6 +884,32 @@ describe('Payment routes - handler logic', () => {
 
       expect(response.statusCode).toBe(400);
       expect(response.json().code).toBe('MISSING_PAYMENT_INTENT');
+    });
+
+    it('returns 409 REFUND_EXCEEDS_REMAINING when amount exceeds remaining', async () => {
+      // New code path: validates requestedAmount > remaining and returns 409.
+      const lockedRow = {
+        id: 'pay-1',
+        status: 'captured',
+        stripe_payment_intent_id: 'pi_test_123',
+        captured_amount_cents: 1500,
+        refunded_amount_cents: 0,
+        driver_id: VALID_DRIVER_ID,
+        currency: 'USD',
+        session_id: VALID_SESSION_ID,
+      };
+      setupDbExecuteResults([lockedRow]);
+      setupDbResults();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/sessions/${VALID_SESSION_ID}/refund`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { amountCents: 9999 },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().code).toBe('REFUND_EXCEEDS_REMAINING');
     });
   });
 

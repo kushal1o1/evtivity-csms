@@ -105,6 +105,11 @@ vi.mock('@evtivity/lib', async () => {
 const mockStripePaymentIntentsCreate = vi.fn().mockResolvedValue({ id: 'pi_test' });
 const mockStripePaymentIntentsCapture = vi.fn().mockResolvedValue({});
 const mockStripePaymentIntentsCancel = vi.fn().mockResolvedValue({});
+const mockStripePaymentIntentsRetrieve = vi.fn().mockResolvedValue({
+  customer: 'cus_test',
+  payment_method: 'pm_test',
+  on_behalf_of: null,
+});
 
 vi.mock('stripe', () => ({
   default: class MockStripe {
@@ -112,6 +117,7 @@ vi.mock('stripe', () => ({
       create: mockStripePaymentIntentsCreate,
       capture: mockStripePaymentIntentsCapture,
       cancel: mockStripePaymentIntentsCancel,
+      retrieve: mockStripePaymentIntentsRetrieve,
     };
   },
 }));
@@ -2196,7 +2202,24 @@ describe('Event projections - coverage expansion', () => {
             stripe_payment_method_id: 'pm_test',
           },
         ], // SELECT driver_payment_methods
-        [{ is_free: false }], // isTariffFreeForStation
+        // isTariffFreeForStation now uses resolveActiveTariff: 3 sequential queries
+        [{ id: 'pg-1' }], // groupRows (pricing group resolved)
+        [
+          {
+            id: 'tariff-paid',
+            currency: 'USD',
+            price_per_kwh: '0.30',
+            price_per_minute: null,
+            price_per_session: null,
+            idle_fee_price_per_minute: null,
+            reservation_fee_per_minute: null,
+            tax_rate: null,
+            restrictions: null,
+            priority: 0,
+            is_default: true,
+          },
+        ], // tariffRows (paid tariff)
+        [], // holidayRows
         [
           { key: 'stripe.currency', value: 'USD' },
           { key: 'stripe.preAuthAmountCents', value: 5000 },
@@ -2444,7 +2467,24 @@ describe('Event projections - coverage expansion', () => {
         [{ name: null }], // resolveSiteName
         // runPaymentGate (no session query needed)
         [{ id: 'pm-1', stripe_customer_id: 'cus_1', stripe_payment_method_id: 'pm_1' }],
-        [{ is_free: false }], // isTariffFreeForStation
+        // isTariffFreeForStation: 3 queries
+        [{ id: 'pg-1' }], // groupRows
+        [
+          {
+            id: 'tariff-paid',
+            currency: 'USD',
+            price_per_kwh: '0.30',
+            price_per_minute: null,
+            price_per_session: null,
+            idle_fee_price_per_minute: null,
+            reservation_fee_per_minute: null,
+            tax_rate: null,
+            restrictions: null,
+            priority: 0,
+            is_default: true,
+          },
+        ], // tariffRows
+        [], // holidayRows
         [], // SELECT platform settings (currency + preAuthAmountCents) - empty uses defaults
         // No site override (site_id is null, so query is skipped)
         [], // SELECT payment_records guard (no existing record)
@@ -2532,9 +2572,24 @@ describe('Event projections - coverage expansion', () => {
           },
         ],
         // isTariffFreeForStation -- a paid tariff so the payment gate proceeds.
-        // Empty rows would resolve as free (no tariff configured), short-circuiting
-        // runPaymentGate before the INSERT.
-        [{ is_free: false }],
+        // 3 queries: group, tariffs, holidays.
+        [{ id: 'pg-1' }], // groupRows
+        [
+          {
+            id: 'tariff-paid',
+            currency: 'USD',
+            price_per_kwh: '0.30',
+            price_per_minute: null,
+            price_per_session: null,
+            idle_fee_price_per_minute: null,
+            reservation_fee_per_minute: null,
+            tax_rate: null,
+            restrictions: null,
+            priority: 0,
+            is_default: true,
+          },
+        ], // tariffRows
+        [], // holidayRows
         [], // SELECT platform settings (currency + preAuthAmountCents) - defaults used
         // No site override (site_id is null)
         [], // SELECT payment_records guard (no existing record)
@@ -2597,7 +2652,24 @@ describe('Event projections - coverage expansion', () => {
         [{ name: 'Site Stripe' }], // resolveSiteName
         // runPaymentGate (no session query needed)
         [{ id: 'pm-1', stripe_customer_id: 'cus_site', stripe_payment_method_id: 'pm_site' }],
-        [{ is_free: false }], // isTariffFreeForStation
+        // isTariffFreeForStation: 3 queries
+        [{ id: 'pg-1' }], // groupRows
+        [
+          {
+            id: 'tariff-paid',
+            currency: 'USD',
+            price_per_kwh: '0.30',
+            price_per_minute: null,
+            price_per_session: null,
+            idle_fee_price_per_minute: null,
+            reservation_fee_per_minute: null,
+            tax_rate: null,
+            restrictions: null,
+            priority: 0,
+            is_default: true,
+          },
+        ], // tariffRows
+        [], // holidayRows
         [], // SELECT platform settings (defaults used)
         [
           {
@@ -2637,6 +2709,7 @@ describe('Event projections - coverage expansion', () => {
           transfer_data: { destination: 'acct_connected' },
           application_fee_amount: 1000,
         }),
+        expect.objectContaining({ idempotencyKey: expect.stringMatching(/^preauth_/) }),
       );
     });
 
@@ -2748,8 +2821,24 @@ describe('Event projections - coverage expansion', () => {
       // runPaymentGate (no session query needed)
       // SELECT driver_payment_methods (empty)
       sqlResults[16] = [];
-      // isTariffFreeForStation (single CTE query, returns not free)
-      sqlResults[17] = [{ is_free: false }];
+      // isTariffFreeForStation: 3 sequential queries (group, tariffs, holidays)
+      sqlResults[17] = [{ id: 'pg-1' }]; // groupRows
+      sqlResults[18] = [
+        {
+          id: 'tariff-paid',
+          currency: 'USD',
+          price_per_kwh: '0.30',
+          price_per_minute: null,
+          price_per_session: null,
+          idle_fee_price_per_minute: null,
+          reservation_fee_per_minute: null,
+          tax_rate: null,
+          restrictions: null,
+          priority: 0,
+          is_default: true,
+        },
+      ]; // tariffRows
+      sqlResults[19] = []; // holidayRows
 
       await eventBus.emit(
         'ocpp.TransactionEvent',
@@ -2824,8 +2913,24 @@ describe('Event projections - coverage expansion', () => {
       // runPaymentGate (no session query needed)
       // SELECT driver_payment_methods (empty)
       sqlResults[15] = [];
-      // isTariffFreeForStation (returns free)
-      sqlResults[16] = [{ is_free: true }];
+      // isTariffFreeForStation: 3 sequential queries (group, tariffs, holidays)
+      sqlResults[16] = [{ id: 'pg-free' }]; // groupRows
+      sqlResults[17] = [
+        {
+          id: 'tariff-free',
+          currency: 'USD',
+          price_per_kwh: '0',
+          price_per_minute: null,
+          price_per_session: null,
+          idle_fee_price_per_minute: null,
+          reservation_fee_per_minute: null,
+          tax_rate: null,
+          restrictions: null,
+          priority: 0,
+          is_default: true,
+        },
+      ]; // tariffRows (free)
+      sqlResults[18] = []; // holidayRows
 
       await eventBus.emit(
         'ocpp.TransactionEvent',
@@ -3009,12 +3114,16 @@ describe('Event projections - coverage expansion', () => {
             id: 'pr-1',
             stripe_payment_intent_id: 'pi_capture_test',
             driver_id: 'driver-capture',
+            pre_auth_amount_cents: 2000,
           },
         ], // 8: SELECT payment_records (now includes driver_id)
         [{ value: 'encrypted-key' }], // 9: SELECT settings (secretKeyEnc)
-        [], // 10: UPDATE payment_records
-        [{ driver_id: 'driver-capture' }], // 11: SELECT driver_id for notification
-        [{ station_ocpp_id: 'CS-001', currency: 'USD', station_uuid: 'sta_000000000001' }], // 12: SELECT for notification
+        // New: captureSession query is fetched BEFORE the capture call so the
+        // top-up path knows which currency to use.
+        [{ station_ocpp_id: 'CS-001', currency: 'USD', station_uuid: 'sta_000000000001' }], // 10: SELECT captureSession (station_ocpp_id, currency, station_uuid)
+        [], // 11: UPDATE payment_records
+        [{ driver_id: 'driver-capture' }], // 12: SELECT driver_id for notification
+        [{ name: null }], // 13: resolveSiteName lookup
       );
 
       await eventBus.emit(
@@ -3029,9 +3138,11 @@ describe('Event projections - coverage expansion', () => {
         }),
       );
 
-      expect(mockStripePaymentIntentsCapture).toHaveBeenCalledWith('pi_capture_test', {
-        amount_to_capture: 2000,
-      });
+      expect(mockStripePaymentIntentsCapture).toHaveBeenCalledWith(
+        'pi_capture_test',
+        { amount_to_capture: 2000 },
+        { idempotencyKey: 'capture_pr-1' },
+      );
       expect(mockDispatchDriver).toHaveBeenCalledWith(
         expect.anything(),
         'session.PaymentReceived',

@@ -46,6 +46,12 @@ export { calculateSessionCost, calculateSplitSessionCost } from './cost-calculat
 export type { TariffInput, CostBreakdown, TariffSegment } from './cost-calculator.js';
 
 export {
+  isSimulatedCustomer,
+  shouldSimulatePaymentFailure,
+  isTariffFree,
+} from './payment-helpers.js';
+
+export {
   tariffRestrictionsSchema,
   derivePriority,
   tariffMatchesNow,

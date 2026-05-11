@@ -251,15 +251,18 @@ describe('stripe.service', () => {
       const config = makeConfig();
       await createPreAuthorization(config, 'cus_123', 'pm_456');
 
-      expect(mockStripeInstance.paymentIntents.create).toHaveBeenCalledWith({
-        amount: 5000,
-        currency: 'usd',
-        customer: 'cus_123',
-        payment_method: 'pm_456',
-        capture_method: 'manual',
-        confirm: true,
-        off_session: true,
-      });
+      expect(mockStripeInstance.paymentIntents.create).toHaveBeenCalledWith(
+        {
+          amount: 5000,
+          currency: 'usd',
+          customer: 'cus_123',
+          payment_method: 'pm_456',
+          capture_method: 'manual',
+          confirm: true,
+          off_session: true,
+        },
+        undefined,
+      );
     });
 
     it('includes connected account and platform fee when configured', async () => {
@@ -277,6 +280,21 @@ describe('stripe.service', () => {
           transfer_data: { destination: 'acct_connected' },
           application_fee_amount: 1000,
         }),
+        undefined,
+      );
+    });
+
+    it('passes idempotencyKey when provided', async () => {
+      const config = makeConfig();
+      await createPreAuthorization(config, 'cus_123', 'pm_456', undefined, 'preauth_abc123');
+
+      expect(mockStripeInstance.paymentIntents.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 5000,
+          customer: 'cus_123',
+          payment_method: 'pm_456',
+        }),
+        { idempotencyKey: 'preauth_abc123' },
       );
     });
   });
@@ -294,9 +312,30 @@ describe('stripe.service', () => {
       };
       await capturePayment(config, 'pi_test', 3500);
 
-      expect(mockStripeInstance.paymentIntents.capture).toHaveBeenCalledWith('pi_test', {
-        amount_to_capture: 3500,
-      });
+      expect(mockStripeInstance.paymentIntents.capture).toHaveBeenCalledWith(
+        'pi_test',
+        { amount_to_capture: 3500 },
+        undefined,
+      );
+    });
+
+    it('passes idempotencyKey when provided', async () => {
+      const config = {
+        stripe: mockStripeInstance as unknown as StripeConfig['stripe'],
+        publishableKey: 'pk_test',
+        currency: 'USD',
+        preAuthAmountCents: 5000,
+        configId: null,
+        connectedAccountId: null,
+        platformFeePercent: 0,
+      };
+      await capturePayment(config, 'pi_test', 3500, 'capture_xyz789');
+
+      expect(mockStripeInstance.paymentIntents.capture).toHaveBeenCalledWith(
+        'pi_test',
+        { amount_to_capture: 3500 },
+        { idempotencyKey: 'capture_xyz789' },
+      );
     });
   });
 
@@ -315,7 +354,7 @@ describe('stripe.service', () => {
       await createRefund(config, 'pi_test');
       expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
         { payment_intent: 'pi_test' },
-        { idempotencyKey: 'refund_pi_test_full' },
+        { idempotencyKey: expect.stringMatching(/^refund_pi_test_/) },
       );
     });
 
@@ -323,8 +362,27 @@ describe('stripe.service', () => {
       await createRefund(config, 'pi_test', 2000);
       expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
         { payment_intent: 'pi_test', amount: 2000 },
-        { idempotencyKey: 'refund_pi_test_2000' },
+        { idempotencyKey: expect.stringMatching(/^refund_pi_test_/) },
       );
+    });
+
+    it('uses requestId in idempotency key when provided', async () => {
+      await createRefund(config, 'pi_test', 2000, 'req_abc123');
+      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+        { payment_intent: 'pi_test', amount: 2000 },
+        { idempotencyKey: 'refund_pi_test_req_abc123' },
+      );
+    });
+
+    it('generates unique idempotency keys per call when requestId is omitted', async () => {
+      await createRefund(config, 'pi_test');
+      await createRefund(config, 'pi_test');
+      const calls = mockStripeInstance.refunds.create.mock.calls;
+      const key1 = (calls[0]![1] as { idempotencyKey: string }).idempotencyKey;
+      const key2 = (calls[1]![1] as { idempotencyKey: string }).idempotencyKey;
+      expect(key1).toMatch(/^refund_pi_test_/);
+      expect(key2).toMatch(/^refund_pi_test_/);
+      expect(key1).not.toBe(key2);
     });
   });
 
@@ -436,6 +494,7 @@ describe('stripe.service', () => {
         expect.objectContaining({
           amount: 7500,
         }),
+        undefined,
       );
     });
 

@@ -28,6 +28,9 @@ import {
   generateId,
   createLogger,
   calculateCo2AvoidedKg,
+  isSimulatedCustomer,
+  shouldSimulatePaymentFailure,
+  isTariffFree,
 } from '@evtivity/lib';
 import type {
   TariffInput,
@@ -447,17 +450,8 @@ export function registerProjections(
     }
   }
 
-  function isSimulatedCustomer(stripeCustomerId: string): boolean {
-    return stripeCustomerId.startsWith('cus_sim_');
-  }
-
   function isSimulatedIntent(stripePaymentIntentId: string): boolean {
     return stripePaymentIntentId.startsWith('pi_sim_');
-  }
-
-  /** Returns true 20% of the time. Used to simulate realistic payment failure rates. */
-  function shouldSimulateFailure(): boolean {
-    return Math.random() < 0.2;
   }
 
   /**
@@ -474,7 +468,12 @@ export function registerProjections(
     stationId: string,
     driverId: string | null,
   ): Promise<boolean> {
-    const rows = await sql`
+    // Resolve the same pricing group the API would (driver > fleet > station >
+    // site > default), then load ALL active tariffs in that group plus the
+    // configured holidays, and let resolveActiveTariff pick the time-of-day +
+    // holiday-appropriate tariff. This matches the API's resolveTariff() so
+    // free off-peak windows on a paid default tariff don't get billed.
+    const groupRows = await sql`
       WITH driver_group AS (
         SELECT pgd.pricing_group_id AS id, 1 AS priority
         FROM pricing_group_drivers pgd
@@ -506,36 +505,50 @@ export function registerProjections(
         FROM pricing_groups pg
         WHERE pg.is_default = true
         LIMIT 1
-      ),
-      resolved AS (
-        SELECT id, priority FROM (
-          SELECT id, priority FROM driver_group
-          UNION ALL SELECT id, priority FROM fleet_group
-          UNION ALL SELECT id, priority FROM station_group
-          UNION ALL SELECT id, priority FROM site_group
-          UNION ALL SELECT id, priority FROM default_group
-        ) groups
-        ORDER BY priority
-        LIMIT 1
       )
-      SELECT
-        (COALESCE(t.price_per_kwh, '0') = '0' AND
-         COALESCE(t.price_per_minute, '0') = '0' AND
-         COALESCE(t.price_per_session, '0') = '0' AND
-         COALESCE(t.idle_fee_price_per_minute, '0') = '0') AS is_free
-      FROM tariffs t
-      JOIN resolved r ON t.pricing_group_id = r.id
-      WHERE t.is_active = true AND t.is_default = true
+      SELECT id FROM (
+        SELECT id, priority FROM driver_group
+        UNION ALL SELECT id, priority FROM fleet_group
+        UNION ALL SELECT id, priority FROM station_group
+        UNION ALL SELECT id, priority FROM site_group
+        UNION ALL SELECT id, priority FROM default_group
+      ) groups
+      ORDER BY priority
       LIMIT 1
     `;
-    const row = rows[0];
-    // No tariff resolved (no driver/fleet/station/site/default group configured, or
-    // the resolved group has no active default tariff): treat as free so the session
-    // proceeds without requiring a payment method. Matches `isTariffFree(null)` in the
-    // API tariff service so guest and authenticated flows behave identically when no
-    // tariff is configured.
-    if (row == null) return true;
-    return row.is_free as boolean;
+    const groupId = groupRows[0]?.id as string | undefined;
+    if (groupId == null) return true;
+
+    const tariffRows = await sql`
+      SELECT id, currency, price_per_kwh, price_per_minute, price_per_session,
+             idle_fee_price_per_minute, reservation_fee_per_minute, tax_rate,
+             restrictions, priority, is_default
+      FROM tariffs
+      WHERE pricing_group_id = ${groupId} AND is_active = true
+    `;
+    if (tariffRows.length === 0) return true;
+
+    const holidayRows = await sql`SELECT date FROM pricing_holidays`;
+    const holidays = holidayRows.map((r: Record<string, unknown>) => new Date(r.date as string));
+
+    const tariffsForResolver: TariffWithRestrictions[] = tariffRows.map(
+      (t: Record<string, unknown>) => ({
+        id: t.id as string,
+        restrictions: (t.restrictions as TariffRestrictions | null) ?? null,
+        priority: Number(t.priority ?? 0),
+        isDefault: t.is_default === true,
+        currency: (t.currency as string | null) ?? 'USD',
+        pricePerKwh: t.price_per_kwh as string | null,
+        pricePerMinute: t.price_per_minute as string | null,
+        pricePerSession: t.price_per_session as string | null,
+        idleFeePricePerMinute: t.idle_fee_price_per_minute as string | null,
+        reservationFeePerMinute: t.reservation_fee_per_minute as string | null,
+        taxRate: t.tax_rate as string | null,
+      }),
+    );
+
+    const active = resolveActiveTariff(tariffsForResolver, new Date(), holidays, 0);
+    return isTariffFree(active);
   }
 
   async function resolvePricingGroupId(
@@ -2750,12 +2763,17 @@ export function registerProjections(
     if (isRoaming) return;
 
     /**
-     * Stops the session by publishing RequestStopTransaction and marking the
-     * DB session row faulted. The DB write is defensive: if the OCPP stop
-     * never lands (station offline, message lost, station rejects with
-     * TxNotFound), the DB still reflects a closed session so the connector
-     * tile clears and the cleanup worker doesn't have to wait for the
-     * stale-session timeout.
+     * Stops the session by publishing RequestStopTransaction. For
+     * payment-failure reasons (PaymentFailed, MissingPaymentMethod) we ALSO
+     * eagerly mark the DB row faulted so the operator UI clears the connector
+     * even if the station ignores the stop or the message is lost. This is
+     * the ghost-session prevention path: a card declined at the gate must not
+     * leave a stranded `active` session that no event can ever close.
+     *
+     * Anonymous and guest-not-authorized stops only publish the OCPP command;
+     * the natural TransactionEvent.Ended that follows handles the DB
+     * transition. Eager cleanup for those would race the legitimate Ended
+     * handler.
      */
     async function stopSession(
       reason:
@@ -2777,6 +2795,9 @@ export function registerProjections(
       } catch (err) {
         logger.error({ err }, 'Failed to publish RequestStopTransaction');
       }
+
+      const eagerCleanup = reason === 'PaymentFailed' || reason === 'MissingPaymentMethod';
+      if (!eagerCleanup) return;
 
       try {
         await sql`
@@ -2896,14 +2917,14 @@ export function registerProjections(
       // Case 2: Simulated payment method -- bypass Stripe
       if (isSimulatedCustomer(stripeCustomerId)) {
         const intentId = `pi_sim_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
-        const failed = shouldSimulateFailure();
+        const failed = shouldSimulatePaymentFailure();
 
         try {
           if (failed) {
             await sql`
                 INSERT INTO payment_records (
                   session_id, driver_id,
-                  stripe_payment_intent_id, stripe_customer_id,
+                  stripe_payment_intent_id, stripe_customer_id, stripe_payment_method_id,
                   payment_source, currency, pre_auth_amount_cents, status,
                   failure_reason
                 )
@@ -2912,6 +2933,7 @@ export function registerProjections(
                   ${driverId},
                   ${intentId},
                   ${stripeCustomerId},
+                  ${pm.stripe_payment_method_id as string},
                   'web_portal',
                   ${platformCurrency},
                   ${platformPreAuthCents},
@@ -2924,7 +2946,7 @@ export function registerProjections(
             await sql`
                 INSERT INTO payment_records (
                   session_id, driver_id,
-                  stripe_payment_intent_id, stripe_customer_id,
+                  stripe_payment_intent_id, stripe_customer_id, stripe_payment_method_id,
                   payment_source, currency, pre_auth_amount_cents, status
                 )
                 VALUES (
@@ -2932,6 +2954,7 @@ export function registerProjections(
                   ${driverId},
                   ${intentId},
                   ${stripeCustomerId},
+                  ${pm.stripe_payment_method_id as string},
                   'web_portal',
                   ${platformCurrency},
                   ${platformPreAuthCents},
@@ -3030,12 +3053,14 @@ export function registerProjections(
           }
         }
 
-        const paymentIntent = await stripe.paymentIntents.create(piParams);
+        const paymentIntent = await stripe.paymentIntents.create(piParams, {
+          idempotencyKey: `preauth_${sessionId}`,
+        });
 
         await sql`
             INSERT INTO payment_records (
               session_id, driver_id, site_payment_config_id,
-              stripe_payment_intent_id, stripe_customer_id,
+              stripe_payment_intent_id, stripe_customer_id, stripe_payment_method_id,
               payment_source, currency, pre_auth_amount_cents, status
             )
             VALUES (
@@ -3044,6 +3069,7 @@ export function registerProjections(
               ${siteConfigId},
               ${paymentIntent.id},
               ${pm.stripe_customer_id as string},
+              ${pm.stripe_payment_method_id as string},
               'web_portal',
               ${platformCurrency},
               ${platformPreAuthCents},
@@ -3058,13 +3084,14 @@ export function registerProjections(
           await sql`
               INSERT INTO payment_records (
                 session_id, driver_id,
-                stripe_customer_id, payment_source, currency,
-                status, failure_reason
+                stripe_customer_id, stripe_payment_method_id,
+                payment_source, currency, status, failure_reason
               )
               VALUES (
                 ${sessionId},
                 ${driverId},
                 ${pm.stripe_customer_id as string},
+                ${pm.stripe_payment_method_id as string},
                 'web_portal',
                 ${platformCurrency},
                 'failed',
@@ -3194,7 +3221,7 @@ export function registerProjections(
 
       // Simulated payment: bypass Stripe
       if (isSimulatedIntent(paymentIntentId)) {
-        if (shouldSimulateFailure()) {
+        if (shouldSimulatePaymentFailure()) {
           logger.warn(`Simulated capture failure for session ${transactionId}`);
           try {
             await sql`
@@ -3287,12 +3314,100 @@ export function registerProjections(
         const stripe = new Stripe(secretKey);
 
         if (finalCostCents != null && finalCostCents > 0) {
-          await stripe.paymentIntents.capture(paymentIntentId, {
-            amount_to_capture: finalCostCents,
-          });
+          // Fetch session/station context up front so the top-up path knows
+          // which currency to use.
+          const captureSession = await sql`
+            SELECT cs2.station_id AS station_ocpp_id, cs.currency, cs.station_id AS station_uuid
+            FROM charging_sessions cs
+            JOIN charging_stations cs2 ON cs2.id = cs.station_id
+            WHERE cs.id = ${session.id as string}
+          `;
+          const cs = captureSession[0];
+          const sessionCurrency = (cs?.currency as string | null) ?? 'USD';
+
+          const preAuthAmount = (pr.pre_auth_amount_cents as number | null) ?? finalCostCents;
+          const captureAmount = Math.min(finalCostCents, preAuthAmount);
+
+          // Always capture the pre-auth fully (or finalCost if smaller). When
+          // finalCost > preauth we then create a second PaymentIntent for the
+          // delta and confirm+capture it off-session. Stripe rejects
+          // amount_to_capture > original_amount, so we cannot just expand the
+          // first intent.
+          await stripe.paymentIntents.capture(
+            paymentIntentId,
+            { amount_to_capture: captureAmount },
+            { idempotencyKey: `capture_${pr.id as string}` },
+          );
+
+          let totalCaptured = captureAmount;
+          let topUpFailureReason: string | null = null;
+          let topUpIntentId: string | null = null;
+
+          if (finalCostCents > preAuthAmount) {
+            const deltaCents = finalCostCents - preAuthAmount;
+            try {
+              // Retrieve the original intent to learn the customer + payment
+              // method so we can charge the delta against the same card.
+              const origIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+              const customerId =
+                typeof origIntent.customer === 'string'
+                  ? origIntent.customer
+                  : origIntent.customer?.id;
+              const pmId =
+                typeof origIntent.payment_method === 'string'
+                  ? origIntent.payment_method
+                  : origIntent.payment_method?.id;
+              if (customerId == null || pmId == null) {
+                throw new Error('Original PaymentIntent missing customer or payment_method');
+              }
+
+              const topUpParams: Record<string, unknown> = {
+                amount: deltaCents,
+                currency: sessionCurrency.toLowerCase(),
+                customer: customerId,
+                payment_method: pmId,
+                confirm: true,
+                off_session: true,
+                capture_method: 'automatic',
+                description: `Top-up for session ${session.id as string}`,
+              };
+              if (origIntent.on_behalf_of != null) {
+                topUpParams['on_behalf_of'] = origIntent.on_behalf_of;
+                topUpParams['transfer_data'] = {
+                  destination:
+                    typeof origIntent.on_behalf_of === 'string'
+                      ? origIntent.on_behalf_of
+                      : origIntent.on_behalf_of.id,
+                };
+              }
+              const topUp = await stripe.paymentIntents.create(
+                topUpParams as unknown as import('stripe').default.PaymentIntentCreateParams,
+                { idempotencyKey: `topup_${pr.id as string}` },
+              );
+              topUpIntentId = topUp.id;
+              totalCaptured = preAuthAmount + deltaCents;
+            } catch (topUpErr) {
+              topUpFailureReason =
+                topUpErr instanceof Error
+                  ? `Top-up declined: ${topUpErr.message.slice(0, 350)}; shortfall ${String(deltaCents)}c`
+                  : `Top-up failed; shortfall ${String(deltaCents)}c`;
+              logger.warn(
+                { err: topUpErr, paymentRecordId: pr.id, deltaCents },
+                'Top-up PaymentIntent failed; pre-auth was captured but delta uncollected',
+              );
+            }
+          }
+
           await sql`
             UPDATE payment_records
-            SET status = 'captured', captured_amount_cents = ${finalCostCents}, updated_at = now()
+            SET status = 'captured',
+                captured_amount_cents = ${totalCaptured},
+                failure_reason = ${topUpFailureReason},
+                metadata = CASE
+                  WHEN ${topUpIntentId}::text IS NULL THEN metadata
+                  ELSE jsonb_set(COALESCE(metadata, '{}'::jsonb), '{topUpIntentId}', to_jsonb(${topUpIntentId}::text))
+                END,
+                updated_at = now()
             WHERE id = ${pr.id as string}
           `;
 
@@ -3302,13 +3417,6 @@ export function registerProjections(
           `;
           const captureDriver = captureDriverRows[0];
           if (captureDriver?.driver_id != null) {
-            const captureSession = await sql`
-              SELECT cs2.station_id AS station_ocpp_id, cs.currency, cs.station_id AS station_uuid
-              FROM charging_sessions cs
-              JOIN charging_stations cs2 ON cs2.id = cs.station_id
-              WHERE cs.id = ${session.id as string}
-            `;
-            const cs = captureSession[0];
             const captureSiteName =
               cs?.station_uuid != null ? await resolveSiteName(cs.station_uuid as string) : null;
             void dispatchDriverNotification(
@@ -3319,8 +3427,8 @@ export function registerProjections(
                 siteName: captureSiteName ?? '',
                 stationId: cs?.station_ocpp_id as string,
                 transactionId,
-                amountCents: finalCostCents,
-                currency: (cs?.currency as string | null) ?? 'USD',
+                amountCents: totalCaptured,
+                currency: sessionCurrency,
               },
               ALL_TEMPLATES_DIRS,
               pubsub,

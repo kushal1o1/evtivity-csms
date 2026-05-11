@@ -233,7 +233,12 @@ describe('guest-session.service', () => {
       await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
       await tick();
 
-      expect(mockCapturePayment).toHaveBeenCalledWith(expect.anything(), 'pi_abc', 3500);
+      expect(mockCapturePayment).toHaveBeenCalledWith(
+        expect.anything(),
+        'pi_abc',
+        3500,
+        'capture_pr-1',
+      );
       expect(mockLogger.info).toHaveBeenCalledWith(
         { guestSessionId: 'guest-1', amountCents: 3500 },
         'Captured guest payment',

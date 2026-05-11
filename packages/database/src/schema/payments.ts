@@ -17,6 +17,7 @@ import {
 import { sites } from './assets.js';
 import { drivers } from './drivers.js';
 import { chargingSessions } from './charging.js';
+import { users } from './identity.js';
 
 export const paymentStatusEnum = pgEnum('payment_status', [
   'pending',
@@ -75,6 +76,7 @@ export const paymentRecords = pgTable(
     sitePaymentConfigId: integer('site_payment_config_id').references(() => sitePaymentConfigs.id),
     stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }).unique(),
     stripeCustomerId: varchar('stripe_customer_id', { length: 255 }),
+    stripePaymentMethodId: varchar('stripe_payment_method_id', { length: 255 }),
     paymentSource: varchar('payment_source', { length: 20 }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     preAuthAmountCents: integer('pre_auth_amount_cents'),
@@ -82,6 +84,10 @@ export const paymentRecords = pgTable(
     refundedAmountCents: integer('refunded_amount_cents').notNull().default(0),
     status: paymentStatusEnum('status').notNull().default('pending'),
     failureReason: varchar('failure_reason', { length: 500 }),
+    lastActorUserId: text('last_actor_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    lastActionReason: varchar('last_action_reason', { length: 500 }),
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

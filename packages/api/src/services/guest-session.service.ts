@@ -156,7 +156,7 @@ async function finalizeGuestPayment(sessionId: string, logger: FastifyBaseLogger
     const finalCost = session.finalCostCents ?? 0;
 
     if (finalCost > 0) {
-      await capturePayment(config, pr.stripePaymentIntentId, finalCost);
+      await capturePayment(config, pr.stripePaymentIntentId, finalCost, `capture_${String(pr.id)}`);
       logger.info({ guestSessionId: guest.id, amountCents: finalCost }, 'Captured guest payment');
 
       await db
