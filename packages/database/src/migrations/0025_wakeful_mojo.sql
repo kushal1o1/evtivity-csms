@@ -1,0 +1,1 @@
+ALTER TABLE "authorize_attempts" ADD COLUMN "matched_driver_id" text;
