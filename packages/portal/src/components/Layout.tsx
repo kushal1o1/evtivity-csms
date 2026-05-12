@@ -15,8 +15,8 @@ import { usePortalEvents } from '@/hooks/use-portal-events';
 const navItems = [
   { to: '/', labelKey: 'nav.home', icon: Home },
   { to: '/start', labelKey: 'nav.findCharger', icon: PlugZap },
-  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/activity', labelKey: 'nav.activity', icon: Activity },
+  { to: '/reservations', labelKey: 'nav.reservations', icon: CalendarClock },
   { to: '/account', labelKey: 'nav.account', icon: User },
 ];
 

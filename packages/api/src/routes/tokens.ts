@@ -338,13 +338,26 @@ export function tokenRoutes(app: FastifyInstance): void {
         operationId: 'createToken',
         security: [{ bearerAuth: [] }],
         body: zodSchema(createTokenBody),
-        response: { 201: itemResponse(tokenCreated) },
+        response: {
+          201: itemResponse(tokenCreated),
+          409: errorWith('Duplicate token', [ERROR_CODES.TOKEN_DUPLICATE]),
+        },
       },
     },
     async (request, reply) => {
       const body = request.body as z.infer<typeof createTokenBody>;
-      const token = await tokenService.createToken(body);
-      await reply.status(201).send(token);
+      try {
+        const token = await tokenService.createToken(body);
+        await reply.status(201).send(token);
+      } catch (err) {
+        if (err instanceof tokenService.DuplicateTokenError) {
+          await reply
+            .status(409)
+            .send({ error: 'Token already registered', code: 'TOKEN_DUPLICATE' });
+          return;
+        }
+        throw err;
+      }
     },
   );
 
@@ -362,18 +375,29 @@ export function tokenRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(tokenCreated),
           404: errorWith('Token not found', [ERROR_CODES.TOKEN_NOT_FOUND]),
+          409: errorWith('Duplicate token', [ERROR_CODES.TOKEN_DUPLICATE]),
         },
       },
     },
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof tokenParams>;
       const body = request.body as z.infer<typeof updateTokenBody>;
-      const token = await tokenService.updateToken(id, body);
-      if (token == null) {
-        await reply.status(404).send({ error: 'Token not found', code: 'TOKEN_NOT_FOUND' });
-        return;
+      try {
+        const token = await tokenService.updateToken(id, body);
+        if (token == null) {
+          await reply.status(404).send({ error: 'Token not found', code: 'TOKEN_NOT_FOUND' });
+          return;
+        }
+        return token;
+      } catch (err) {
+        if (err instanceof tokenService.DuplicateTokenError) {
+          await reply
+            .status(409)
+            .send({ error: 'Token already registered', code: 'TOKEN_DUPLICATE' });
+          return;
+        }
+        throw err;
       }
-      return token;
     },
   );
 

@@ -47,6 +47,7 @@ interface SessionOverview {
   freeVend: boolean | null;
   co2AvoidedKg: number | null;
   transactionId: string | null;
+  token: { id: string; idToken: string; tokenType: string } | null;
 }
 
 export interface SessionDetailsTabProps {
@@ -152,6 +153,19 @@ export function SessionDetailsTab({
                 currency,
               )}
             </Row>
+            {session.token != null && (
+              <Row label={t('sessions.token')}>
+                <Link
+                  to={`/tokens/${session.token.id}`}
+                  className="text-primary hover:underline font-mono text-xs"
+                >
+                  {session.token.idToken}
+                </Link>
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {session.token.tokenType}
+                </span>
+              </Row>
+            )}
             <Row label={t('sessions.stoppedReason')}>{session.stoppedReason ?? '--'}</Row>
             {session.reservationId != null && (
               <Row label={t('sessions.reservation')}>

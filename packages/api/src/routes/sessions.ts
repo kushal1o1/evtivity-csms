@@ -10,6 +10,7 @@ import {
   chargingStations,
   sites,
   drivers,
+  driverTokens,
   transactionEvents,
   transactionEventTypeEnum,
   paymentRecords,
@@ -172,6 +173,17 @@ const sessionDetail = z
       .nullable()
       .describe('Reservation ID linked to the session, null if no reservation'),
     freeVend: z.boolean().describe('True when site free vend mode bypassed payment'),
+    token: z
+      .object({
+        id: z.string().describe('Driver token ID (nanoid prefixed dtk_)'),
+        idToken: z.string().describe('RFID UID or token identifier transmitted by the station'),
+        tokenType: z.string().describe('OCPP IdToken type (e.g. ISO14443, Central, eMAID)'),
+      })
+      .passthrough()
+      .nullable()
+      .describe(
+        'Driver token used to authorize this session, null when no registered token was matched',
+      ),
     paymentRecord: paymentRecordItem
       .nullable()
       .describe('Linked payment record, null when no payment was taken'),
@@ -411,6 +423,9 @@ export function sessionRoutes(app: FastifyInstance): void {
           stoppedReason: chargingSessions.stoppedReason,
           reservationId: chargingSessions.reservationId,
           freeVend: chargingSessions.freeVend,
+          tokenId: driverTokens.id,
+          tokenIdToken: driverTokens.idToken,
+          tokenType: driverTokens.tokenType,
           paymentId: paymentRecords.id,
           paymentStatus: paymentRecords.status,
           paymentSource: paymentRecords.paymentSource,
@@ -431,6 +446,7 @@ export function sessionRoutes(app: FastifyInstance): void {
         .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
         .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .leftJoin(drivers, eq(chargingSessions.driverId, drivers.id))
+        .leftJoin(driverTokens, eq(chargingSessions.tokenId, driverTokens.id))
         .leftJoin(paymentRecords, eq(paymentRecords.sessionId, chargingSessions.id))
         .leftJoin(guestSessions, eq(guestSessions.chargingSessionId, chargingSessions.id))
         .where(eq(chargingSessions.id, id));
@@ -463,11 +479,18 @@ export function sessionRoutes(app: FastifyInstance): void {
         guestStripePaymentIntentId,
         guestExpiresAt,
         guestCreatedAt,
+        tokenId,
+        tokenIdToken,
+        tokenType,
         ...session
       } = row;
 
       return {
         ...session,
+        token:
+          tokenId != null
+            ? { id: tokenId, idToken: tokenIdToken ?? '', tokenType: tokenType ?? '' }
+            : null,
         paymentRecord:
           paymentId != null
             ? {

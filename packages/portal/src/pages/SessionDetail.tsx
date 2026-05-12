@@ -62,6 +62,7 @@ interface SessionDetailData {
     currency: string;
   } | null;
   reservationId: string | null;
+  token: { idToken: string; tokenType: string } | null;
 }
 
 interface PortalFeatures {
@@ -251,7 +252,7 @@ export function SessionDetail(): React.JSX.Element {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">{t('sessionDetail.title')}</h1>
+          <h1 className="text-xl font-bold">{t('sessionDetail.title')}</h1>
           <CopyableId id={id ?? ''} />
         </div>
       </div>
@@ -414,6 +415,9 @@ export function SessionDetail(): React.JSX.Element {
           />
           {session.stoppedReason != null && (
             <Row label={t('sessionDetail.stopReason')} value={session.stoppedReason} />
+          )}
+          {session.token != null && (
+            <Row label={t('sessionDetail.rfid')} value={session.token.idToken} />
           )}
         </CardContent>
       </Card>

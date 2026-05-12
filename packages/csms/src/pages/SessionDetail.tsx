@@ -61,6 +61,7 @@ interface SessionDetailData {
   co2AvoidedKg: number | null;
   paymentRecord: PaymentRecord | null;
   guestSession: GuestSessionInfo | null;
+  token: { id: string; idToken: string; tokenType: string } | null;
 }
 
 export function SessionDetail(): React.JSX.Element {

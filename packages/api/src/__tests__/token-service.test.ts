@@ -87,6 +87,7 @@ import {
   deleteToken,
   exportTokensCsv,
   importTokensCsv,
+  DuplicateTokenError,
 } from '../services/token.service.js';
 
 beforeEach(() => {
@@ -139,9 +140,28 @@ describe('getToken', () => {
 describe('createToken', () => {
   it('returns created token', async () => {
     const token = { id: 't1', idToken: 'NEW_TOKEN', tokenType: 'ISO14443' };
-    setupDbResults([token]);
+    // dup check (empty), then insert returning
+    setupDbResults([], [token]);
 
     const result = await createToken({ idToken: 'NEW_TOKEN', tokenType: 'ISO14443' });
+
+    expect(result).toEqual(token);
+  });
+
+  it('throws DuplicateTokenError when (idToken, tokenType) already exists', async () => {
+    setupDbResults([{ id: 'existing' }]);
+
+    await expect(
+      createToken({ idToken: 'NEW_TOKEN', tokenType: 'ISO14443' }),
+    ).rejects.toBeInstanceOf(DuplicateTokenError);
+  });
+
+  it('allows the same idToken under a different tokenType', async () => {
+    const token = { id: 't2', idToken: 'SAME_UID', tokenType: 'ISO15693' };
+    // dup check on (SAME_UID, ISO15693) returns empty, then insert returning
+    setupDbResults([], [token]);
+
+    const result = await createToken({ idToken: 'SAME_UID', tokenType: 'ISO15693' });
 
     expect(result).toEqual(token);
   });
@@ -150,7 +170,8 @@ describe('createToken', () => {
 describe('updateToken', () => {
   it('returns updated token when found', async () => {
     const token = { id: 't1', idToken: 'UPDATED', tokenType: 'ISO15693' };
-    setupDbResults([token]);
+    // current-row SELECT, dup check (empty), update returning
+    setupDbResults([{ idToken: 'OLD', tokenType: 'ISO14443' }], [], [token]);
 
     const result = await updateToken('t1', { idToken: 'UPDATED', tokenType: 'ISO15693' });
 
@@ -158,11 +179,29 @@ describe('updateToken', () => {
   });
 
   it('returns null when not found', async () => {
-    setupDbResults([]);
+    // current-row SELECT empty, then update returning empty
+    setupDbResults([], []);
 
     const result = await updateToken('nonexistent', { idToken: 'X' });
 
     expect(result).toBeNull();
+  });
+
+  it('throws DuplicateTokenError when rename would collide', async () => {
+    setupDbResults([{ idToken: 'OLD', tokenType: 'ISO14443' }], [{ id: 'other' }]);
+
+    await expect(
+      updateToken('t1', { idToken: 'TAKEN', tokenType: 'ISO14443' }),
+    ).rejects.toBeInstanceOf(DuplicateTokenError);
+  });
+
+  it('skips dup check when idToken/tokenType unchanged', async () => {
+    const token = { id: 't1', idToken: 'OLD', tokenType: 'ISO14443', isActive: false };
+    setupDbResults([token]);
+
+    const result = await updateToken('t1', { isActive: false });
+
+    expect(result).toEqual(token);
   });
 });
 
@@ -204,11 +243,12 @@ describe('exportTokensCsv', () => {
 
 describe('importTokensCsv', () => {
   it('imports valid rows and returns count', async () => {
-    // Row 1 has a driverEmail, so it triggers a driver lookup query
-    // Row 2 has no driverEmail, so no lookup
+    // Each row: dup check (empty), then driver lookup if email present
     const driverRow = { id: 'driver-1' };
     setupDbResults(
-      [driverRow], // driver lookup for row 1
+      [], // dup check row 1
+      [driverRow], // driver lookup row 1
+      [], // dup check row 2
       [], // batch insert result
     );
 
@@ -237,6 +277,7 @@ describe('importTokensCsv', () => {
 
   it('returns error when driver email is not found', async () => {
     setupDbResults(
+      [], // dup check row 1
       [], // driver lookup returns nothing
     );
 
@@ -248,5 +289,36 @@ describe('importTokensCsv', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('driver not found');
     expect(result.errors[0]).toContain('unknown@example.com');
+  });
+
+  it('flags rows that collide with existing tokens', async () => {
+    setupDbResults(
+      [{ id: 'existing' }], // dup check row 1 hits
+    );
+
+    const result = await importTokensCsv([{ idToken: 'EXISTS', tokenType: 'ISO14443' }]);
+
+    expect(result.imported).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('Row 1');
+    expect(result.errors[0]).toContain('already exists');
+  });
+
+  it('flags duplicate rows within the same batch', async () => {
+    setupDbResults(
+      [], // dup check row 1
+      [], // dup check row 2 (would-be duplicate caught by seenInBatch before this)
+      [], // insert
+    );
+
+    const result = await importTokensCsv([
+      { idToken: 'DUPE', tokenType: 'ISO14443' },
+      { idToken: 'DUPE', tokenType: 'ISO14443' },
+    ]);
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('Row 2');
+    expect(result.errors[0]).toContain('duplicate');
   });
 });

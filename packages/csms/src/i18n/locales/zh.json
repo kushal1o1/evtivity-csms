@@ -771,6 +771,7 @@
     "payment": "支付",
     "stoppedReason": "停止原因",
     "reservation": "预约",
+    "token": "令牌",
     "preAuthAmount": "预授权",
     "capturedAmount": "已扣款",
     "refundedAmount": "已退款",

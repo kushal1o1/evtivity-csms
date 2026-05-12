@@ -117,6 +117,7 @@
     "cost": "Costo estimado",
     "totalCost": "Costo total",
     "stopReason": "Razon de parada",
+    "rfid": "RFID",
     "payment": "Pago",
     "status": "Estado",
     "preAuthorized": "Pre-autorizado",

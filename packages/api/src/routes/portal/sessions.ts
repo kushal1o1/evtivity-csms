@@ -11,6 +11,7 @@ import {
   sites,
   paymentRecords,
   drivers,
+  driverTokens,
   meterValues,
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
@@ -97,6 +98,14 @@ const portalSessionDetail = portalSessionListItem
       .nullable()
       .describe('Most recent active power reading in Watts'),
     payment: paymentRecordItem.nullable().describe('Linked payment record, if any'),
+    token: z
+      .object({
+        idToken: z.string().describe('RFID UID or token identifier transmitted by the station'),
+        tokenType: z.string().describe('OCPP IdToken type (e.g. ISO14443, Central, eMAID)'),
+      })
+      .passthrough()
+      .nullable()
+      .describe('RFID/token used to authorize this session, null when not from a registered token'),
   })
   .passthrough();
 
@@ -403,10 +412,13 @@ export function portalSessionRoutes(app: FastifyInstance): void {
           updatedAt: chargingSessions.updatedAt,
           idleStartedAt: chargingSessions.idleStartedAt,
           reservationId: chargingSessions.reservationId,
+          tokenIdToken: driverTokens.idToken,
+          tokenType: driverTokens.tokenType,
         })
         .from(chargingSessions)
         .leftJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
         .leftJoin(sites, eq(chargingStations.siteId, sites.id))
+        .leftJoin(driverTokens, eq(chargingSessions.tokenId, driverTokens.id))
         .where(eq(chargingSessions.id, id));
 
       if (session == null) {
@@ -443,11 +455,13 @@ export function portalSessionRoutes(app: FastifyInstance): void {
           .then((r) => r[0]),
       ]);
 
+      const { tokenIdToken, tokenType, ...sessionRest } = session;
       return {
-        ...session,
+        ...sessionRest,
         currentPowerW: latestPower != null ? parseFloat(latestPower.value) : null,
         batteryPercent: latestSoc != null ? parseFloat(latestSoc.value) : null,
         payment: payment ?? null,
+        token: tokenIdToken != null ? { idToken: tokenIdToken, tokenType: tokenType ?? '' } : null,
       };
     },
   );

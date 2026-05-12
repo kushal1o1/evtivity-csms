@@ -81,11 +81,39 @@ export async function getToken(id: string) {
   return token ?? null;
 }
 
+export class DuplicateTokenError extends Error {
+  constructor(
+    public readonly idToken: string,
+    public readonly tokenType: string,
+  ) {
+    super(`Token (${idToken}, ${tokenType}) already exists`);
+    this.name = 'DuplicateTokenError';
+  }
+}
+
+async function tokenExists(
+  idToken: string,
+  tokenType: string,
+  excludeId?: string,
+): Promise<boolean> {
+  const conditions = [eq(driverTokens.idToken, idToken), eq(driverTokens.tokenType, tokenType)];
+  if (excludeId != null) conditions.push(sql`${driverTokens.id} <> ${excludeId}`);
+  const [row] = await db
+    .select({ id: driverTokens.id })
+    .from(driverTokens)
+    .where(and(...conditions))
+    .limit(1);
+  return row != null;
+}
+
 export async function createToken(data: {
   driverId?: string | null | undefined;
   idToken: string;
   tokenType: string;
 }) {
+  if (await tokenExists(data.idToken, data.tokenType)) {
+    throw new DuplicateTokenError(data.idToken, data.tokenType);
+  }
   const [token] = await db
     .insert(driverTokens)
     .values({
@@ -106,6 +134,22 @@ export async function updateToken(
     isActive?: boolean | undefined;
   },
 ) {
+  if (data.idToken != null || data.tokenType != null) {
+    const [current] = await db
+      .select({ idToken: driverTokens.idToken, tokenType: driverTokens.tokenType })
+      .from(driverTokens)
+      .where(eq(driverTokens.id, id));
+    if (current != null) {
+      const nextIdToken = data.idToken ?? current.idToken;
+      const nextTokenType = data.tokenType ?? current.tokenType;
+      if (
+        (nextIdToken !== current.idToken || nextTokenType !== current.tokenType) &&
+        (await tokenExists(nextIdToken, nextTokenType, id))
+      ) {
+        throw new DuplicateTokenError(nextIdToken, nextTokenType);
+      }
+    }
+  }
   const [token] = await db
     .update(driverTokens)
     .set({ ...data, updatedAt: new Date() })
@@ -162,12 +206,26 @@ export async function importTokensCsv(
     driverId?: string | null;
     isActive: boolean;
   }> = [];
+  const seenInBatch = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (row == null) continue;
     if (!row.idToken || !row.tokenType) {
       errors.push(`Row ${String(i + 1)}: missing idToken or tokenType`);
+      continue;
+    }
+
+    const key = `${row.idToken}\x00${row.tokenType}`;
+    if (seenInBatch.has(key)) {
+      errors.push(
+        `Row ${String(i + 1)}: duplicate of an earlier row in this import (${row.idToken}, ${row.tokenType})`,
+      );
+      continue;
+    }
+
+    if (await tokenExists(row.idToken, row.tokenType)) {
+      errors.push(`Row ${String(i + 1)}: token already exists (${row.idToken}, ${row.tokenType})`);
       continue;
     }
 
@@ -184,6 +242,7 @@ export async function importTokensCsv(
       driverId = driver.id;
     }
 
+    seenInBatch.add(key);
     values.push({
       idToken: row.idToken,
       tokenType: row.tokenType,

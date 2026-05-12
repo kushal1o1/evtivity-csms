@@ -77,6 +77,7 @@ vi.mock('@evtivity/database', () => ({
   chargingStations: {},
   sites: {},
   drivers: {},
+  driverTokens: {},
   transactionEvents: {},
   transactionEventTypeEnum: {
     enumValues: ['Started', 'Updated', 'Ended'] as const,

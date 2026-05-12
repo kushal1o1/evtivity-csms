@@ -771,6 +771,7 @@
     "payment": "결제",
     "stoppedReason": "중단 사유",
     "reservation": "예약",
+    "token": "토큰",
     "preAuthAmount": "사전 인증",
     "capturedAmount": "결제 완료",
     "refundedAmount": "환불 완료",

@@ -117,6 +117,7 @@
     "cost": "预估费用",
     "totalCost": "总费用",
     "stopReason": "停止原因",
+    "rfid": "RFID",
     "payment": "支付",
     "status": "状态",
     "preAuthorized": "预授权",

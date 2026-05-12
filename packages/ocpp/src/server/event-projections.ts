@@ -1411,21 +1411,32 @@ export function registerProjections(
             const idTokenValue = payload.idToken as string | null;
 
             // Token resolution chain: driver_tokens -> ocpi_external_tokens -> guest_sessions
-            // Match on id_token only. Token type is not needed because id_token values are unique
-            // and OCPP 1.6 has no token type concept (the handler hardcodes ISO14443).
+            // Match on id_token only. The (id_token, token_type) pair is unique at the
+            // storage layer (migration 0021), and OCPP 1.6 has no token type concept (the
+            // handler hardcodes ISO14443) so id_token alone is sufficient to identify the
+            // owning row.
             if (idTokenValue != null) {
               const tokenRows = await sql`
-                SELECT driver_id FROM driver_tokens
+                SELECT id, driver_id FROM driver_tokens
                 WHERE id_token = ${idTokenValue} AND is_active = true
                 LIMIT 1
               `;
-              driverUuid = (tokenRows[0]?.driver_id as string | null) ?? null;
-              if (driverUuid != null) {
+              const tokenRow = tokenRows[0];
+              driverUuid = (tokenRow?.driver_id as string | null) ?? null;
+              const tokenIdValue = (tokenRow?.id as string | null) ?? null;
+              if (tokenIdValue != null) {
+                // Record the token link regardless of whether the token has an
+                // owning driver. An unassigned operator-issued card still gets
+                // its session attributed to the right token row.
                 await sql`
-                  UPDATE charging_sessions SET driver_id = ${driverUuid}, updated_at = now()
+                  UPDATE charging_sessions
+                  SET driver_id = COALESCE(${driverUuid}, driver_id),
+                      token_id = ${tokenIdValue},
+                      updated_at = now()
                   WHERE id = ${sessionId}
                 `;
-              } else {
+              }
+              if (driverUuid == null) {
                 // Token not in driver_tokens. Check if it is a roaming token.
                 try {
                   const externalRows = await sql`

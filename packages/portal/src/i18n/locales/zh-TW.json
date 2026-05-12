@@ -117,6 +117,7 @@
     "cost": "預估費用",
     "totalCost": "總費用",
     "stopReason": "停止原因",
+    "rfid": "RFID",
     "payment": "支付",
     "status": "狀態",
     "preAuthorized": "預授權",

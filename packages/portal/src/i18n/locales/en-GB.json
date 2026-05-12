@@ -117,6 +117,7 @@
     "cost": "Estimated cost",
     "totalCost": "Total cost",
     "stopReason": "Stop reason",
+    "rfid": "RFID",
     "payment": "Payment",
     "status": "Status",
     "preAuthorized": "Pre-authorised",

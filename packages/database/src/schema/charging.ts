@@ -17,7 +17,7 @@ import {
 import { createId } from '../lib/id.js';
 import { tariffs } from './pricing.js';
 import { chargingStations, evses, connectors } from './assets.js';
-import { drivers } from './drivers.js';
+import { drivers, driverTokens } from './drivers.js';
 import { reservations } from './reservations.js';
 
 export const sessionStatusEnum = pgEnum('session_status', [
@@ -46,6 +46,7 @@ export const chargingSessions = pgTable(
     evseId: text('evse_id').references(() => evses.id),
     connectorId: text('connector_id').references(() => connectors.id),
     driverId: text('driver_id').references(() => drivers.id),
+    tokenId: text('token_id').references(() => driverTokens.id, { onDelete: 'set null' }),
     transactionId: varchar('transaction_id', { length: 36 }).notNull().unique(),
     status: sessionStatusEnum('status').notNull().default('active'),
     startedAt: timestamp('started_at', { withTimezone: true }),
@@ -89,6 +90,7 @@ export const chargingSessions = pgTable(
     index('idx_sessions_connector_id').on(table.connectorId),
     index('idx_sessions_tariff_id').on(table.tariffId),
     index('idx_sessions_driver_status').on(table.driverId, table.status),
+    index('idx_sessions_token_id').on(table.tokenId),
   ],
 );
 

@@ -117,6 +117,7 @@
     "cost": "예상 비용",
     "totalCost": "총 비용",
     "stopReason": "중지 사유",
+    "rfid": "RFID",
     "payment": "결제",
     "status": "상태",
     "preAuthorized": "사전 승인",

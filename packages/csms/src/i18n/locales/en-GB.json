@@ -771,6 +771,7 @@
     "payment": "Payment",
     "stoppedReason": "Stop Reason",
     "reservation": "Reservation",
+    "token": "Token",
     "preAuthAmount": "Pre-authorised",
     "capturedAmount": "Captured",
     "refundedAmount": "Refunded",

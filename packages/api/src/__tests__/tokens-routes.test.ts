@@ -241,9 +241,8 @@ describe('Token routes - handler logic', () => {
 
   describe('POST /v1/tokens/import', () => {
     it('imports tokens from rows', async () => {
-      // First DB call: driver lookup for the email
-      // Second DB call: insert
-      setupDbResults([{ id: VALID_DRIVER_ID }], []);
+      // Per-row: dup check (empty), driver lookup (when email present), then batch insert
+      setupDbResults([], [{ id: VALID_DRIVER_ID }], []);
       const response = await app.inject({
         method: 'POST',
         url: '/tokens/import',
@@ -504,7 +503,8 @@ describe('Token routes - handler logic', () => {
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
       };
-      setupDbResults([created]);
+      // dup check (empty), then insert returning
+      setupDbResults([], [created]);
       const response = await app.inject({
         method: 'POST',
         url: '/tokens',
@@ -527,7 +527,7 @@ describe('Token routes - handler logic', () => {
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
       };
-      setupDbResults([created]);
+      setupDbResults([], [created]);
       const response = await app.inject({
         method: 'POST',
         url: '/tokens',
@@ -551,7 +551,8 @@ describe('Token routes - handler logic', () => {
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-02T00:00:00.000Z',
       };
-      setupDbResults([updated]);
+      // current-row SELECT, dup check (empty), update returning
+      setupDbResults([{ idToken: 'OLD', tokenType: 'ISO14443' }], [], [updated]);
       const response = await app.inject({
         method: 'PATCH',
         url: `/tokens/${VALID_TOKEN_ID}`,
