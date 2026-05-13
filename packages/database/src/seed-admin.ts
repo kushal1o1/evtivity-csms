@@ -12,6 +12,7 @@ import postgres from 'postgres';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const INITIAL_ADMIN_EMAIL = process.env['INITIAL_ADMIN_EMAIL'];
 const INITIAL_ADMIN_PASSWORD = process.env['INITIAL_ADMIN_PASSWORD'];
+const MUST_RESET_PASSWORD = process.env['INITIAL_ADMIN_MUST_RESET_PASSWORD'] !== 'false';
 
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!INITIAL_ADMIN_EMAIL) throw new Error('INITIAL_ADMIN_EMAIL is required');
@@ -115,7 +116,7 @@ try {
 
   const insertedUser = await sql<{ id: string; email: string }[]>`
     INSERT INTO users (id, email, password_hash, first_name, last_name, role_id, must_reset_password, has_all_site_access)
-    VALUES (${rid('usr')}, ${INITIAL_ADMIN_EMAIL}, ${passwordHash}, 'Admin', 'User', ${roleId}, true, true)
+    VALUES (${rid('usr')}, ${INITIAL_ADMIN_EMAIL}, ${passwordHash}, 'Admin', 'User', ${roleId}, ${MUST_RESET_PASSWORD}, true)
     ON CONFLICT (email) DO NOTHING
     RETURNING id, email
   `;
