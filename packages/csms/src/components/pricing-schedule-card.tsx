@@ -63,7 +63,7 @@ function formatRestrictionSummary(
   if (restrictions.timeRange != null) {
     parts.push(`${restrictions.timeRange.startTime} - ${restrictions.timeRange.endTime}`);
   }
-  return parts.join(' ') || '--';
+  return parts.join(' ') || 'n/a';
 }
 
 function formatCompactRates(item: ScheduleItem, freeLabel: string): string {

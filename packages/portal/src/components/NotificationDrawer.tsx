@@ -84,7 +84,7 @@ export function NotificationDrawer({
           <div className="space-y-3">
             {notifications.map((n) => (
               <div key={n.id} className="border-b pb-3 last:border-b-0">
-                <p className="text-sm">{n.subject ?? '--'}</p>
+                <p className="text-sm">{n.subject ?? 'n/a'}</p>
                 <p className="text-xs text-muted-foreground">{relativeTime(n.createdAt)}</p>
               </div>
             ))}

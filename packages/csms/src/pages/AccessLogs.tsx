@@ -346,7 +346,7 @@ function ApiLogTab(): React.JSX.Element {
                   <TableCell className="whitespace-nowrap" data-testid="row-click-target">
                     {new Date(log.createdAt).toLocaleString()}
                   </TableCell>
-                  <TableCell>{log.apiKeyName ?? '--'}</TableCell>
+                  <TableCell>{log.apiKeyName ?? 'n/a'}</TableCell>
                   <TableCell>{userName(log)}</TableCell>
                   <TableCell>
                     {log.method != null && (

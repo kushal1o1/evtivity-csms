@@ -334,7 +334,7 @@ export function UserDetail(): React.JSX.Element {
                 <p className="text-xs text-muted-foreground">{t('users.allSitesDescription')}</p>
                 {!hasAllSiteAccess && (
                   <div className="max-h-48 overflow-y-auto rounded-md border border-border p-3 space-y-2">
-                    {sitesList.length === 0 && <p className="text-xs text-muted-foreground">--</p>}
+                    {sitesList.length === 0 && <p className="text-xs text-muted-foreground">n/a</p>}
                     {sitesList.map((site) => (
                       <div key={site.id} className="flex items-center gap-2">
                         <input

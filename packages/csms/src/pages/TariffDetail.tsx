@@ -262,7 +262,7 @@ export function TariffDetail(): React.JSX.Element {
     if (restrictions.timeRange != null) {
       parts.push(`${restrictions.timeRange.startTime} - ${restrictions.timeRange.endTime}`);
     }
-    return parts.join(' ') || '--';
+    return parts.join(' ') || 'n/a';
   }
 
   const isOverlapError =
@@ -571,27 +571,27 @@ export function TariffDetail(): React.JSX.Element {
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.pricePerKwh')}</dt>
-                <dd className="font-medium">{tariff.pricePerKwh ?? '--'}</dd>
+                <dd className="font-medium">{tariff.pricePerKwh ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.pricePerMinute')}</dt>
-                <dd className="font-medium">{tariff.pricePerMinute ?? '--'}</dd>
+                <dd className="font-medium">{tariff.pricePerMinute ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.pricePerSession')}</dt>
-                <dd className="font-medium">{tariff.pricePerSession ?? '--'}</dd>
+                <dd className="font-medium">{tariff.pricePerSession ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.idleFeePricePerMinute')}</dt>
-                <dd className="font-medium">{tariff.idleFeePricePerMinute ?? '--'}</dd>
+                <dd className="font-medium">{tariff.idleFeePricePerMinute ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.reservationFeePerMinute')}</dt>
-                <dd className="font-medium">{tariff.reservationFeePerMinute ?? '--'}</dd>
+                <dd className="font-medium">{tariff.reservationFeePerMinute ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('pricing.taxRate')}</dt>
-                <dd className="font-medium">{tariff.taxRate ?? '--'}</dd>
+                <dd className="font-medium">{tariff.taxRate ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('common.created')}</dt>

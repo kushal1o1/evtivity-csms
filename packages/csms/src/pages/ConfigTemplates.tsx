@@ -123,7 +123,7 @@ export function ConfigTemplates({ embedded }: { embedded?: boolean } = {}): Reac
                           {template.name}
                         </TableCell>
                         <TableCell className="text-xs whitespace-normal break-words max-w-md">
-                          {template.description ?? '--'}
+                          {template.description ?? 'n/a'}
                         </TableCell>
                         <TableCell className="text-xs">
                           {Array.isArray(template.variables) ? template.variables.length : 0}

@@ -382,7 +382,7 @@ function StationAllocationsTable({
                     {station.hasActiveSession ? (
                       <Badge variant="success">Active</Badge>
                     ) : (
-                      <span className="text-muted-foreground">--</span>
+                      <span className="text-muted-foreground">n/a</span>
                     )}
                   </TableCell>
                   <TableCell>

@@ -104,7 +104,7 @@ export function AuthorizeLogView({
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {!hideIdTokenFilter && (
             <SearchInput
               value={idToken}
@@ -176,17 +176,17 @@ export function AuthorizeLogView({
                             {row.stationOcppId ?? row.stationDbId}
                           </Link>
                         ) : (
-                          (row.stationOcppId ?? '--')
+                          (row.stationOcppId ?? 'n/a')
                         )}
                       </TableCell>
                     )}
                     <TableCell className="text-xs">{row.idToken}</TableCell>
-                    <TableCell className="text-xs">{row.tokenType ?? '--'}</TableCell>
+                    <TableCell className="text-xs">{row.tokenType ?? 'n/a'}</TableCell>
                     <TableCell>
                       <Badge variant={outcomeVariant(row.outcome)}>{row.outcome}</Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {row.reason ?? '--'}
+                      {row.reason ?? 'n/a'}
                     </TableCell>
                     {!hideMatchedTokenColumn && (
                       <TableCell>
@@ -198,7 +198,7 @@ export function AuthorizeLogView({
                             {row.matchedTokenId}
                           </Link>
                         ) : (
-                          '--'
+                          'n/a'
                         )}
                       </TableCell>
                     )}

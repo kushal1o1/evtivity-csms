@@ -27,15 +27,15 @@ interface SessionChartsProps {
 }
 
 function formatPower(watts: number | null | undefined): string {
-  if (watts == null) return '--';
+  if (watts == null) return 'n/a';
   if (watts >= 1000) return `${(watts / 1000).toFixed(1)} kW`;
   return `${watts.toFixed(0)} W`;
 }
 
 function formatEnergyValue(wh: string | null | undefined): string {
-  if (wh == null) return '--';
+  if (wh == null) return 'n/a';
   const value = parseFloat(wh);
-  if (isNaN(value)) return '--';
+  if (isNaN(value)) return 'n/a';
   return `${(value / 1000).toFixed(2)} kWh`;
 }
 

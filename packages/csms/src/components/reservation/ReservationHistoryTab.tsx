@@ -82,12 +82,12 @@ function FieldDiff({
 }): React.JSX.Element | null {
   if (before === after) return null;
   const renderValue = (v: string | null, href?: string): React.ReactNode => {
-    if (v == null || v === '') return <span className="text-muted-foreground">--</span>;
+    if (v == null || v === '') return <span className="text-muted-foreground">n/a</span>;
     if (href != null) {
       return (
         <Link
           to={href}
-          className="text-primary hover:underline font-mono text-xs"
+          className="text-primary hover:underline text-xs"
           onClick={(e) => {
             e.stopPropagation();
           }}
@@ -96,7 +96,7 @@ function FieldDiff({
         </Link>
       );
     }
-    return <span className="font-mono text-xs">{v}</span>;
+    return <span className="text-xs">{v}</span>;
   };
   return (
     <div className="text-xs flex items-baseline gap-2">

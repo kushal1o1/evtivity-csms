@@ -640,7 +640,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-1 text-sm font-medium">
                       <Plug className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{connectorTypes.length > 0 ? connectorTypes.join(', ') : '--'}</span>
+                      <span>{connectorTypes.length > 0 ? connectorTypes.join(', ') : 'n/a'}</span>
                     </div>
                     {(maxPowerKw > 0 || maxCurrentAmps > 0) && (
                       <p className="text-xs text-muted-foreground">

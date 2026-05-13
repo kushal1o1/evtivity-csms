@@ -138,7 +138,7 @@ export function StationConfigurationsTab({
     onError: () => {
       setPushResult({
         success: false,
-        results: [{ component: '', variable: '--', status: 'Failed' }],
+        results: [{ component: '', variable: 'n/a', status: 'Failed' }],
       });
     },
   });
@@ -261,7 +261,9 @@ export function StationConfigurationsTab({
                         {v.variable}
                         {v.variableInstance != null ? ` (${v.variableInstance})` : ''}
                       </TableCell>
-                      <TableCell className="text-xs max-w-xs truncate">{v.value ?? '--'}</TableCell>
+                      <TableCell className="text-xs max-w-xs truncate">
+                        {v.value ?? 'n/a'}
+                      </TableCell>
                       <TableCell className="text-xs">{v.attributeType}</TableCell>
                       <TableCell className="text-xs">{v.source}</TableCell>
                     </TableRow>

@@ -398,10 +398,10 @@ export function SupportCaseDetail(): React.JSX.Element {
                                 </Link>
                               </TableCell>
                               <TableCell className="text-sm">
-                                {session.stationName ?? '--'}
+                                {session.stationName ?? 'n/a'}
                               </TableCell>
                               <TableCell className="text-sm">
-                                {session.driverName ?? '--'}
+                                {session.driverName ?? 'n/a'}
                               </TableCell>
                               <TableCell className="text-sm">
                                 {session.status != null ? (
@@ -419,13 +419,13 @@ export function SupportCaseDetail(): React.JSX.Element {
                                     {session.status}
                                   </Badge>
                                 ) : (
-                                  '--'
+                                  'n/a'
                                 )}
                               </TableCell>
                               <TableCell className="text-sm">
                                 {payment != null && captured > 0
                                   ? `${fmt(captured)} ${currency}`
-                                  : '--'}
+                                  : 'n/a'}
                               </TableCell>
                               <TableCell className="text-sm">
                                 {payment != null && refunded > 0 ? (
@@ -438,7 +438,7 @@ export function SupportCaseDetail(): React.JSX.Element {
                                     )}
                                   </span>
                                 ) : (
-                                  '--'
+                                  'n/a'
                                 )}
                               </TableCell>
                               <TableCell className="text-right">

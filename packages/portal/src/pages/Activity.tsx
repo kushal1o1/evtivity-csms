@@ -141,7 +141,7 @@ export function Activity(): React.JSX.Element {
 
   let donutValue = 0;
   let donutMax = 1;
-  let centerText = '--';
+  let centerText = 'n/a';
 
   if (selectedMetric === 'cost') {
     donutValue = totalCost;

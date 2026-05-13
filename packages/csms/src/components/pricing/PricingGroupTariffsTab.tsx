@@ -87,7 +87,7 @@ export function PricingGroupTariffsTab({
     if (restrictions.timeRange != null) {
       parts.push(`${restrictions.timeRange.startTime} - ${restrictions.timeRange.endTime}`);
     }
-    return parts.join(' ') || '--';
+    return parts.join(' ') || 'n/a';
   }
 
   return (
@@ -146,12 +146,12 @@ export function PricingGroupTariffsTab({
                     <TableCell className="text-sm text-muted-foreground">
                       {formatRestrictionSummary(tariff.restrictions)}
                     </TableCell>
-                    <TableCell>{tariff.pricePerKwh ?? '--'}</TableCell>
-                    <TableCell>{tariff.pricePerMinute ?? '--'}</TableCell>
-                    <TableCell>{tariff.pricePerSession ?? '--'}</TableCell>
-                    <TableCell>{tariff.idleFeePricePerMinute ?? '--'}</TableCell>
-                    <TableCell>{tariff.reservationFeePerMinute ?? '--'}</TableCell>
-                    <TableCell>{tariff.taxRate ?? '--'}</TableCell>
+                    <TableCell>{tariff.pricePerKwh ?? 'n/a'}</TableCell>
+                    <TableCell>{tariff.pricePerMinute ?? 'n/a'}</TableCell>
+                    <TableCell>{tariff.pricePerSession ?? 'n/a'}</TableCell>
+                    <TableCell>{tariff.idleFeePricePerMinute ?? 'n/a'}</TableCell>
+                    <TableCell>{tariff.reservationFeePerMinute ?? 'n/a'}</TableCell>
+                    <TableCell>{tariff.taxRate ?? 'n/a'}</TableCell>
                     <TableCell>{tariff.currency}</TableCell>
                   </TableRow>
                 ))}

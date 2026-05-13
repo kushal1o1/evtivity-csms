@@ -117,7 +117,7 @@ export function MonthlyStatement(): React.JSX.Element {
                   {data.sessions.map((s) => (
                     <tr key={s.id} className="border-b">
                       <td className="px-2 py-2">
-                        {s.siteName ?? '--'}
+                        {s.siteName ?? 'n/a'}
                         {s.siteCity != null && (
                           <span className="text-xs text-muted-foreground">, {s.siteCity}</span>
                         )}
@@ -136,7 +136,7 @@ export function MonthlyStatement(): React.JSX.Element {
                         <td className="hidden md:table-cell px-2 py-2 text-right text-success">
                           {s.co2AvoidedKg != null
                             ? `${parseFloat(String(s.co2AvoidedKg)).toFixed(2)} kg`
-                            : '--'}
+                            : 'n/a'}
                         </td>
                       )}
                       <td className="hidden md:table-cell px-2 py-2 text-right text-xs whitespace-nowrap">
@@ -151,7 +151,7 @@ export function MonthlyStatement(): React.JSX.Element {
                     <td className="px-2 py-2 text-right">
                       {formatEnergy(data.totals.totalEnergyWh)}
                     </td>
-                    <td className="hidden md:table-cell px-2 py-2 text-right">--</td>
+                    <td className="hidden md:table-cell px-2 py-2 text-right">n/a</td>
                     <td className="hidden md:table-cell px-2 py-2 text-right">
                       {formatDistance(data.totals.totalEnergyWh, efficiency, distanceUnit)}
                     </td>
@@ -162,10 +162,10 @@ export function MonthlyStatement(): React.JSX.Element {
                       <td className="hidden md:table-cell px-2 py-2 text-right text-success">
                         {data.totals.totalCo2AvoidedKg != null
                           ? `${parseFloat(String(data.totals.totalCo2AvoidedKg)).toFixed(2)} kg`
-                          : '--'}
+                          : 'n/a'}
                       </td>
                     )}
-                    <td className="hidden md:table-cell px-2 py-2 text-right">--</td>
+                    <td className="hidden md:table-cell px-2 py-2 text-right">n/a</td>
                   </tr>
                 </tfoot>
               </table>

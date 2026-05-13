@@ -8,10 +8,10 @@
 
 /**
  * Format cents to a localized currency string using Intl.NumberFormat.
- * Returns '--' for null/undefined values.
+ * Returns 'n/a' for null/undefined values.
  */
 export function formatCents(cents: number | null | undefined, currency = 'USD'): string {
-  if (cents == null) return '--';
+  if (cents == null) return 'n/a';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
@@ -21,10 +21,10 @@ export function formatCents(cents: number | null | undefined, currency = 'USD'):
 /**
  * Format a duration between two timestamps as "Xh Ym" or "Xm".
  * Uses Date.now() when end is null (ongoing session).
- * Returns '--' when start is null.
+ * Returns 'n/a' when start is null.
  */
 export function formatDuration(start: string | null, end: string | null): string {
-  if (start == null) return '--';
+  if (start == null) return 'n/a';
   const startMs = new Date(start).getTime();
   const endMs = end != null ? new Date(end).getTime() : Date.now();
   const totalMinutes = Math.round((endMs - startMs) / 60000);

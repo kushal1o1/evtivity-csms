@@ -410,7 +410,9 @@ export function SiteDetailsTab({
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('sites.hoursOfOperation')}</dt>
-                <dd className="font-medium whitespace-pre-line">{site.hoursOfOperation ?? '--'}</dd>
+                <dd className="font-medium whitespace-pre-line">
+                  {site.hoursOfOperation ?? 'n/a'}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('common.created')}</dt>
@@ -434,15 +436,15 @@ export function SiteDetailsTab({
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">{t('sites.contactName')}</dt>
-                <dd className="font-medium">{site.contactName ?? '--'}</dd>
+                <dd className="font-medium">{site.contactName ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('sites.contactEmail')}</dt>
-                <dd className="font-medium">{site.contactEmail ?? '--'}</dd>
+                <dd className="font-medium">{site.contactEmail ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('sites.contactPhone')}</dt>
-                <dd className="font-medium">{site.contactPhone ?? '--'}</dd>
+                <dd className="font-medium">{site.contactPhone ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('sites.contactIsPublic')}</dt>

@@ -34,7 +34,7 @@ export function currencySymbol(currency: string): string {
 }
 
 export function formatCents(cents: number | null | undefined, currency = 'USD'): string {
-  if (cents == null) return '--';
+  if (cents == null) return 'n/a';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
@@ -42,13 +42,13 @@ export function formatCents(cents: number | null | undefined, currency = 'USD'):
 }
 
 export function formatEnergy(wh: string | number | null | undefined): string {
-  if (wh == null) return '--';
+  if (wh == null) return 'n/a';
   const value = typeof wh === 'string' ? parseFloat(wh) : wh;
   return `${(value / 1000).toFixed(2)} kWh`;
 }
 
 export function formatDate(date: string | Date | null | undefined, timezone?: string): string {
-  if (date == null) return '--';
+  if (date == null) return 'n/a';
   return new Date(date).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -63,9 +63,9 @@ export function formatDuration(
   startedAt: string | Date | null | undefined,
   endedAt: string | Date | null | undefined,
 ): string {
-  if (startedAt == null || endedAt == null) return '--';
+  if (startedAt == null || endedAt == null) return 'n/a';
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  if (ms < 0) return '--';
+  if (ms < 0) return 'n/a';
   const totalMinutes = Math.round(ms / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -78,9 +78,9 @@ export function formatDistance(
   efficiencyMiPerKwh: number,
   unit: 'miles' | 'km' = 'miles',
 ): string {
-  if (energyWh == null) return '--';
+  if (energyWh == null) return 'n/a';
   const wh = typeof energyWh === 'string' ? parseFloat(energyWh) : energyWh;
-  if (isNaN(wh)) return '--';
+  if (isNaN(wh)) return 'n/a';
   const miles = (wh / 1000) * efficiencyMiPerKwh;
   if (unit === 'km') {
     const km = miles * 1.60934;

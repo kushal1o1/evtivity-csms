@@ -265,7 +265,7 @@ export function UserCreate(): React.JSX.Element {
                     hasSubmitted && errors.siteIds ? 'border-destructive' : 'border-border'
                   }`}
                 >
-                  {sitesList.length === 0 && <p className="text-xs text-muted-foreground">--</p>}
+                  {sitesList.length === 0 && <p className="text-xs text-muted-foreground">n/a</p>}
                   {sitesList.map((site) => (
                     <div key={site.id} className="flex items-center gap-2">
                       <input

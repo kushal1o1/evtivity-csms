@@ -105,9 +105,9 @@ function useElapsedTime(startedAt: string | null | undefined, isActive: boolean)
     };
   }, [isActive, startedAt]);
 
-  if (startedAt == null) return '--';
+  if (startedAt == null) return 'n/a';
   const ms = (isActive ? now : Date.now()) - new Date(startedAt).getTime();
-  if (ms < 0) return '--';
+  if (ms < 0) return 'n/a';
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -613,9 +613,9 @@ function Row({ label, value }: { label: string; value: string }): React.JSX.Elem
 }
 
 function formatStaticDuration(startedAt: string | null, endedAt: string | null): string {
-  if (startedAt == null || endedAt == null) return '--';
+  if (startedAt == null || endedAt == null) return 'n/a';
   const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  if (ms < 0) return '--';
+  if (ms < 0) return 'n/a';
   const totalMinutes = Math.round(ms / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;

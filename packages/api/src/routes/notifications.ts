@@ -418,6 +418,11 @@ const FRIENDLY_SUBJECTS: Record<string, string> = {
   'reservation.Expiring': '{{companyName}} - Your reservation is expiring soon',
   'reservation.Expired': '{{companyName}} - Your reservation has expired',
   'reservation.StationFaulted': '{{companyName}} - Reserved station is unavailable',
+  // Token (RFID card) events
+  'token.Added': '{{companyName}} - New RFID card added to your account',
+  'token.Removed': '{{companyName}} - RFID card removed from your account',
+  'token.Deactivated': '{{companyName}} - RFID card deactivated',
+  'token.Reactivated': '{{companyName}} - RFID card reactivated',
   // Support case events (driver-facing)
   'supportCase.Created': '{{companyName}} - Your support case has been opened',
   'supportCase.OperatorReply': '{{companyName}} - New reply on your support case',

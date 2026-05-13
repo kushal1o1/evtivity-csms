@@ -283,10 +283,10 @@ export function StationChargingProfilesTab({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs">
-                        {profile.evseId != null ? String(profile.evseId) : '--'}
+                        {profile.evseId != null ? String(profile.evseId) : 'n/a'}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {profile.chargingLimitSource ?? '--'}
+                        {profile.chargingLimitSource ?? 'n/a'}
                       </TableCell>
                       <TableCell className="text-xs">
                         {profile.templateId != null ? (
@@ -297,7 +297,7 @@ export function StationChargingProfilesTab({
                             {profile.templateName ?? profile.templateId}
                           </Link>
                         ) : (
-                          '--'
+                          'n/a'
                         )}
                       </TableCell>
                       <TableCell className="text-xs">
@@ -456,11 +456,11 @@ export function StationChargingProfilesTab({
                 </div>
                 <div>
                   <span className="text-muted-foreground">EVSE: </span>
-                  {viewProfile.evseId != null ? String(viewProfile.evseId) : '--'}
+                  {viewProfile.evseId != null ? String(viewProfile.evseId) : 'n/a'}
                 </div>
                 <div>
                   <span className="text-muted-foreground">{t('stations.limitSource')}: </span>
-                  {viewProfile.chargingLimitSource ?? '--'}
+                  {viewProfile.chargingLimitSource ?? 'n/a'}
                 </div>
                 <div>
                   <span className="text-muted-foreground">{t('smartCharging.template')}: </span>
@@ -472,7 +472,7 @@ export function StationChargingProfilesTab({
                       {viewProfile.templateName ?? viewProfile.templateId}
                     </Link>
                   ) : (
-                    '--'
+                    'n/a'
                   )}
                 </div>
               </div>
@@ -578,7 +578,7 @@ export function StationChargingProfilesTab({
                                   <TableCell className="text-xs">
                                     {period.numberPhases != null
                                       ? String(period.numberPhases)
-                                      : '--'}
+                                      : 'n/a'}
                                   </TableCell>
                                 </TableRow>
                               );

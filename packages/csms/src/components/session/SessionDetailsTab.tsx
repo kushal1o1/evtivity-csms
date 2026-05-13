@@ -117,12 +117,12 @@ export function SessionDetailsTab({
           <AlertTitle>{t('sessions.reservationTokenMismatchTitle')}</AlertTitle>
           <AlertDescription>
             {t('sessions.reservationTokenMismatchDescription')}
-            <div className="mt-2 text-xs font-mono">
+            <div className="mt-2 text-xs">
               <div>
-                {t('sessions.expectedToken')}: {reservationMismatch.expected ?? '--'}
+                {t('sessions.expectedToken')}: {reservationMismatch.expected ?? 'n/a'}
               </div>
               <div>
-                {t('sessions.actualToken')}: {reservationMismatch.actual ?? '--'}
+                {t('sessions.actualToken')}: {reservationMismatch.actual ?? 'n/a'}
               </div>
             </div>
           </AlertDescription>
@@ -139,7 +139,7 @@ export function SessionDetailsTab({
               <Link to={`/stations/${session.stationId}`} className="text-primary hover:underline">
                 {session.siteName != null
                   ? `${session.siteName} / ${String(session.stationName)}`
-                  : (session.stationName ?? '--')}
+                  : (session.stationName ?? 'n/a')}
               </Link>
             </Row>
             <Row label={t('sessions.driver')}>
@@ -165,14 +165,14 @@ export function SessionDetailsTab({
                   )}
                 </div>
               ) : (
-                '--'
+                'n/a'
               )}
             </Row>
             <Row label={t('sessions.started')}>
-              {session.startedAt != null ? formatDateTime(session.startedAt, timezone) : '--'}
+              {session.startedAt != null ? formatDateTime(session.startedAt, timezone) : 'n/a'}
             </Row>
             <Row label={t('sessions.ended')}>
-              {session.endedAt != null ? formatDateTime(session.endedAt, timezone) : '--'}
+              {session.endedAt != null ? formatDateTime(session.endedAt, timezone) : 'n/a'}
             </Row>
             {session.idleStartedAt != null && (
               <Row label={t('sessions.idleStartedAt')}>
@@ -185,7 +185,7 @@ export function SessionDetailsTab({
             <Row label={t('sessions.energy')}>
               {session.energyDeliveredWh != null
                 ? `${(session.energyDeliveredWh / 1000).toFixed(2)} kWh`
-                : '--'}
+                : 'n/a'}
             </Row>
             {session.co2AvoidedKg != null && (
               <Row label={t('sessions.co2AvoidedLabel')}>
@@ -205,7 +205,7 @@ export function SessionDetailsTab({
               <Row label={t('sessions.token')}>
                 <Link
                   to={`/tokens/${session.token.id}`}
-                  className="text-primary hover:underline font-mono text-xs"
+                  className="text-primary hover:underline text-xs"
                 >
                   {session.token.idToken}
                 </Link>
@@ -214,7 +214,7 @@ export function SessionDetailsTab({
                 </span>
               </Row>
             )}
-            <Row label={t('sessions.stoppedReason')}>{session.stoppedReason ?? '--'}</Row>
+            <Row label={t('sessions.stoppedReason')}>{session.stoppedReason ?? 'n/a'}</Row>
             {session.reservationId != null && (
               <Row label={t('sessions.reservation')}>
                 <Link

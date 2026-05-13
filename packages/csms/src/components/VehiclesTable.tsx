@@ -92,9 +92,9 @@ export function VehiclesTable({
                 }}
               >
                 <TableCell className="font-medium" data-testid="row-click-target">
-                  {v.make ?? '--'}
+                  {v.make ?? 'n/a'}
                 </TableCell>
-                <TableCell>{v.model ?? '--'}</TableCell>
+                <TableCell>{v.model ?? 'n/a'}</TableCell>
                 <TableCell>
                   <CopyableId id={v.id} variant="table" />
                 </TableCell>
@@ -108,13 +108,13 @@ export function VehiclesTable({
                         void navigate(`/drivers/${v.driverId}`);
                       }}
                     >
-                      {v.driverName ?? '--'}
+                      {v.driverName ?? 'n/a'}
                     </button>
                   </TableCell>
                 )}
-                <TableCell>{v.year ?? '--'}</TableCell>
-                <TableCell>{v.vin ?? '--'}</TableCell>
-                <TableCell>{v.licensePlate ?? '--'}</TableCell>
+                <TableCell>{v.year ?? 'n/a'}</TableCell>
+                <TableCell>{v.vin ?? 'n/a'}</TableCell>
+                <TableCell>{v.licensePlate ?? 'n/a'}</TableCell>
                 {hasActions && (
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

@@ -419,7 +419,7 @@ export function ReservationDetailsTab({
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">{t('stations.site')}</dt>
-                <dd className="font-medium">{reservation.siteName ?? '--'}</dd>
+                <dd className="font-medium">{reservation.siteName ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('reservations.stationLabel')}</dt>
@@ -434,7 +434,7 @@ export function ReservationDetailsTab({
                 <dd className="font-medium">
                   {reservation.evseOcppId != null
                     ? `Port ${String(reservation.evseOcppId)}${reservation.connectorType ? `: ${reservation.connectorType}` : ''}${reservation.connectorMaxPowerKw ? ` (${reservation.connectorMaxPowerKw} kW)` : ''}`
-                    : '--'}
+                    : 'n/a'}
                 </dd>
               </div>
               <div>
@@ -477,7 +477,7 @@ export function ReservationDetailsTab({
                       to={`/tokens/${reservation.tokenId}`}
                       className="text-primary hover:underline"
                     >
-                      <span className="font-mono text-xs">{reservation.tokenIdToken}</span>
+                      <span className="text-xs">{reservation.tokenIdToken}</span>
                       {reservation.tokenType != null && (
                         <span className="ml-1 text-xs text-muted-foreground">
                           ({reservation.tokenType})
@@ -485,7 +485,7 @@ export function ReservationDetailsTab({
                       )}
                     </Link>
                   ) : (
-                    <span className="text-muted-foreground">--</span>
+                    <span className="text-muted-foreground">n/a</span>
                   )}
                 </dd>
               </div>

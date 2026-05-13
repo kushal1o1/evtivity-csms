@@ -168,7 +168,7 @@ export function SmartChargingPushDetail(): React.JSX.Element {
                             {station.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs">{station.errorInfo ?? '--'}</TableCell>
+                        <TableCell className="text-xs">{station.errorInfo ?? 'n/a'}</TableCell>
                         <TableCell className="text-xs">
                           {formatDateTime(station.updatedAt, timezone)}
                         </TableCell>

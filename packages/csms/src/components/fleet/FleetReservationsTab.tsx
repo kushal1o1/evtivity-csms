@@ -299,7 +299,7 @@ export function FleetReservationsTab({ fleetId }: FleetReservationsTabProps): Re
                       {fr.startsAt != null ? (
                         formatDateTime(fr.startsAt, timezone)
                       ) : (
-                        <span className="text-muted-foreground">--</span>
+                        <span className="text-muted-foreground">n/a</span>
                       )}
                     </TableCell>
                     <TableCell>{formatDateTime(fr.expiresAt, timezone)}</TableCell>

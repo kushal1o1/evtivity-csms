@@ -10,7 +10,7 @@ import { formatCents, formatDuration } from '@/lib/formatting';
 import { simpleSessionStatusVariant } from '@/lib/status-variants';
 
 function formatSessionEnergy(wh: string | null): string {
-  if (wh == null) return '--';
+  if (wh == null) return 'n/a';
   const kwh = Number(wh) / 1000;
   return `${kwh.toFixed(2)} kWh`;
 }
@@ -45,7 +45,7 @@ export function ReservationSessionTab({
             <dt className="text-muted-foreground">{t('common.status')}</dt>
             <dd className="font-medium">
               <Badge variant={simpleSessionStatusVariant(sessionStatus ?? '')}>
-                {sessionStatus ?? '--'}
+                {sessionStatus ?? 'n/a'}
               </Badge>
             </dd>
           </div>

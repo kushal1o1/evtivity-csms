@@ -49,12 +49,12 @@ function statusBadge(status: string): React.JSX.Element {
 }
 
 function passRate(run: OcttRun): string {
-  if (run.totalTests === 0) return '--';
+  if (run.totalTests === 0) return 'n/a';
   return `${((run.passed / run.totalTests) * 100).toFixed(1)}%`;
 }
 
 function formatDuration(ms: number | null): string {
-  if (ms == null) return '--';
+  if (ms == null) return 'n/a';
   if (ms < 1000) return `${String(ms)}ms`;
   const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${String(seconds)}s`;

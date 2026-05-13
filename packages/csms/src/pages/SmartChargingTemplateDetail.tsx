@@ -740,7 +740,7 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
               <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
                   <dt className="text-muted-foreground">{t('common.description')}</dt>
-                  <dd className="font-medium">{template.description ?? '--'}</dd>
+                  <dd className="font-medium">{template.description ?? 'n/a'}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('smartCharging.ocppVersion')}</dt>
@@ -880,7 +880,9 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
                               )}
                             </TableCell>
                             <TableCell className="text-xs">{period.limit}</TableCell>
-                            <TableCell className="text-xs">{period.numberPhases ?? '--'}</TableCell>
+                            <TableCell className="text-xs">
+                              {period.numberPhases ?? 'n/a'}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

@@ -173,7 +173,7 @@ export function TokensTable({
                 {isVisible('expiresAt') && (
                   <TableCell>
                     {(() => {
-                      if (token.expiresAt == null) return '--';
+                      if (token.expiresAt == null) return 'n/a';
                       const ms = new Date(token.expiresAt).getTime();
                       const days = Math.ceil((ms - Date.now()) / 86_400_000);
                       const text = formatDate(token.expiresAt, timezone);

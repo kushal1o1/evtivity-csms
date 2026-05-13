@@ -177,7 +177,7 @@ export function ReservationsTable({
                         {r.driverFirstName} {r.driverLastName}
                       </Link>
                     ) : (
-                      '--'
+                      'n/a'
                     )}
                   </TableCell>
                   <TableCell data-testid="row-click-target">
@@ -197,14 +197,14 @@ export function ReservationsTable({
                         {r.sessionId}
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">--</span>
+                      <span className="text-muted-foreground">n/a</span>
                     )}
                   </TableCell>
                   <TableCell>
                     {r.startsAt != null ? (
                       formatDateTime(r.startsAt, timezone)
                     ) : (
-                      <span className="text-muted-foreground">--</span>
+                      <span className="text-muted-foreground">n/a</span>
                     )}
                   </TableCell>
                   <TableCell>{formatDateTime(r.expiresAt, timezone)}</TableCell>

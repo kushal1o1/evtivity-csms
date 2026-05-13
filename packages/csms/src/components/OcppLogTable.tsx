@@ -146,7 +146,7 @@ export function OcppLogTable({
                             {formatDateTime(log.createdAt, timezone)}
                           </TableCell>
                           {showStationColumn && (
-                            <TableCell className="text-xs">{log.stationOcppId ?? '--'}</TableCell>
+                            <TableCell className="text-xs">{log.stationOcppId ?? 'n/a'}</TableCell>
                           )}
                           <TableCell>
                             <span className="flex items-center gap-1 text-xs">
@@ -161,7 +161,7 @@ export function OcppLogTable({
                               <span>Station</span>
                             </span>
                           </TableCell>
-                          <TableCell className="font-medium">{log.action ?? '--'}</TableCell>
+                          <TableCell className="font-medium">{log.action ?? 'n/a'}</TableCell>
                           <TableCell>
                             <Badge
                               variant={log.messageType === 4 ? 'destructive' : 'secondary'}
@@ -174,7 +174,7 @@ export function OcppLogTable({
                             <TableCell className="text-right text-xs">
                               {log.responseTimeMs != null
                                 ? `${String(log.responseTimeMs)}ms`
-                                : '--'}
+                                : 'n/a'}
                             </TableCell>
                           )}
                         </TableRow>

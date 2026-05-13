@@ -577,7 +577,7 @@ function QuickActionForm({
               }}
               className="h-9"
             >
-              <option value="">--</option>
+              <option value="">n/a</option>
               {OCPP_COMPONENTS.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -595,7 +595,7 @@ function QuickActionForm({
               }}
               className="h-9"
             >
-              <option value="">--</option>
+              <option value="">n/a</option>
               {getVarOptions.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -655,7 +655,7 @@ function QuickActionForm({
               }}
               className="h-9"
             >
-              <option value="">--</option>
+              <option value="">n/a</option>
               {OCPP_COMPONENTS.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -673,7 +673,7 @@ function QuickActionForm({
               }}
               className="h-9"
             >
-              <option value="">--</option>
+              <option value="">n/a</option>
               {setVarOptions.map((v) => (
                 <option key={v} value={v}>
                   {v}
@@ -1241,7 +1241,7 @@ export function StationCommands({
               }}
               className="h-9"
             >
-              <option value="">--</option>
+              <option value="">n/a</option>
               {csmsActions.map((a) => (
                 <option key={a} value={a}>
                   {a}

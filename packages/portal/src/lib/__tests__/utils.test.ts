@@ -24,11 +24,11 @@ describe('cn', () => {
 
 describe('formatCents', () => {
   it('returns -- for null', () => {
-    expect(formatCents(null)).toBe('--');
+    expect(formatCents(null)).toBe('n/a');
   });
 
   it('returns -- for undefined', () => {
-    expect(formatCents(undefined)).toBe('--');
+    expect(formatCents(undefined)).toBe('n/a');
   });
 
   it('formats 0 as $0.00', () => {
@@ -56,11 +56,11 @@ describe('formatCents', () => {
 
 describe('formatEnergy', () => {
   it('returns -- for null', () => {
-    expect(formatEnergy(null)).toBe('--');
+    expect(formatEnergy(null)).toBe('n/a');
   });
 
   it('returns -- for undefined', () => {
-    expect(formatEnergy(undefined)).toBe('--');
+    expect(formatEnergy(undefined)).toBe('n/a');
   });
 
   it('formats string 0 as kWh', () => {
@@ -90,11 +90,11 @@ describe('formatEnergy', () => {
 
 describe('formatDate', () => {
   it('returns -- for null', () => {
-    expect(formatDate(null)).toBe('--');
+    expect(formatDate(null)).toBe('n/a');
   });
 
   it('returns -- for undefined', () => {
-    expect(formatDate(undefined)).toBe('--');
+    expect(formatDate(undefined)).toBe('n/a');
   });
 
   it('formats ISO date string with month, day, year, and time', () => {
@@ -134,6 +134,6 @@ describe('formatDate', () => {
   });
 
   it('returns -- for null with timezone', () => {
-    expect(formatDate(null, 'America/New_York')).toBe('--');
+    expect(formatDate(null, 'America/New_York')).toBe('n/a');
   });
 });

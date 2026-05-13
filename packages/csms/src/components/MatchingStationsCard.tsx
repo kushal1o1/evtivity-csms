@@ -108,11 +108,13 @@ export function MatchingStationsCard({
                   {matchingStations?.data.map((station) => (
                     <TableRow key={station.id}>
                       <TableCell className="font-medium">{station.stationId}</TableCell>
-                      <TableCell>{station.siteName ?? '--'}</TableCell>
-                      <TableCell>{station.vendorName ?? '--'}</TableCell>
-                      <TableCell>{station.model ?? '--'}</TableCell>
+                      <TableCell>{station.siteName ?? 'n/a'}</TableCell>
+                      <TableCell>{station.vendorName ?? 'n/a'}</TableCell>
+                      <TableCell>{station.model ?? 'n/a'}</TableCell>
                       {showFirmwareVersion && (
-                        <TableCell className="text-xs">{station.firmwareVersion ?? '--'}</TableCell>
+                        <TableCell className="text-xs">
+                          {station.firmwareVersion ?? 'n/a'}
+                        </TableCell>
                       )}
                       <TableCell>
                         <Badge variant={station.isOnline ? 'success' : 'destructive'}>

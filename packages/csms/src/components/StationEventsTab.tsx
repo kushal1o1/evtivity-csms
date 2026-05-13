@@ -130,7 +130,7 @@ function SecurityEventsPanel({ stationId, timezone }: Props): React.JSX.Element 
                         {formatDateTime(event.timestamp, timezone)}
                       </TableCell>
                       <TableCell className="text-xs max-w-xs truncate">
-                        {event.techInfo ?? '--'}
+                        {event.techInfo ?? 'n/a'}
                       </TableCell>
                     </TableRow>
                   ))}

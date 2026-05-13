@@ -113,7 +113,7 @@ export function Pricing(): React.JSX.Element {
                     <CopyableId id={group.id} variant="table" />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {group.description ?? '--'}
+                    {group.description ?? 'n/a'}
                   </TableCell>
                   <TableCell>
                     {group.isDefault && <Badge variant="default">{t('common.default')}</Badge>}

@@ -92,16 +92,18 @@ export function StationFirmwareTab({ stationId, timezone }: Props): React.JSX.El
                     <TableRow key={fw.id}>
                       <TableCell>
                         <Badge variant={STATUS_VARIANT[fw.status ?? ''] ?? 'outline'}>
-                          {fw.status ?? '--'}
+                          {fw.status ?? 'n/a'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs max-w-xs truncate">{fw.firmwareUrl}</TableCell>
-                      <TableCell className="text-xs">{fw.version ?? '--'}</TableCell>
+                      <TableCell className="text-xs">{fw.version ?? 'n/a'}</TableCell>
                       <TableCell className="text-xs">
                         {formatDateTime(fw.initiatedAt, timezone)}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {fw.lastStatusAt != null ? formatDateTime(fw.lastStatusAt, timezone) : '--'}
+                        {fw.lastStatusAt != null
+                          ? formatDateTime(fw.lastStatusAt, timezone)
+                          : 'n/a'}
                       </TableCell>
                     </TableRow>
                   ))}

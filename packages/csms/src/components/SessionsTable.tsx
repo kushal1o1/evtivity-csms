@@ -212,7 +212,7 @@ export const SessionsTable = memo(function SessionsTable({
                         {session.driverName}
                       </Link>
                     ) : (
-                      '--'
+                      'n/a'
                     )}
                   </TableCell>
                 )}
@@ -263,7 +263,7 @@ export const SessionsTable = memo(function SessionsTable({
                         {parseFloat(String(session.co2AvoidedKg)).toFixed(2)} kg
                       </span>
                     ) : (
-                      '--'
+                      'n/a'
                     )}
                   </TableCell>
                 )}

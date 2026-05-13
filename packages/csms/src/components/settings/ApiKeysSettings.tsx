@@ -242,7 +242,7 @@ print(data)`;
                     <TableRow key={key.id}>
                       <TableCell className="font-medium">{key.name}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {key.tokenSuffix != null ? `...${key.tokenSuffix}` : '--'}
+                        {key.tokenSuffix != null ? `...${key.tokenSuffix}` : 'n/a'}
                       </TableCell>
                       <TableCell>{new Date(key.createdAt).toLocaleDateString()}</TableCell>
                       <TableCell>

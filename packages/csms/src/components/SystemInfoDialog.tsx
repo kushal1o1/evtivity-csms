@@ -102,7 +102,7 @@ function Configured({ on }: { on: boolean }): React.JSX.Element {
 }
 
 function nullable(value: string | null): React.ReactNode {
-  return value ?? <span className="text-muted-foreground">--</span>;
+  return value ?? <span className="text-muted-foreground">n/a</span>;
 }
 
 export function SystemInfoDialog({ open, onOpenChange }: Props): React.JSX.Element {

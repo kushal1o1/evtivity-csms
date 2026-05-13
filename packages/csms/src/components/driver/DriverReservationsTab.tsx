@@ -72,7 +72,7 @@ export function DriverReservationsTab({ driverId, timezone }: Props): React.JSX.
   const reservations = data?.data ?? [];
 
   function formatCancelReason(r: DriverReservation): string {
-    if (r.cancelledBy == null) return '--';
+    if (r.cancelledBy == null) return 'n/a';
     // i18next type config requires literal keys; build dynamic keys here.
     const actor: string = t(
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
@@ -90,7 +90,7 @@ export function DriverReservationsTab({ driverId, timezone }: Props): React.JSX.
   }
 
   function formatCents(cents: number): string {
-    return cents > 0 ? `$${(cents / 100).toFixed(2)}` : '--';
+    return cents > 0 ? `$${(cents / 100).toFixed(2)}` : 'n/a';
   }
 
   return (
@@ -144,7 +144,7 @@ export function DriverReservationsTab({ driverId, timezone }: Props): React.JSX.
                         <Badge variant={STATUS_VARIANT[r.status] ?? 'outline'}>{r.status}</Badge>
                       </TableCell>
                       <TableCell className="text-xs">
-                        {r.startsAt != null ? formatDateTime(r.startsAt, timezone) : '--'}
+                        {r.startsAt != null ? formatDateTime(r.startsAt, timezone) : 'n/a'}
                       </TableCell>
                       <TableCell className="text-xs">
                         {formatDateTime(r.expiresAt, timezone)}

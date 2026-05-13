@@ -126,7 +126,7 @@ export function VehicleDetail(): React.JSX.Element {
     return <p className="text-sm text-destructive">{t('vehicles.vehicleNotFound')}</p>;
   }
 
-  const displayName = [vehicle.make, vehicle.model].filter(Boolean).join(' ') || '--';
+  const displayName = [vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'n/a';
 
   return (
     <div className="space-y-6">
@@ -228,23 +228,23 @@ export function VehicleDetail(): React.JSX.Element {
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.make')}</dt>
-                <dd className="font-medium">{vehicle.make ?? '--'}</dd>
+                <dd className="font-medium">{vehicle.make ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.model')}</dt>
-                <dd className="font-medium">{vehicle.model ?? '--'}</dd>
+                <dd className="font-medium">{vehicle.model ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.year')}</dt>
-                <dd className="font-medium">{vehicle.year ?? '--'}</dd>
+                <dd className="font-medium">{vehicle.year ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.vin')}</dt>
-                <dd className="font-medium">{vehicle.vin ?? '--'}</dd>
+                <dd className="font-medium">{vehicle.vin ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.licensePlate')}</dt>
-                <dd className="font-medium">{vehicle.licensePlate ?? '--'}</dd>
+                <dd className="font-medium">{vehicle.licensePlate ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('vehicles.owner')}</dt>
@@ -254,7 +254,7 @@ export function VehicleDetail(): React.JSX.Element {
                       {driver.firstName} {driver.lastName}
                     </Link>
                   ) : (
-                    '--'
+                    'n/a'
                   )}
                 </dd>
               </div>

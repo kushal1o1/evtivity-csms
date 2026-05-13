@@ -188,7 +188,7 @@ export function TokenDetail(): React.JSX.Element {
                             )}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {row.notes != null && row.notes !== '' ? row.notes : '--'}
+                            {row.notes != null && row.notes !== '' ? row.notes : 'n/a'}
                           </TableCell>
                         </TableRow>
                       ))

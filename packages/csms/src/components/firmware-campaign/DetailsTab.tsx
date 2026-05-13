@@ -268,7 +268,7 @@ export function FirmwareCampaignDetailsTab({ campaign }: Props): React.JSX.Eleme
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('firmwareCampaigns.version')}</dt>
-                <dd className="font-medium">{campaign.version ?? '--'}</dd>
+                <dd className="font-medium">{campaign.version ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('common.created')}</dt>

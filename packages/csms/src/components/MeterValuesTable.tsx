@@ -121,11 +121,11 @@ export function MeterValuesTable({
                   {meterData.map((mv) => (
                     <TableRow key={mv.id}>
                       <TableCell>{formatDateTime(mv.timestamp, timezone)}</TableCell>
-                      <TableCell>{mv.measurand ?? '--'}</TableCell>
+                      <TableCell>{mv.measurand ?? 'n/a'}</TableCell>
                       <TableCell className="text-right">{mv.value}</TableCell>
-                      <TableCell>{mv.unit ?? '--'}</TableCell>
-                      <TableCell>{mv.phase ?? '--'}</TableCell>
-                      <TableCell>{mv.context ?? '--'}</TableCell>
+                      <TableCell>{mv.unit ?? 'n/a'}</TableCell>
+                      <TableCell>{mv.phase ?? 'n/a'}</TableCell>
+                      <TableCell>{mv.context ?? 'n/a'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

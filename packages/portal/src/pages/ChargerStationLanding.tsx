@@ -233,7 +233,7 @@ export function ChargerStationLanding(): React.JSX.Element {
                           <div className="flex items-center gap-1 text-sm font-medium">
                             <Plug className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>
-                              {connectorTypes.length > 0 ? connectorTypes.join(', ') : '--'}
+                              {connectorTypes.length > 0 ? connectorTypes.join(', ') : 'n/a'}
                             </span>
                           </div>
                           {(maxPowerKw > 0 || maxCurrentAmps > 0) && (

@@ -192,7 +192,7 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
                     setProvider(e.target.value);
                   }}
                 >
-                  <option value="">--</option>
+                  <option value="">n/a</option>
                   <option value="okta">Okta</option>
                   <option value="azure-ad">Azure AD</option>
                   <option value="google-workspace">Google Workspace</option>
@@ -280,7 +280,7 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
                       setDefaultRoleId(e.target.value);
                     }}
                   >
-                    <option value="">--</option>
+                    <option value="">n/a</option>
                     {(rolesData ?? []).map((role) => (
                       <option key={role.id} value={role.id}>
                         {role.name}

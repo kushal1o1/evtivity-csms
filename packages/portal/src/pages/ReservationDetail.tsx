@@ -129,7 +129,7 @@ export function ReservationDetail(): React.JSX.Element {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">{t('reservationDetail.title')}</h1>
+          <h1 className="text-xl font-bold">{t('reservationDetail.title')}</h1>
           <CopyableId id={reservation.id} />
         </div>
         <Badge variant={statusVariant(reservation.status)}>

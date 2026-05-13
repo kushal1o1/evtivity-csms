@@ -78,7 +78,7 @@ function FieldRenderer({
             }}
             className="h-9"
           >
-            {!field.required && <option value="">--</option>}
+            {!field.required && <option value="">n/a</option>}
             {field.enumValues?.map((v) => (
               <option key={v} value={v}>
                 {v}
@@ -201,7 +201,7 @@ function ObjectFieldRenderer({
   if (field.objectFields == null || field.objectFields.length === 0) {
     return (
       <FieldWrapper field={field}>
-        <p className="text-sm text-muted-foreground">--</p>
+        <p className="text-sm text-muted-foreground">n/a</p>
       </FieldWrapper>
     );
   }

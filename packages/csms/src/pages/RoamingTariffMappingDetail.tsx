@@ -176,7 +176,7 @@ export function RoamingTariffMappingDetail(): React.JSX.Element {
             <dl className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-muted-foreground">{t('roaming.tariffs.internalTariff')}</dt>
-                <dd className="font-medium">{mapping.tariffName ?? '--'}</dd>
+                <dd className="font-medium">{mapping.tariffName ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('roaming.tariffs.ocpiTariffId')}</dt>

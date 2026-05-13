@@ -192,7 +192,7 @@ export function ConformanceDetail(): React.JSX.Element {
           <CardContent className="p-4 text-center">
             <p className="text-xs text-muted-foreground">{t('conformance.duration')}</p>
             <p className="text-2xl font-bold">
-              {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : '--'}
+              {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : 'n/a'}
             </p>
           </CardContent>
         </Card>
@@ -254,7 +254,7 @@ export function ConformanceDetail(): React.JSX.Element {
                                   <TableCell className="text-right">
                                     {m.total > 0
                                       ? `${((m.passed / m.total) * 100).toFixed(0)}%`
-                                      : '--'}
+                                      : 'n/a'}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -446,8 +446,8 @@ function ResultRow({
                     <TableRow key={step.step}>
                       <TableCell>{step.step}</TableCell>
                       <TableCell>{step.description}</TableCell>
-                      <TableCell className="text-xs">{step.expected ?? '--'}</TableCell>
-                      <TableCell className="text-xs">{step.actual ?? '--'}</TableCell>
+                      <TableCell className="text-xs">{step.expected ?? 'n/a'}</TableCell>
+                      <TableCell className="text-xs">{step.actual ?? 'n/a'}</TableCell>
                       <TableCell>
                         {step.status === 'passed' ? (
                           <CheckCircle className="h-4 w-4 text-success" />

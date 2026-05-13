@@ -211,7 +211,7 @@ export function StationLocalAuthList({
           <div>
             <span className="text-muted-foreground">{t('stations.lastSync')}:</span>{' '}
             <span className="font-medium">
-              {lastSyncAt != null ? formatDateTime(lastSyncAt, timezone) : '--'}
+              {lastSyncAt != null ? formatDateTime(lastSyncAt, timezone) : 'n/a'}
             </span>
           </div>
         </div>
@@ -248,7 +248,7 @@ export function StationLocalAuthList({
                     <TableRow key={entry.id}>
                       <TableCell className="text-xs">{entry.idToken}</TableCell>
                       <TableCell>{entry.tokenType}</TableCell>
-                      <TableCell>{entry.driverName ?? '--'}</TableCell>
+                      <TableCell>{entry.driverName ?? 'n/a'}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           <Badge variant={entry.authStatus === 'Accepted' ? 'default' : 'outline'}>

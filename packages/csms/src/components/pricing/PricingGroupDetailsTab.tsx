@@ -142,12 +142,12 @@ export function PricingGroupDetailsTab({
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('common.description')}</dt>
-                <dd className="font-medium">{group.description ?? '--'}</dd>
+                <dd className="font-medium">{group.description ?? 'n/a'}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t('common.default')}</dt>
                 <dd>
-                  {group.isDefault ? <Badge variant="default">{t('common.default')}</Badge> : '--'}
+                  {group.isDefault ? <Badge variant="default">{t('common.default')}</Badge> : 'n/a'}
                 </dd>
               </div>
               <div>

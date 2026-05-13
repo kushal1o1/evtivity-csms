@@ -115,7 +115,7 @@ export function FirmwareCampaigns({ embedded }: { embedded?: boolean } = {}): Re
                         <TableCell className="font-medium" data-testid="row-click-target">
                           {campaign.name}
                         </TableCell>
-                        <TableCell className="text-xs">{campaign.version ?? '--'}</TableCell>
+                        <TableCell className="text-xs">{campaign.version ?? 'n/a'}</TableCell>
                         <TableCell>
                           <Badge variant={STATUS_VARIANT[campaign.status] ?? 'outline'}>
                             {campaign.status}
