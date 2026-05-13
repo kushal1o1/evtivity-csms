@@ -183,6 +183,17 @@ function getQueryKeysForEvent(event: CsmsEvent): string[][] {
       // context.
       keys.push(['authorize-attempts']);
       break;
+
+    case 'pricing.changed':
+      // Pricing group / tariff / holiday CRUD. Invalidate the prefix that
+      // covers list (`['pricing-groups']`), detail (`['pricing-groups', id]`),
+      // tariffs sub-query, schedule, holidays, and station active-tariff
+      // resolution. TanStack invalidates by prefix.
+      keys.push(['pricing-groups']);
+      keys.push(['pricing-holidays']);
+      keys.push(['active-tariff']);
+      keys.push(['pricing-audit']);
+      break;
   }
 
   return keys;

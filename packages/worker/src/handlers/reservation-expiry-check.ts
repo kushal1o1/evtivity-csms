@@ -31,6 +31,7 @@ interface ExpiredRow {
   site_id: string | null;
   starts_at: Date | null;
   expires_at: Date;
+  created_at: Date;
   has_session: boolean;
 }
 
@@ -64,6 +65,7 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
       charging_stations.site_id,
       updated.starts_at,
       updated.expires_at,
+      updated.created_at,
       EXISTS (
         SELECT 1 FROM charging_sessions WHERE charging_sessions.reservation_id = updated.id
       ) AS has_session
@@ -128,13 +130,25 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
         const tariff = await resolveTariff(row.station_uuid, row.driver_id);
         const ratePerMinute =
           tariff?.reservationFeePerMinute != null ? Number(tariff.reservationFeePerMinute) : 0;
-        if (ratePerMinute > 0) {
-          const referenceStart = row.starts_at ?? row.expires_at;
+        if (ratePerMinute > 0 && tariff != null) {
+          // Instant ReserveNow reservations have no starts_at; the spot was
+          // claimed at row.created_at. Falling back to expires_at (the prior
+          // behavior) made holdingMs = 0 and silently waived the no-show fee
+          // for every instant reservation -- the more common case. Match the
+          // session-end path in event-projections.ts which uses created_at as
+          // the same fallback so both paths bill consistent hold durations.
+          const referenceStart = row.starts_at ?? row.created_at;
           const holdingMs = row.expires_at.getTime() - new Date(referenceStart).getTime();
           const holdingMinutes = Math.max(0, Math.ceil(holdingMs / 60_000));
           const amountCents = Math.round(holdingMinutes * ratePerMinute * 100);
           if (amountCents > 0) {
-            await chargeReservationNoShowFee(row.driver_id, row.site_id, amountCents, row.id);
+            await chargeReservationNoShowFee(
+              row.driver_id,
+              row.site_id,
+              amountCents,
+              row.id,
+              tariff.currency,
+            );
             log.info(
               { reservationId: row.id, driverId: row.driver_id, amountCents, holdingMinutes },
               'Charged no-show reservation fee',

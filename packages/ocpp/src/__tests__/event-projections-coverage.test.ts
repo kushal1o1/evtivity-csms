@@ -746,10 +746,9 @@ describe('Event projections - coverage expansion', () => {
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
         [{ driver_id: null }], // SELECT driver_id
-        // resolvePricingGroupId: no station or site group; default found
-        [], // P3: station pricing group (empty)
-        [], // P4: site pricing group (empty)
-        [{ id: 'group-default' }], // P5: default pricing group
+        // resolvePricingGroupId is now one CTE that resolves driver/fleet/
+        // station/site/default in a single round-trip. Default group returned.
+        [{ id: 'group-default' }], // resolvePricingGroupId CTE
         // resolveTariffForStation: fetch all tariffs for the group
         [
           {
@@ -765,6 +764,8 @@ describe('Event projections - coverage expansion', () => {
             is_default: true,
           },
         ], // tariffs for group
+        [], // pricing_holidays (empty)
+        [], // timezone lookup
         [], // UPDATE charging_sessions SET tariff_id
         [], // INSERT session_tariff_segments
         [{ site_id: null }], // resolveSiteId
@@ -2186,9 +2187,8 @@ describe('Event projections - coverage expansion', () => {
         [{ driver_id: 'driver-pay' }], // 6: SELECT driver_id
         [], // 7: SELECT driver_tokens by idToken (no match for 'rfid-pay')
         [], // 8: SELECT vehicle_id (no previous vehicle, auto-link skipped)
-        // resolveTariffForStation -> resolvePricingGroupId
-        [{ id: 'pg-1' }], // 9: pricing_group_drivers priority 1
-        // tariffs in group
+        // resolveTariffForStation: resolvePricingGroupId is now a single CTE
+        [{ id: 'pg-1' }], // 9: resolvePricingGroupId CTE
         [
           {
             id: 'tariff-1',
@@ -2205,10 +2205,11 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 10: SELECT tariffs
         [], // 11: SELECT pricing_holidays (loadHolidays)
-        [], // 12: UPDATE charging_sessions SET tariff_id
-        [], // 13: INSERT session_tariff_segments
-        [{ site_id: 'site-pay' }], // 14: resolveSiteId
-        [{ name: 'Site Pay' }], // 15: resolveSiteName
+        [], // 12: timezone lookup (cs join sites)
+        [], // 13: UPDATE charging_sessions SET tariff_id
+        [], // 14: INSERT session_tariff_segments
+        [{ site_id: 'site-pay' }], // 15: resolveSiteId
+        [{ name: 'Site Pay' }], // 16: resolveSiteName
         // --- runPaymentGate (called inline) ---
         [
           {
@@ -2216,9 +2217,9 @@ describe('Event projections - coverage expansion', () => {
             stripe_customer_id: 'cus_test',
             stripe_payment_method_id: 'pm_test',
           },
-        ], // 16: SELECT driver_payment_methods
-        // isTariffFreeForStation uses resolveActiveTariff: 3 sequential queries
-        [{ id: 'pg-1' }], // 17: groupRows (CTE)
+        ], // 17: SELECT driver_payment_methods
+        // isTariffFreeForStation: single CTE + tariffs + holidays + timezone
+        [{ id: 'pg-1' }], // 18: groupRows (CTE)
         [
           {
             id: 'tariff-paid',
@@ -2233,19 +2234,21 @@ describe('Event projections - coverage expansion', () => {
             priority: 0,
             is_default: true,
           },
-        ], // 18: tariffRows (paid tariff)
-        [], // 19: holidayRows
+        ], // 19: tariffRows (paid tariff)
+        [], // 20: holidayRows
+        [], // 21: timezone lookup
         [
           { key: 'stripe.currency', value: 'USD' },
           { key: 'stripe.preAuthAmountCents', value: 5000 },
-        ], // 20: platform settings
-        [], // 21: site payment config
-        [], // 22: existing payment_records guard
+        ], // 22: platform settings
+        [], // 23: site payment config
+        [{ currency: 'USD' }], // 24: NEW - currency mismatch guard (SELECT currency FROM charging_sessions)
+        [], // 25: existing payment_records guard
         [
           { key: 'stripe.secretKeyEnc', value: 'encrypted-key' },
           { key: 'stripe.platformFeePercent', value: 0 },
-        ], // 23: stripe settings
-        [], // 24: INSERT payment_records
+        ], // 26: stripe settings
+        [], // 27: INSERT payment_records
       );
 
       await eventBus.emit(
@@ -2470,8 +2473,8 @@ describe('Event projections - coverage expansion', () => {
         [{ driver_id: 'driver-1' }], // 6: SELECT driver_id
         // idToken is null on this payload, so no driver_tokens lookup
         [], // 7: SELECT vehicle_id (auto-link)
-        // resolveTariffForStation -> resolvePricingGroupId
-        [{ id: 'pg-1' }], // 8: pricing_group_drivers (priority 1)
+        // resolveTariffForStation: resolvePricingGroupId is now a single CTE
+        [{ id: 'pg-1' }], // 8: resolvePricingGroupId CTE
         [
           {
             id: 'tariff-1',
@@ -2488,14 +2491,15 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 9: SELECT tariffs
         [], // 10: SELECT pricing_holidays
-        [], // 11: UPDATE charging_sessions SET tariff_id
-        [], // 12: INSERT session_tariff_segments
-        [{ site_id: null }], // 13: resolveSiteId
-        [{ name: null }], // 14: resolveSiteName
+        [], // 11: timezone lookup
+        [], // 12: UPDATE charging_sessions SET tariff_id
+        [], // 13: INSERT session_tariff_segments
+        [{ site_id: null }], // 14: resolveSiteId
+        [{ name: null }], // 15: resolveSiteName
         // runPaymentGate
-        [{ id: 'pm-1', stripe_customer_id: 'cus_1', stripe_payment_method_id: 'pm_1' }], // 15: pmRows
-        // isTariffFreeForStation: 3 queries
-        [{ id: 'pg-1' }], // 16: groupRows
+        [{ id: 'pm-1', stripe_customer_id: 'cus_1', stripe_payment_method_id: 'pm_1' }], // 16: pmRows
+        // isTariffFreeForStation: single CTE + tariffs + holidays + timezone
+        [{ id: 'pg-1' }], // 17: groupRows CTE
         [
           {
             id: 'tariff-paid',
@@ -2510,13 +2514,15 @@ describe('Event projections - coverage expansion', () => {
             priority: 0,
             is_default: true,
           },
-        ], // 17: tariffRows
-        [], // 18: holidayRows
-        [], // 19: platform settings
+        ], // 18: tariffRows
+        [], // 19: holidayRows
+        [], // 20: timezone lookup
+        [], // 21: platform settings
         // No site override (site_id is null, so query is skipped)
-        [], // 20: SELECT payment_records guard
-        [{ key: 'stripe.secretKeyEnc', value: 'encrypted' }], // 21: stripe settings
-        [], // 22: INSERT payment_records (failed)
+        [{ currency: 'USD' }], // 22: NEW currency mismatch guard
+        [], // 23: SELECT payment_records guard
+        [{ key: 'stripe.secretKeyEnc', value: 'encrypted' }], // 24: stripe settings
+        [], // 25: INSERT payment_records (failed)
       );
 
       await eventBus.emit(
@@ -2575,7 +2581,7 @@ describe('Event projections - coverage expansion', () => {
         [], // 5: SELECT free_vend_enabled
         [{ driver_id: 'driver-sim' }], // 6: SELECT driver_id
         [], // 7: SELECT vehicle_id
-        [{ id: 'pg-1' }], // 8: pricing_group_drivers
+        [{ id: 'pg-1' }], // 8: resolvePricingGroupId CTE
         [
           {
             id: 'tariff-1',
@@ -2592,18 +2598,19 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 9: SELECT tariffs
         [], // 10: SELECT pricing_holidays
-        [], // 11: UPDATE charging_sessions SET tariff_id
-        [], // 12: INSERT session_tariff_segments
-        [{ site_id: null }], // 13: resolveSiteId
-        [{ name: null }], // 14: resolveSiteName
+        [], // 11: timezone lookup
+        [], // 12: UPDATE charging_sessions SET tariff_id
+        [], // 13: INSERT session_tariff_segments
+        [{ site_id: null }], // 14: resolveSiteId
+        [{ name: null }], // 15: resolveSiteName
         [
           {
             id: 'pm-sim',
             stripe_customer_id: 'cus_sim_000001',
             stripe_payment_method_id: 'pm_sim_000001',
           },
-        ], // 15: SELECT driver_payment_methods
-        [{ id: 'pg-1' }], // 16: isTariffFreeForStation groupRows
+        ], // 16: SELECT driver_payment_methods
+        [{ id: 'pg-1' }], // 17: isTariffFreeForStation groupRows CTE
         [
           {
             id: 'tariff-paid',
@@ -2618,11 +2625,13 @@ describe('Event projections - coverage expansion', () => {
             priority: 0,
             is_default: true,
           },
-        ], // 17: tariffRows
-        [], // 18: holidayRows
-        [], // 19: platform settings
-        [], // 20: payment_records guard
-        [], // 21: INSERT payment_records (pre_authorized, simulated)
+        ], // 18: tariffRows
+        [], // 19: holidayRows
+        [], // 20: timezone lookup
+        [], // 21: platform settings
+        [{ currency: 'USD' }], // 22: NEW currency mismatch guard
+        [], // 23: payment_records guard
+        [], // 24: INSERT payment_records (pre_authorized, simulated)
       );
 
       await eventBus.emit(
@@ -2667,7 +2676,7 @@ describe('Event projections - coverage expansion', () => {
         [{ driver_id: 'driver-site' }], // 6: SELECT driver_id
         [], // 7: SELECT driver_tokens by idToken (no match)
         [], // 8: SELECT vehicle_id (auto-link)
-        [{ id: 'pg-1' }], // 9: pricing_group_drivers
+        [{ id: 'pg-1' }], // 9: resolvePricingGroupId CTE
         [
           {
             id: 'tariff-1',
@@ -2684,17 +2693,18 @@ describe('Event projections - coverage expansion', () => {
           },
         ], // 10: SELECT tariffs
         [], // 11: SELECT pricing_holidays
-        [], // 12: UPDATE charging_sessions SET tariff_id
-        [], // 13: INSERT session_tariff_segments
-        [{ site_id: 'site-stripe' }], // 14: resolveSiteId
-        [{ name: 'Site Stripe' }], // 15: resolveSiteName
+        [], // 12: timezone lookup
+        [], // 13: UPDATE charging_sessions SET tariff_id
+        [], // 14: INSERT session_tariff_segments
+        [{ site_id: 'site-stripe' }], // 15: resolveSiteId
+        [{ name: 'Site Stripe' }], // 16: resolveSiteName
         // runPaymentGate
-        [{ id: 'pm-1', stripe_customer_id: 'cus_site', stripe_payment_method_id: 'pm_site' }], // 16: pmRows
-        [{ id: 'pg-1' }], // 17: isTariffFreeForStation groupRows
+        [{ id: 'pm-1', stripe_customer_id: 'cus_site', stripe_payment_method_id: 'pm_site' }], // 17: pmRows
+        [{ id: 'pg-1' }], // 18: isTariffFreeForStation groupRows CTE
         [
           {
             id: 'tariff-paid',
-            currency: 'USD',
+            currency: 'EUR',
             price_per_kwh: '0.30',
             price_per_minute: null,
             price_per_session: null,
@@ -2705,9 +2715,10 @@ describe('Event projections - coverage expansion', () => {
             priority: 0,
             is_default: true,
           },
-        ], // 18: tariffRows
-        [], // 19: holidayRows
-        [], // 20: platform settings
+        ], // 19: tariffRows
+        [], // 20: holidayRows
+        [], // 21: timezone lookup
+        [], // 22: platform settings
         [
           {
             id: 'spc-1',
@@ -2715,13 +2726,14 @@ describe('Event projections - coverage expansion', () => {
             pre_auth_amount_cents: 10000,
             stripe_connected_account_id: 'acct_connected',
           },
-        ], // 21: site payment config (override + connected account)
-        [], // 22: existing payment_records guard
+        ], // 23: site payment config (override + connected account, EUR matches snapshot)
+        [{ currency: 'EUR' }], // 24: NEW currency mismatch guard (EUR matches site override)
+        [], // 25: existing payment_records guard
         [
           { key: 'stripe.secretKeyEnc', value: 'encrypted' },
           { key: 'stripe.platformFeePercent', value: 10 },
-        ], // 23: stripe settings
-        [], // 24: INSERT payment_records
+        ], // 26: stripe settings
+        [], // 27: INSERT payment_records
       );
 
       await eventBus.emit(
@@ -2816,20 +2828,19 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         // First subscriber
-        [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-nopay-nofree' }], // SELECT id
-        [], // UPDATE stale sessions
-        [], // INSERT transaction_events
-        [], // SELECT free_vend_enabled (not free vend)
-        [{ driver_id: 'drv_nopay' }], // SELECT driver_id
-        // resolvePricingGroupId: driver group query
-        [], // driver group (empty)
-        [], // fleet group (empty)
+        [{ id: 'sta_000000000001' }], // 0: resolveStationId
+        [], // 1: INSERT charging_sessions
+        [{ id: 'session-nopay-nofree' }], // 2: SELECT id
+        [], // 3: UPDATE stale sessions
+        [], // 4: INSERT transaction_events
+        [], // 5: SELECT free_vend_enabled (not free vend)
+        [{ driver_id: 'drv_nopay' }], // 6: SELECT driver_id
+        // driver_tokens lookup runs because idToken='rfid-nopay'
+        [], // 7: SELECT driver_tokens (no match)
+        [], // 8: SELECT vehicle_id (auto-link)
       );
-      // resolveTariffForStation: station group returns a tariff group
-      sqlResults[9] = [{ id: 'pg-1' }]; // station group found
-      // SELECT tariffs
+      // resolveTariffForStation: single CTE returns a group
+      sqlResults[9] = [{ id: 'pg-1' }]; // resolvePricingGroupId CTE
       sqlResults[10] = [
         {
           id: 'tariff-nofree',
@@ -2843,24 +2854,19 @@ describe('Event projections - coverage expansion', () => {
           priority: 0,
           is_default: true,
         },
-      ];
-      // loadHolidays
-      sqlResults[11] = [];
-      // UPDATE session (tariff snapshot)
-      sqlResults[12] = [];
-      // INSERT session_tariff_segments
-      sqlResults[13] = [];
-      // resolveSiteId
-      sqlResults[14] = [{ site_id: null }];
-      // resolveSiteName (driverUuid not null)
-      sqlResults[15] = [{ name: null }];
+      ]; // SELECT tariffs
+      sqlResults[11] = []; // loadHolidays
+      sqlResults[12] = []; // timezone lookup
+      sqlResults[13] = []; // UPDATE session (tariff snapshot)
+      sqlResults[14] = []; // INSERT session_tariff_segments
+      sqlResults[15] = [{ site_id: null }]; // resolveSiteId
+      sqlResults[16] = [{ name: null }]; // resolveSiteName
 
-      // runPaymentGate (no session query needed)
-      // SELECT driver_payment_methods (empty)
-      sqlResults[16] = [];
-      // isTariffFreeForStation: 3 sequential queries (group, tariffs, holidays)
-      sqlResults[17] = [{ id: 'pg-1' }]; // groupRows
-      sqlResults[18] = [
+      // runPaymentGate
+      sqlResults[17] = []; // SELECT driver_payment_methods (empty -> MissingPaymentMethod path)
+      // isTariffFreeForStation: single CTE + tariffs + holidays + timezone
+      sqlResults[18] = [{ id: 'pg-1' }]; // groupRows CTE
+      sqlResults[19] = [
         {
           id: 'tariff-paid',
           currency: 'USD',
@@ -2875,7 +2881,8 @@ describe('Event projections - coverage expansion', () => {
           is_default: true,
         },
       ]; // tariffRows
-      sqlResults[19] = []; // holidayRows
+      sqlResults[20] = []; // holidayRows
+      sqlResults[21] = []; // timezone lookup
 
       await eventBus.emit(
         'ocpp.TransactionEvent',

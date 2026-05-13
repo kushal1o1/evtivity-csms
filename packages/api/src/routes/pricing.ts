@@ -3,9 +3,17 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, ne, count } from 'drizzle-orm';
+import { eq, and, or, ne, count, desc, sql } from 'drizzle-orm';
 import { db } from '@evtivity/database';
-import { pricingGroups, tariffs, pricingHolidays, chargingSessions } from '@evtivity/database';
+import {
+  pricingGroups,
+  tariffs,
+  pricingHolidays,
+  pricingAuditLog,
+  chargingSessions,
+  sessionTariffSegments,
+  writePricingAudit,
+} from '@evtivity/database';
 import {
   tariffRestrictionsSchema,
   derivePriority,
@@ -15,10 +23,49 @@ import {
 import type { TariffRestrictions, TariffWithRestrictions } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
-import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import {
+  itemResponse,
+  arrayResponse,
+  errorWith,
+  paginatedResponse,
+} from '../lib/response-schemas.js';
+import { paginationQuery } from '../lib/pagination.js';
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { resolveTariffGroup } from '../services/tariff.service.js';
+import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
+
+// Best-effort SSE so any operator viewing pricing-related UI sees the change
+// without manual refresh. Also used by the station-message refresh listener
+// to invalidate the cached display template for stations resolving to this
+// pricing group.
+async function publishPricingChanged(args: {
+  pricingGroupId: string | null;
+  tariffId?: string | null;
+  action:
+    | 'group.updated'
+    | 'group.deleted'
+    | 'tariff.updated'
+    | 'tariff.deleted'
+    | 'tariff.created'
+    | 'group.created'
+    | 'holiday.changed';
+}): Promise<void> {
+  try {
+    const pubsub = getPubSub();
+    await pubsub.publish(
+      'csms_events',
+      JSON.stringify({
+        eventType: 'pricing.changed',
+        pricingGroupId: args.pricingGroupId,
+        tariffId: args.tariffId ?? null,
+        action: args.action,
+      }),
+    );
+  } catch {
+    // Non-critical
+  }
+}
 
 const pricingGroupItem = z
   .object({
@@ -96,7 +143,11 @@ const scheduleItem = z
       .min(0)
       .describe('Resolution priority (higher wins). Derived from restriction type.'),
     isDefault: z.boolean().describe('Whether this is the fallback tariff for the group'),
-    isCurrent: z.boolean().describe('Whether this tariff is the one resolved as active right now'),
+    isCurrent: z
+      .boolean()
+      .describe(
+        'Whether this tariff is the one resolved as active right now. The schedule is per-pricing-group, not per-station, so resolution uses the SERVER timezone -- the same group may be assigned to stations in multiple timezones, and we cannot single one out. Use GET /v1/stations/:id/active-tariff for station-timezone-aware resolution.',
+      ),
   })
   .passthrough();
 
@@ -147,6 +198,17 @@ const nonNegativePrice = z.string().refine((val) => !isNaN(Number(val)) && Numbe
   message: 'Price must be a non-negative number',
 });
 
+// Tax rate is a decimal fraction (0.0825 = 8.25%), NOT a percent. A value > 1
+// almost always means the operator typed "8.25" thinking percent; the cost
+// calculator multiplies subtotal by this number verbatim, so 8.25 would bill
+// 825% tax. Cap at 1.0 (100%) which is already higher than any real tax
+// jurisdiction and well below the "obvious data-entry error" threshold.
+const taxRate = z
+  .string()
+  .refine((val) => !isNaN(Number(val)) && Number(val) >= 0 && Number(val) <= 1, {
+    message: 'Tax rate must be a decimal between 0 and 1 (e.g. 0.0825 for 8.25%)',
+  });
+
 const createGroupBody = z.object({
   name: z.string().max(255),
   description: z.string().max(500).optional(),
@@ -168,7 +230,7 @@ const createTariffBody = z.object({
     .describe(
       'Reservation holding fee per minute as a decimal string. Charged for the time between reservation start and session start.',
     ),
-  taxRate: nonNegativePrice.optional().describe('Tax rate as a decimal (e.g. 0.08 for 8%)'),
+  taxRate: taxRate.optional().describe('Tax rate as a decimal (e.g. 0.08 for 8%)'),
   restrictions: z
     .record(z.unknown())
     .nullable()
@@ -198,7 +260,7 @@ const updateTariffBody = z.object({
   reservationFeePerMinute: nullableNonNegativePrice
     .optional()
     .describe('Reservation holding fee per minute; null to clear'),
-  taxRate: nullableNonNegativePrice.optional().describe('Tax rate; null to clear'),
+  taxRate: taxRate.nullable().optional().describe('Tax rate; null to clear'),
   restrictions: z
     .record(z.unknown())
     .nullable()
@@ -275,7 +337,22 @@ export function pricingRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const body = request.body as z.infer<typeof createGroupBody>;
+      const { userId } = request.user as { userId: string };
       const [group] = await db.insert(pricingGroups).values(body).returning();
+      if (group != null) {
+        await writePricingAudit(
+          {
+            entityType: 'pricing_group',
+            entityId: group.id,
+            action: 'created',
+            actorUserId: userId,
+            after: group,
+          },
+          undefined,
+          request.log,
+        );
+        await publishPricingChanged({ pricingGroupId: group.id, action: 'group.created' });
+      }
       await reply.status(201).send(group);
     },
   );
@@ -300,6 +377,7 @@ export function pricingRoutes(app: FastifyInstance): void {
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof groupParams>;
       const body = request.body as z.infer<typeof updateGroupBody>;
+      const { userId } = request.user as { userId: string };
 
       const [existing] = await db.select().from(pricingGroups).where(eq(pricingGroups.id, id));
       if (existing == null) {
@@ -314,6 +392,19 @@ export function pricingRoutes(app: FastifyInstance): void {
         .set({ ...body, updatedAt: new Date() })
         .where(eq(pricingGroups.id, id))
         .returning();
+      await writePricingAudit(
+        {
+          entityType: 'pricing_group',
+          entityId: id,
+          action: 'updated',
+          actorUserId: userId,
+          before: existing,
+          after: updated,
+        },
+        undefined,
+        request.log,
+      );
+      await publishPricingChanged({ pricingGroupId: id, action: 'group.updated' });
       return updated;
     },
   );
@@ -361,8 +452,38 @@ export function pricingRoutes(app: FastifyInstance): void {
         return;
       }
 
+      const groupTariffs = await db.select().from(tariffs).where(eq(tariffs.pricingGroupId, id));
       await db.delete(tariffs).where(eq(tariffs.pricingGroupId, id));
       await db.delete(pricingGroups).where(eq(pricingGroups.id, id));
+      const { userId } = request.user as { userId: string };
+      // Audit the cascading deletes too so the pricing audit log shows every
+      // tariff that disappeared with the group, not just the group itself.
+      for (const t of groupTariffs) {
+        await writePricingAudit(
+          {
+            entityType: 'tariff',
+            entityId: t.id,
+            action: 'deleted',
+            actorUserId: userId,
+            before: t,
+            notes: `cascade from pricing_group ${id}`,
+          },
+          undefined,
+          request.log,
+        );
+      }
+      await writePricingAudit(
+        {
+          entityType: 'pricing_group',
+          entityId: id,
+          action: 'deleted',
+          actorUserId: userId,
+          before: group,
+        },
+        undefined,
+        request.log,
+      );
+      await publishPricingChanged({ pricingGroupId: id, action: 'group.deleted' });
 
       await reply.status(204).send();
     },
@@ -453,16 +574,41 @@ export function pricingRoutes(app: FastifyInstance): void {
       const priority = derivePriority(restrictions ?? null);
       const isDefault = body.isDefault ?? priority === 0;
 
-      // Check for existing tariffs in this group for overlap validation
-      const existingTariffs = await db
+      // Check for existing tariffs in this group. Overlap detection only
+      // considers active tariffs (an inactive tariff cannot collide because
+      // resolution skips it), but the currency check below MUST consider
+      // inactive tariffs too -- otherwise an inactive EUR tariff sitting in a
+      // USD group is invisible to the check, the operator adds a USD tariff
+      // alongside it, and the moment anyone toggles the EUR row back to
+      // active the group ends up mixed-currency (which the cost calculator
+      // and split-billing path both reject).
+      const allTariffsInGroup = await db
         .select({
           id: tariffs.id,
           restrictions: tariffs.restrictions,
           priority: tariffs.priority,
           isDefault: tariffs.isDefault,
+          currency: tariffs.currency,
+          isActive: tariffs.isActive,
         })
         .from(tariffs)
-        .where(and(eq(tariffs.pricingGroupId, id), eq(tariffs.isActive, true)));
+        .where(eq(tariffs.pricingGroupId, id));
+
+      const existingTariffs = allTariffsInGroup.filter((t) => t.isActive);
+
+      // Currency consistency: every tariff in a pricing group must share a
+      // currency, regardless of active state. Split-billing and the cost
+      // calculator both assume a single resolved currency per session;
+      // mixing currencies inside a group leaks the wrong currency code into
+      // charging_sessions.
+      const otherCurrency = allTariffsInGroup.find((t) => t.currency !== body.currency)?.currency;
+      if (otherCurrency != null) {
+        await reply.status(409).send({
+          error: `Pricing group already contains tariffs in ${otherCurrency}; new tariff must use the same currency.`,
+          code: 'TARIFF_CURRENCY_MISMATCH',
+        });
+        return;
+      }
 
       const overlapCheck = validateNoOverlap(
         existingTariffs.map((t) => ({
@@ -513,6 +659,25 @@ export function pricingRoutes(app: FastifyInstance): void {
           isDefault: finalIsDefault,
         })
         .returning();
+      if (tariff != null) {
+        const { userId } = request.user as { userId: string };
+        await writePricingAudit(
+          {
+            entityType: 'tariff',
+            entityId: tariff.id,
+            action: 'created',
+            actorUserId: userId,
+            after: tariff,
+          },
+          undefined,
+          request.log,
+        );
+        await publishPricingChanged({
+          pricingGroupId: id,
+          tariffId: tariff.id,
+          action: 'tariff.created',
+        });
+      }
       await reply.status(201).send(tariff);
     },
   );
@@ -625,13 +790,36 @@ export function pricingRoutes(app: FastifyInstance): void {
         updateData['restrictions'] = body.restrictions;
         updateData['priority'] = priority;
       }
-      updateData['isDefault'] = isDefault;
+      // Only persist isDefault when the operator explicitly toggled it.
+      // Setting it on every PATCH would clobber the value on unrelated edits
+      // and write spurious "isDefault: true -> true" rows to the audit log.
+      if (body.isDefault !== undefined) {
+        updateData['isDefault'] = body.isDefault;
+      }
 
       const [updated] = await db
         .update(tariffs)
         .set(updateData)
         .where(eq(tariffs.id, tariffId))
         .returning();
+      const { userId } = request.user as { userId: string };
+      await writePricingAudit(
+        {
+          entityType: 'tariff',
+          entityId: tariffId,
+          action: 'updated',
+          actorUserId: userId,
+          before: existing,
+          after: updated,
+        },
+        undefined,
+        request.log,
+      );
+      await publishPricingChanged({
+        pricingGroupId: id,
+        tariffId,
+        action: 'tariff.updated',
+      });
       return updated;
     },
   );
@@ -662,11 +850,25 @@ export function pricingRoutes(app: FastifyInstance): void {
         return;
       }
 
-      const [usage] = await db
-        .select({ count: count() })
-        .from(chargingSessions)
-        .where(eq(chargingSessions.tariffId, tariffId));
-      if (usage != null && usage.count > 0) {
+      // Two FKs reference tariffs.id: charging_sessions.tariff_id (the
+      // session's primary tariff snapshot) and session_tariff_segments.tariff_id
+      // (per-segment snapshots when split-billing crossed tariff boundaries).
+      // A tariff used only as a non-primary segment would slip past a
+      // sessions-only check and then fail with a raw 500 on the DELETE
+      // (the FK is ON DELETE NO ACTION). Check both so the operator gets
+      // a clean 409.
+      const [sessionUsage, segmentUsage] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(chargingSessions)
+          .where(eq(chargingSessions.tariffId, tariffId)),
+        db
+          .select({ count: count() })
+          .from(sessionTariffSegments)
+          .where(eq(sessionTariffSegments.tariffId, tariffId)),
+      ]);
+      const inUse = (sessionUsage[0]?.count ?? 0) > 0 || (segmentUsage[0]?.count ?? 0) > 0;
+      if (inUse) {
         await reply.status(409).send({
           error: 'Tariff is referenced by charging sessions and cannot be deleted',
           code: 'TARIFF_IN_USE',
@@ -675,6 +877,23 @@ export function pricingRoutes(app: FastifyInstance): void {
       }
 
       await db.delete(tariffs).where(eq(tariffs.id, tariffId));
+      const { userId } = request.user as { userId: string };
+      await writePricingAudit(
+        {
+          entityType: 'tariff',
+          entityId: tariffId,
+          action: 'deleted',
+          actorUserId: userId,
+          before: tariff,
+        },
+        undefined,
+        request.log,
+      );
+      await publishPricingChanged({
+        pricingGroupId: tariff.pricingGroupId,
+        tariffId,
+        action: 'tariff.deleted',
+      });
       await reply.status(204).send();
     },
   );
@@ -793,6 +1012,17 @@ export function pricingRoutes(app: FastifyInstance): void {
       const holidays = await loadHolidays();
       const now = new Date();
 
+      // Use the station's site timezone so off-peak / holiday boundaries fire
+      // at the operator's local clock.
+      const tzRows = await db.execute<{ timezone: string | null }>(sql`
+        SELECT s.timezone
+        FROM charging_stations cs
+        LEFT JOIN sites s ON s.id = cs.site_id
+        WHERE cs.id = ${id}
+        LIMIT 1
+      `);
+      const timezone = tzRows[0]?.timezone ?? undefined;
+
       const tariffInputs: TariffWithRestrictions[] = activeTariffs.map((t) => ({
         id: t.id,
         currency: t.currency,
@@ -807,7 +1037,7 @@ export function pricingRoutes(app: FastifyInstance): void {
         isDefault: t.isDefault,
       }));
 
-      const current = resolveActiveTariff(tariffInputs, now, holidays, 0);
+      const current = resolveActiveTariff(tariffInputs, now, holidays, 0, timezone);
       if (current == null) {
         await reply
           .status(404)
@@ -823,6 +1053,105 @@ export function pricingRoutes(app: FastifyInstance): void {
         pricingGroupId: result.groupId,
         pricingGroupName: result.groupName,
       };
+    },
+  );
+
+  // Pricing audit log: who changed what, when, with before/after snapshots.
+  // Filter by entityType + entityId to scope to one pricing group, tariff, or
+  // holiday. When called without filters, returns recent activity across the
+  // whole pricing system (limited to the configured page size).
+  const auditQuery = paginationQuery.extend({
+    entityType: z
+      .enum(['pricing_group', 'tariff', 'holiday', 'pricing_assignment'])
+      .optional()
+      .describe('Filter by entity type'),
+    entityId: z.string().optional().describe('Filter by entity id (group, tariff, or holiday)'),
+    pricingGroupId: z
+      .string()
+      .optional()
+      .describe(
+        'Convenience filter: returns audit rows for this pricing group AND every tariff that ever lived inside it. Equivalent to OR-joining (entity_type=pricing_group AND entity_id=:id) with (entity_type=tariff AND entity_id IN (tariffs of this group)).',
+      ),
+  });
+
+  const auditItem = z
+    .object({
+      id: z.number().describe('Audit row id'),
+      entityType: z.string().describe('pricing_group | tariff | holiday'),
+      entityId: z.string().describe('id of the audited entity'),
+      action: z.string().describe('created | updated | deleted'),
+      actorUserId: z.string().nullable().describe('Operator user id'),
+      before: z.unknown().nullable().describe('JSONB snapshot of the entity before the mutation'),
+      after: z.unknown().nullable().describe('JSONB snapshot of the entity after the mutation'),
+      notes: z.string().nullable().describe('Optional free-text note'),
+      createdAt: z.coerce.date().describe('Audit timestamp'),
+    })
+    .passthrough();
+
+  app.get(
+    '/pricing-audit',
+    {
+      onRequest: [authorize('pricing:read')],
+      schema: {
+        tags: ['Pricing'],
+        summary: 'List pricing audit log entries',
+        operationId: 'listPricingAudit',
+        security: [{ bearerAuth: [] }],
+        querystring: zodSchema(auditQuery),
+        response: { 200: paginatedResponse(auditItem) },
+      },
+    },
+    async (request) => {
+      const { page, limit, entityType, entityId, pricingGroupId } = request.query as z.infer<
+        typeof auditQuery
+      >;
+      const offset = (page - 1) * limit;
+
+      const conditions = [];
+      if (entityType != null) conditions.push(eq(pricingAuditLog.entityType, entityType));
+      if (entityId != null) conditions.push(eq(pricingAuditLog.entityId, entityId));
+      if (pricingGroupId != null) {
+        // Match the group itself OR any tariff that ever belonged to it
+        // (tariff rows may already be deleted, so we also union audit rows
+        // whose `before` JSONB carries pricing_group_id = pricingGroupId).
+        const tariffIdsInGroup = sql<string[]>`
+          ARRAY(
+            SELECT id FROM tariffs WHERE pricing_group_id = ${pricingGroupId}
+            UNION
+            SELECT entity_id FROM pricing_audit_log
+            WHERE entity_type = 'tariff'
+              AND (
+                (before->>'pricingGroupId' = ${pricingGroupId})
+                OR (after->>'pricingGroupId' = ${pricingGroupId})
+              )
+          )
+        `;
+        const groupOrTariffMatch = or(
+          and(
+            eq(pricingAuditLog.entityType, 'pricing_group'),
+            eq(pricingAuditLog.entityId, pricingGroupId),
+          ),
+          and(
+            eq(pricingAuditLog.entityType, 'tariff'),
+            sql`${pricingAuditLog.entityId} = ANY(${tariffIdsInGroup})`,
+          ),
+        );
+        if (groupOrTariffMatch != null) conditions.push(groupOrTariffMatch);
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [data, countRows] = await Promise.all([
+        db
+          .select()
+          .from(pricingAuditLog)
+          .where(where)
+          .orderBy(desc(pricingAuditLog.createdAt))
+          .limit(limit)
+          .offset(offset),
+        db.select({ count: count() }).from(pricingAuditLog).where(where),
+      ]);
+
+      return { data, total: countRows[0]?.count ?? 0 };
     },
   );
 }

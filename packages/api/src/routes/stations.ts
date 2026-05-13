@@ -33,6 +33,7 @@ import {
   chargingProfileTemplates,
   configTemplates,
   guestSessions,
+  writePricingAudit,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
@@ -3386,6 +3387,10 @@ export function stationRoutes(app: FastifyInstance): void {
         return;
       }
       const body = request.body as z.infer<typeof addStationPricingGroupBody>;
+      const [previous] = await db
+        .select()
+        .from(pricingGroupStations)
+        .where(eq(pricingGroupStations.stationId, id));
       const [record] = await db
         .insert(pricingGroupStations)
         .values({ stationId: id, pricingGroupId: body.pricingGroupId })
@@ -3394,6 +3399,21 @@ export function stationRoutes(app: FastifyInstance): void {
           set: { pricingGroupId: body.pricingGroupId, createdAt: new Date() },
         })
         .returning();
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: previous == null ? 'created' : 'updated',
+          actorUserId: userId,
+          before:
+            previous == null
+              ? null
+              : { scope: 'station', stationId: id, pricingGroupId: previous.pricingGroupId },
+          after: { scope: 'station', stationId: id, pricingGroupId: body.pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       await reply.status(201).send(record);
     },
   );
@@ -3436,6 +3456,17 @@ export function stationRoutes(app: FastifyInstance): void {
           .send({ error: 'Pricing group not found for station', code: 'NOT_FOUND' });
         return;
       }
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: 'deleted',
+          actorUserId: userId,
+          before: { scope: 'station', stationId: id, pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       return record;
     },
   );

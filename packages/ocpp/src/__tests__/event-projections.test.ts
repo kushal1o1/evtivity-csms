@@ -1388,10 +1388,9 @@ describe('Event projections', () => {
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
         [{ driver_id: null }], // SELECT driver_id FROM charging_sessions (no driver)
-        // resolveTariff (no driver): station group, site group, default group — all empty
-        [], // Priority 3: station pricing group
-        [], // Priority 4: site pricing group
-        [], // Priority 5: default pricing group
+        // resolveTariff: single CTE that resolves driver/fleet/station/site/default
+        // in one round-trip. Empty result here means no pricing group matched.
+        [], // resolvePricingGroupId CTE (returns no row)
         [{ id: 'reservation_test_uuid' }], // SELECT id FROM reservations WHERE reservation_id = 42
         [], // UPDATE charging_sessions SET reservation_id
         [], // UPDATE reservations SET status = 'in_use'

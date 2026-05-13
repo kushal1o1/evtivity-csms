@@ -3,6 +3,7 @@
 
 import {
   pgTable,
+  pgEnum,
   text,
   serial,
   integer,
@@ -19,6 +20,12 @@ import { createId } from '../lib/id.js';
 import { chargingStations, sites } from './assets.js';
 import { drivers, fleets } from './drivers.js';
 
+// Migration 0031 adds a partial unique index `uq_pricing_groups_one_default`
+// ON pricing_groups ((true)) WHERE is_default = true. Enforces at most one
+// system-wide default pricing group, which the resolver expects when no
+// driver/fleet/station/site assignment matches. Drizzle-kit cannot model
+// partial unique indexes from the schema DSL, so the constraint lives in raw
+// SQL outside this file -- preserve it on any future schema change.
 export const pricingGroups = pgTable('pricing_groups', {
   id: text('id')
     .primaryKey()
@@ -54,6 +61,11 @@ export const tariffs = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
+  // Migration 0031 adds a partial unique index `uq_tariffs_one_default_per_group`
+  // ON tariffs (pricing_group_id) WHERE is_default = true. Drizzle-kit does
+  // not support partial unique indexes via the schema DSL, so the constraint
+  // is declared in raw SQL and lives outside this file. Do not add a second
+  // index here for the same column or generate would treat them as duplicates.
   (table) => [index('idx_tariffs_group_active').on(table.pricingGroupId, table.isActive)],
 );
 
@@ -145,7 +157,50 @@ export const pricingHolidays = pgTable(
 );
 
 // sessionId FK to charging_sessions is defined in migration SQL (0017) to avoid circular imports.
-// Constraint: ON DELETE CASCADE.
+export const pricingAuditEntityEnum = pgEnum('pricing_audit_entity', [
+  'pricing_group',
+  'tariff',
+  'holiday',
+  'pricing_assignment',
+]);
+
+export const pricingAuditActionEnum = pgEnum('pricing_audit_action', [
+  'created',
+  'updated',
+  'deleted',
+]);
+
+// Append-only audit trail for every CRUD on pricing groups, tariffs, and
+// holidays. Stores before/after JSONB snapshots so disputes can be resolved
+// against the exact tariff that applied at any point in time, and so that an
+// accidental edit can be reverted without DB forensics. No FK to the entity
+// itself -- audit rows survive hard delete and the entity_id is preserved as
+// a snapshot identifier only.
+export const pricingAuditLog = pgTable(
+  'pricing_audit_log',
+  {
+    id: serial('id').primaryKey(),
+    entityType: pricingAuditEntityEnum('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    action: pricingAuditActionEnum('action').notNull(),
+    actorUserId: text('actor_user_id'),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_pricing_audit_entity').on(table.entityType, table.entityId),
+    index('idx_pricing_audit_created_at').on(table.createdAt),
+  ],
+);
+
+// tariff_id references tariffs(id) with the drizzle default ON DELETE NO ACTION
+// (the FK was created that way in migration 0000). This is intentional: a tariff
+// referenced by any historical segment must NOT silently vanish, otherwise the
+// per-segment cost trail in this table loses its tariff anchor and disputes can
+// no longer be reconstructed. The pricing.ts DELETE handler enforces the same
+// invariant at the API layer with a 409 TARIFF_IN_USE check against this table.
 export const sessionTariffSegments = pgTable(
   'session_tariff_segments',
   {

@@ -21,8 +21,11 @@ COPY packages/lib/ packages/lib/
 COPY packages/database/ packages/database/
 COPY scripts/ scripts/
 RUN npx tsc -b --force packages/lib
-# Run migrations, then verify every SQL file is recorded in __drizzle_migrations.
-# The verifier exits non-zero on a silently-skipped migration so docker-compose's
-# `service_completed_successfully` blocks dependent services from starting
-# against a stale schema.
-CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate && node ../../scripts/verify-migrations-applied.mjs"]
+# Run migrations, verify every SQL file is recorded in __drizzle_migrations,
+# then seed the initial admin user. The verifier exits non-zero on a silently-
+# skipped migration so docker-compose's `service_completed_successfully` blocks
+# dependent services from starting against a stale schema. seed-admin is
+# idempotent (ON CONFLICT DO NOTHING) so re-running on every compose up is
+# safe -- without it a fresh `docker compose up -d` leaves the DB without an
+# admin user and the operator cannot log in.
+CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate && node ../../scripts/verify-migrations-applied.mjs && npm run seed:admin && npm run seed:driver"]

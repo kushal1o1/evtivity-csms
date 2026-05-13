@@ -16,6 +16,7 @@ import {
   meterValues,
   paymentRecords,
   reservations,
+  sites,
 } from '@evtivity/database';
 import { zodSchema } from '../../lib/zod-schema.js';
 import { getPubSub } from '../../lib/pubsub.js';
@@ -285,8 +286,10 @@ export function portalGuestRoutes(app: FastifyInstance): void {
           id: chargingStations.id,
           siteId: chargingStations.siteId,
           isSimulator: chargingStations.isSimulator,
+          freeVendEnabled: sites.freeVendEnabled,
         })
         .from(chargingStations)
+        .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .where(eq(chargingStations.stationId, params.stationId));
 
       if (station == null) {
@@ -305,9 +308,12 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // Resolve tariff to check if charging is free (null driverUuid for guest)
+      // Free-vend overrides any tariff: event-projections skips the payment
+      // gate and bills $0 regardless of what tariff is configured. The guest
+      // checkout must treat it as free so the UI doesn't ask for a card and
+      // the start endpoint doesn't try to pre-auth.
       const tariff = await resolveTariff(station.id, null);
-      const isFree = isTariffFree(tariff);
+      const isFree = station.freeVendEnabled === true || isTariffFree(tariff);
 
       const pricing =
         tariff != null
@@ -502,9 +508,17 @@ export function portalGuestRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // Check if charging is free (null driverUuid for guest)
+      // Check if charging is free. Free-vend wins over the tariff lookup:
+      // event-projections skips the payment gate for free-vend sites, so
+      // requiring a payment method here would block guests from starting at
+      // a free-vend site that happens to have a paid tariff assigned.
+      const [siteFreeVend] = await db
+        .select({ freeVendEnabled: sites.freeVendEnabled })
+        .from(chargingStations)
+        .leftJoin(sites, eq(chargingStations.siteId, sites.id))
+        .where(eq(chargingStations.id, station.id));
       const tariff = await resolveTariff(station.id, null);
-      const chargingIsFree = isTariffFree(tariff);
+      const chargingIsFree = siteFreeVend?.freeVendEnabled === true || isTariffFree(tariff);
 
       // Generate session token. Capped at 20 chars to fit OCPP 1.6 idTag
       // maxLength constraint. 10 bytes = 20 hex chars = 80 bits of entropy,

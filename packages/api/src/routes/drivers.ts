@@ -15,6 +15,7 @@ import {
   pricingGroupDrivers,
   pricingGroups,
   reservations,
+  writePricingAudit,
 } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
@@ -829,7 +830,12 @@ export function driverRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof driverParams>;
+      const { userId } = request.user as JwtPayload;
       const body = request.body as z.infer<typeof addDriverPricingGroupBody>;
+      const [previous] = await db
+        .select()
+        .from(pricingGroupDrivers)
+        .where(eq(pricingGroupDrivers.driverId, id));
       const [record] = await db
         .insert(pricingGroupDrivers)
         .values({ driverId: id, pricingGroupId: body.pricingGroupId })
@@ -838,6 +844,21 @@ export function driverRoutes(app: FastifyInstance): void {
           set: { pricingGroupId: body.pricingGroupId, createdAt: new Date() },
         })
         .returning();
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: previous == null ? 'created' : 'updated',
+          actorUserId: userId,
+          before:
+            previous == null
+              ? null
+              : { scope: 'driver', driverId: id, pricingGroupId: previous.pricingGroupId },
+          after: { scope: 'driver', driverId: id, pricingGroupId: body.pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       await reply.status(201).send(record);
     },
   );
@@ -860,6 +881,7 @@ export function driverRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const { id, pricingGroupId } = request.params as z.infer<typeof driverPricingGroupParams>;
+      const { userId } = request.user as JwtPayload;
       const [record] = await db
         .delete(pricingGroupDrivers)
         .where(
@@ -875,6 +897,17 @@ export function driverRoutes(app: FastifyInstance): void {
           .send({ error: 'Pricing group not found for driver', code: 'NOT_FOUND' });
         return;
       }
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: 'deleted',
+          actorUserId: userId,
+          before: { scope: 'driver', driverId: id, pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       return record;
     },
   );

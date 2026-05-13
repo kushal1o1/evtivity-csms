@@ -5,11 +5,24 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '@evtivity/database';
-import { pricingHolidays } from '@evtivity/database';
+import { pricingHolidays, writePricingAudit } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
+import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
+
+async function publishHolidayChanged(): Promise<void> {
+  try {
+    const pubsub = getPubSub();
+    await pubsub.publish(
+      'csms_events',
+      JSON.stringify({ eventType: 'pricing.changed', action: 'holiday.changed' }),
+    );
+  } catch {
+    // Non-critical
+  }
+}
 
 const holidayItem = z
   .object({
@@ -82,6 +95,21 @@ export function holidayRoutes(app: FastifyInstance): void {
       const body = request.body as z.infer<typeof createHolidayBody>;
       try {
         const [holiday] = await db.insert(pricingHolidays).values(body).returning();
+        if (holiday != null) {
+          const { userId } = request.user as { userId: string };
+          await writePricingAudit(
+            {
+              entityType: 'holiday',
+              entityId: String(holiday.id),
+              action: 'created',
+              actorUserId: userId,
+              after: holiday,
+            },
+            undefined,
+            request.log,
+          );
+        }
+        await publishHolidayChanged();
         await reply.status(201).send(holiday);
       } catch (err: unknown) {
         const pgErr = err != null && typeof err === 'object' && 'cause' in err ? err.cause : err;
@@ -126,6 +154,19 @@ export function holidayRoutes(app: FastifyInstance): void {
         return;
       }
       await db.delete(pricingHolidays).where(eq(pricingHolidays.id, id));
+      const { userId } = request.user as { userId: string };
+      await writePricingAudit(
+        {
+          entityType: 'holiday',
+          entityId: String(id),
+          action: 'deleted',
+          actorUserId: userId,
+          before: existing,
+        },
+        undefined,
+        request.log,
+      );
+      await publishHolidayChanged();
       await reply.status(204).send();
     },
   );
@@ -150,6 +191,24 @@ export function holidayRoutes(app: FastifyInstance): void {
         .values(body.holidays)
         .onConflictDoNothing()
         .returning();
+      if (result.length > 0) {
+        const { userId } = request.user as { userId: string };
+        for (const h of result) {
+          await writePricingAudit(
+            {
+              entityType: 'holiday',
+              entityId: String(h.id),
+              action: 'created',
+              actorUserId: userId,
+              after: h,
+              notes: 'bulk import',
+            },
+            undefined,
+            request.log,
+          );
+        }
+        await publishHolidayChanged();
+      }
       await reply.status(201).send(result);
     },
   );

@@ -79,14 +79,28 @@ export async function staleSessionCleanupHandler(log: Logger): Promise<void> {
             ? accumulatedIdle + (endedAt.getTime() - session.idleStartedAt.getTime()) / 60000
             : accumulatedIdle;
 
-        // Close any open tariff segment
+        // Close any open tariff segment. idle_minutes here is the WHOLE-
+        // session accumulator (plus any open idle period). For multi-segment
+        // sessions, earlier segments were already closed by the boundary cron
+        // with per-segment deltas; assigning the full accumulated idle to the
+        // last segment would double-count the portions already attributed
+        // earlier. Subtract closed-segment idle so this last segment carries
+        // only the idle from its own window. Mirrors the same pattern in
+        // event-projections.ts session-end and the boundary-check cron.
+        const closedIdleAggRows = await db.execute<{ total: string }>(sql`
+          SELECT COALESCE(SUM(idle_minutes), 0)::text AS total
+          FROM session_tariff_segments
+          WHERE session_id = ${session.id} AND ended_at IS NOT NULL
+        `);
+        const closedIdleSum = Number(closedIdleAggRows[0]?.total ?? 0);
+        const segmentIdleMinutes = Math.max(0, idleMinutes - closedIdleSum);
         const endedAtIso = endedAt.toISOString();
         await db.execute(sql`
           UPDATE session_tariff_segments
           SET ended_at = ${endedAtIso},
               energy_wh_end = ${energyWh},
               duration_minutes = EXTRACT(EPOCH FROM (${endedAtIso}::timestamptz - started_at)) / 60,
-              idle_minutes = ${idleMinutes}
+              idle_minutes = ${segmentIdleMinutes}
           WHERE session_id = ${session.id} AND ended_at IS NULL
         `);
 
@@ -120,8 +134,13 @@ export async function staleSessionCleanupHandler(log: Logger): Promise<void> {
                     currency: seg.currency as string,
                   },
                   durationMinutes: (segEnd - segStart) / 60000,
+                  // Defensive fallback: a stale session's segments may not
+                  // all be cleanly closed. Falling back to energy_wh_start
+                  // yields a 0 delta for an unclosed segment instead of a
+                  // large negative that would multiply into a refund.
                   energyDeliveredWh:
-                    Number(seg.energy_wh_end ?? 0) - Number(seg.energy_wh_start ?? 0),
+                    Number(seg.energy_wh_end ?? seg.energy_wh_start ?? 0) -
+                    Number(seg.energy_wh_start ?? 0),
                   idleMinutes: Number(seg.seg_idle_minutes ?? 0),
                   isFirstSegment: index === 0,
                 };

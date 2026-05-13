@@ -102,22 +102,66 @@ function timeToMinutes(time: string): number {
   return Number(hoursStr) * 60 + Number(minutesStr);
 }
 
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+interface ZonedComponents {
+  hour: number;
+  minute: number;
+  dayOfWeek: number;
+  monthDay: string;
+  isoDate: string;
 }
 
-function getMonthDay(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${month}-${day}`;
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/**
+ * Extract calendar components in the given timezone. Without a timezone the
+ * server's local time is used (the historic behaviour). Pass the site's
+ * timezone -- typically `sites.timezone`, e.g. 'America/Los_Angeles' -- so
+ * tariff windows and holiday boundaries are evaluated where the driver
+ * actually plugs in, not where the server happens to live.
+ */
+function getZonedComponents(now: Date, timezone?: string): ZonedComponents {
+  if (timezone == null) {
+    return {
+      hour: now.getHours(),
+      minute: now.getMinutes(),
+      dayOfWeek: now.getDay(),
+      monthDay: `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+      isoDate: `${String(now.getFullYear())}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+    };
+  }
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = fmt.formatToParts(now);
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  // Intl returns "24" for midnight in some locales when hour12 is false; clamp.
+  const hour = Number(get('hour')) % 24;
+  return {
+    hour,
+    minute: Number(get('minute')),
+    dayOfWeek: WEEKDAY_INDEX[get('weekday')] ?? 0,
+    monthDay: `${get('month')}-${get('day')}`,
+    isoDate: `${get('year')}-${get('month')}-${get('day')}`,
+  };
 }
 
-function isInTimeRange(now: Date, startTime: string, endTime: string): boolean {
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+function isInTimeRange(zc: ZonedComponents, startTime: string, endTime: string): boolean {
+  const currentMinutes = zc.hour * 60 + zc.minute;
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
 
@@ -129,8 +173,8 @@ function isInTimeRange(now: Date, startTime: string, endTime: string): boolean {
   return currentMinutes >= startMinutes || currentMinutes < endMinutes;
 }
 
-function isInDateRange(now: Date, startDate: string, endDate: string): boolean {
-  const currentMD = getMonthDay(now);
+function isInDateRange(zc: ZonedComponents, startDate: string, endDate: string): boolean {
+  const currentMD = zc.monthDay;
 
   if (startDate <= endDate) {
     // Normal range (e.g., 06-01 to 09-30)
@@ -140,33 +184,53 @@ function isInDateRange(now: Date, startDate: string, endDate: string): boolean {
   return currentMD >= startDate || currentMD <= endDate;
 }
 
+function holidayIsoDate(holiday: Date): string {
+  // Holidays come from `pricing_holidays.date`, a naive DATE column. Postgres
+  // returns the row to JS as midnight UTC of that date, but the value itself
+  // is timezone-naive ("Dec 25" means Dec 25 in whatever zone you ask). Read
+  // the UTC components to recover the original YYYY-MM-DD string -- if we
+  // applied the site timezone here, "Dec 25" stored as 2025-12-25T00:00:00Z
+  // would convert to "Dec 24" in any zone west of UTC and the holiday would
+  // fire on the wrong day.
+  const year = holiday.getUTCFullYear();
+  const month = String(holiday.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(holiday.getUTCDate()).padStart(2, '0');
+  return `${String(year)}-${month}-${day}`;
+}
+
 export function tariffMatchesNow(
   restrictions: TariffRestrictions,
   now: Date,
   holidays: Date[],
   sessionEnergyKwh: number,
+  timezone?: string,
 ): boolean {
   if (restrictions.energyThresholdKwh != null) {
     return sessionEnergyKwh >= restrictions.energyThresholdKwh;
   }
 
+  const zc = getZonedComponents(now, timezone);
+
   if (restrictions.holidays === true) {
-    return holidays.some((h) => isSameDay(now, h));
+    // Compare the zone-local YYYY-MM-DD against each holiday's date. Holidays
+    // are stored as midnight UTC in pricing_holidays.date; converting both
+    // sides to the site timezone produces the correct boundary regardless of
+    // where the server runs.
+    return holidays.some((h) => holidayIsoDate(h) === zc.isoDate);
   }
 
   if (restrictions.dateRange != null) {
-    return isInDateRange(now, restrictions.dateRange.startDate, restrictions.dateRange.endDate);
+    return isInDateRange(zc, restrictions.dateRange.startDate, restrictions.dateRange.endDate);
   }
 
   if (restrictions.daysOfWeek != null) {
-    const dayOfWeek = now.getDay();
-    if (!restrictions.daysOfWeek.includes(dayOfWeek)) {
+    if (!restrictions.daysOfWeek.includes(zc.dayOfWeek)) {
       return false;
     }
   }
 
   if (restrictions.timeRange != null) {
-    return isInTimeRange(now, restrictions.timeRange.startTime, restrictions.timeRange.endTime);
+    return isInTimeRange(zc, restrictions.timeRange.startTime, restrictions.timeRange.endTime);
   }
 
   return false;

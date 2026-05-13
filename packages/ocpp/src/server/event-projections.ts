@@ -511,10 +511,17 @@ export function registerProjections(
         LIMIT 1
       ),
       fleet_group AS (
+        -- A driver can belong to multiple fleets (no unique constraint on
+        -- fleet_drivers.driver_id). Order by membership createdAt so the
+        -- oldest fleet wins deterministically; without ORDER BY Postgres
+        -- returns rows in undefined order and the same driver/station could
+        -- resolve to different tariffs across requests. Mirrors the API-side
+        -- tariff.service.ts resolveTariffGroup().
         SELECT pgf.pricing_group_id AS id, 2 AS priority
         FROM pricing_group_fleets pgf
         JOIN fleet_drivers fd ON fd.fleet_id = pgf.fleet_id
         WHERE fd.driver_id = ${driverId ?? ''}
+        ORDER BY fd.created_at ASC
         LIMIT 1
       ),
       station_group AS (
@@ -577,7 +584,17 @@ export function registerProjections(
       }),
     );
 
-    const active = resolveActiveTariff(tariffsForResolver, new Date(), holidays, 0);
+    // Resolve in the station's site timezone so off-peak windows fire at the
+    // operator's local clock, not UTC.
+    const tzRows = await sql<Array<{ timezone: string | null }>>`
+      SELECT s.timezone
+      FROM charging_stations cs
+      LEFT JOIN sites s ON s.id = cs.site_id
+      WHERE cs.id = ${stationId}
+      LIMIT 1
+    `;
+    const timezone = tzRows[0]?.timezone ?? undefined;
+    const active = resolveActiveTariff(tariffsForResolver, new Date(), holidays, 0, timezone);
     return isTariffFree(active);
   }
 
@@ -585,60 +602,63 @@ export function registerProjections(
     stationUuid: string,
     driverUuid: string | null,
   ): Promise<string | null> {
-    // Priority 1: Driver-specific pricing group (applies at all stations)
-    if (driverUuid != null) {
-      const rows = await sql`
-        SELECT pg.id
+    // Single round-trip 5-tier resolution: driver > fleet > station > site >
+    // default. Each branch is a CTE that emits at most one row with its
+    // priority number; the final SELECT orders by priority and returns the
+    // winner. Mirrors the same shape used by isTariffFreeForStation() above
+    // so both call sites pay one RTT instead of up to five. Called per
+    // MeterValues batch per active session, so the savings compound under
+    // load (2000 sessions × ~10s cadence × 4 saved RTTs = ~800 fewer RTTs/s).
+    //
+    // fleet_drivers has no unique constraint on driver_id; a driver can
+    // belong to multiple fleets, and the oldest membership wins
+    // deterministically. Without ORDER BY the same driver could resolve to
+    // different tariffs across requests.
+    const rows = await sql`
+      WITH driver_group AS (
+        SELECT pgd.pricing_group_id AS id, 1 AS priority
         FROM pricing_group_drivers pgd
-        JOIN pricing_groups pg ON pgd.pricing_group_id = pg.id
-        WHERE pgd.driver_id = ${driverUuid}
+        WHERE pgd.driver_id = ${driverUuid ?? ''}
         LIMIT 1
-      `;
-      if (rows[0] != null) return rows[0].id as string;
-    }
-
-    // Priority 2: Fleet-specific pricing group (applies at all stations)
-    if (driverUuid != null) {
-      const rows = await sql`
-        SELECT pg.id
-        FROM fleet_drivers fd
-        JOIN pricing_group_fleets pgf ON pgf.fleet_id = fd.fleet_id
-        JOIN pricing_groups pg ON pgf.pricing_group_id = pg.id
-        WHERE fd.driver_id = ${driverUuid}
+      ),
+      fleet_group AS (
+        SELECT pgf.pricing_group_id AS id, 2 AS priority
+        FROM pricing_group_fleets pgf
+        JOIN fleet_drivers fd ON fd.fleet_id = pgf.fleet_id
+        WHERE fd.driver_id = ${driverUuid ?? ''}
+        ORDER BY fd.created_at ASC
         LIMIT 1
-      `;
-      if (rows[0] != null) return rows[0].id as string;
-    }
-
-    // Priority 3: Station pricing group
-    const stationRows = await sql`
-      SELECT pg.id
-      FROM pricing_group_stations pgs
-      JOIN pricing_groups pg ON pgs.pricing_group_id = pg.id
-      WHERE pgs.station_id = ${stationUuid}
+      ),
+      station_group AS (
+        SELECT pgs.pricing_group_id AS id, 3 AS priority
+        FROM pricing_group_stations pgs
+        WHERE pgs.station_id = ${stationUuid}
+        LIMIT 1
+      ),
+      site_group AS (
+        SELECT pgsit.pricing_group_id AS id, 4 AS priority
+        FROM pricing_group_sites pgsit
+        JOIN charging_stations cs ON cs.site_id = pgsit.site_id
+        WHERE cs.id = ${stationUuid}
+        LIMIT 1
+      ),
+      default_group AS (
+        SELECT pg.id, 5 AS priority
+        FROM pricing_groups pg
+        WHERE pg.is_default = true
+        LIMIT 1
+      )
+      SELECT id FROM (
+        SELECT id, priority FROM driver_group
+        UNION ALL SELECT id, priority FROM fleet_group
+        UNION ALL SELECT id, priority FROM station_group
+        UNION ALL SELECT id, priority FROM site_group
+        UNION ALL SELECT id, priority FROM default_group
+      ) groups
+      ORDER BY priority
       LIMIT 1
     `;
-    if (stationRows[0] != null) return stationRows[0].id as string;
-
-    // Priority 4: Site-specific pricing group
-    const siteRows = await sql`
-      SELECT pg.id
-      FROM charging_stations cs
-      JOIN pricing_group_sites pgsit ON pgsit.site_id = cs.site_id
-      JOIN pricing_groups pg ON pgsit.pricing_group_id = pg.id
-      WHERE cs.id = ${stationUuid}
-        AND cs.site_id IS NOT NULL
-      LIMIT 1
-    `;
-    if (siteRows[0] != null) return siteRows[0].id as string;
-
-    // Priority 5: Default pricing group
-    const defaultRows = await sql`
-      SELECT pg.id FROM pricing_groups pg WHERE pg.is_default = true LIMIT 1
-    `;
-    if (defaultRows[0] != null) return defaultRows[0].id as string;
-
-    return null;
+    return (rows[0]?.id as string | undefined) ?? null;
   }
 
   async function resolveTariffForStation(
@@ -672,7 +692,15 @@ export function registerProjections(
     }));
 
     const holidays = await loadHolidays();
-    const resolved = resolveActiveTariff(tariffs, new Date(), holidays, 0);
+    const tzRows = await sql<Array<{ timezone: string | null }>>`
+      SELECT s.timezone
+      FROM charging_stations cs
+      LEFT JOIN sites s ON s.id = cs.site_id
+      WHERE cs.id = ${stationUuid}
+      LIMIT 1
+    `;
+    const timezone = tzRows[0]?.timezone ?? undefined;
+    const resolved = resolveActiveTariff(tariffs, new Date(), holidays, 0, timezone);
     if (resolved == null) return null;
 
     return {
@@ -1936,14 +1964,31 @@ export function registerProjections(
 
           const endGracePeriod = await getIdlingGracePeriodMinutes();
 
-          // Close the open tariff segment
+          // Close the open tariff segment. idle_minutes is the WHOLE-session
+          // accumulator (plus any open idle period at session end). For
+          // multi-segment sessions, earlier segments were already closed by
+          // the boundary cron with per-segment deltas; assigning the full
+          // accumulated idle to the last segment here would double-count
+          // the portions already attributed earlier. Subtract what's already
+          // on closed segments so this last segment carries only the idle
+          // that occurred inside its own window. The final-cost path at line
+          // ~2479 overrides per-segment idle when computing total cost, so
+          // this fix protects per-segment audit data and any downstream
+          // line-item code that reads segments verbatim.
+          const closedIdleAggRows = await sql<Array<{ total: string }>>`
+            SELECT COALESCE(SUM(idle_minutes), 0)::text AS total
+            FROM session_tariff_segments
+            WHERE session_id = ${sessionId} AND ended_at IS NOT NULL
+          `;
+          const closedIdleSum = Number(closedIdleAggRows[0]?.total ?? 0);
+          const segmentIdleMinutes = Math.max(0, idleMinutes - closedIdleSum);
           const endedAtIso = endedAt.toISOString();
           await sql`
             UPDATE session_tariff_segments
             SET ended_at = ${endedAtIso},
                 energy_wh_end = ${energyWh},
                 duration_minutes = EXTRACT(EPOCH FROM (${endedAtIso}::timestamptz - started_at)) / 60,
-                idle_minutes = ${idleMinutes}
+                idle_minutes = ${segmentIdleMinutes}
             WHERE session_id = ${sessionId} AND ended_at IS NULL
           `;
 
@@ -3084,6 +3129,46 @@ export function registerProjections(
           connectedAccountId = (sc.stripe_connected_account_id as string | null) ?? null;
           siteConfigId = sc.id as string;
         }
+      }
+
+      // Currency consistency: the session was snapshotted with the tariff's
+      // currency at session start. The pre-auth (and later capture) will use
+      // platformCurrency from the Stripe config. If they differ, every cents
+      // value is in the wrong denomination -- a $1.50 charge gets billed as
+      // €1.50 (Stripe doesn't auto-convert). Fail the session loudly here so
+      // the operator sees the misconfiguration before any money moves.
+      const sessionCurrencyRows = await sql`
+          SELECT currency FROM charging_sessions WHERE id = ${sessionId} LIMIT 1
+        `;
+      const sessionCurrency =
+        (sessionCurrencyRows[0]?.currency as string | undefined) ?? platformCurrency;
+      if (sessionCurrency.toUpperCase() !== platformCurrency.toUpperCase()) {
+        // Operator-only diagnostics: log the actual currencies so the
+        // misconfiguration is visible in observability. The driver-facing
+        // notification stays generic -- no payment-provider names, no internal
+        // currency codes, just "payment configuration issue, contact support".
+        logger.error(
+          { sessionId, sessionCurrency, stripeCurrency: platformCurrency, siteId },
+          'Currency mismatch: tariff currency differs from Stripe config currency; faulting session',
+        );
+        await stopSession('PaymentFailed');
+        try {
+          void dispatchDriverNotification(
+            sql,
+            'payment.PreAuthFailed',
+            driverId,
+            {
+              stationId: ocppStationId,
+              transactionId,
+              reason: 'Payment configuration issue. Please contact support.',
+            },
+            ALL_TEMPLATES_DIRS,
+            pubsub,
+          );
+        } catch (notifyErr) {
+          logger.error({ err: notifyErr }, 'Failed to notify driver of currency mismatch');
+        }
+        return;
       }
 
       // Guard: skip if a payment record already exists (prevents duplicate pre-auth on race)

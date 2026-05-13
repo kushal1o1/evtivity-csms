@@ -1,7 +1,6 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, desc, sql, and, inArray } from 'drizzle-orm';
@@ -1257,7 +1256,13 @@ export function paymentRoutes(app: FastifyInstance): void {
           return null;
         }
 
-        const refundRequestId = crypto.randomUUID();
+        // Idempotency key derived from intent + already-refunded delta + new
+        // amount. Survives client retries (timeouts, network blips) by
+        // producing the same key for the same logical operation, while still
+        // allowing legitimate sequential partial refunds (alreadyRefunded
+        // changes between calls so the next partial refund gets a different
+        // key). Stripe holds idempotency keys for 24h.
+        const refundRequestId = `${String(locked.id)}_${String(alreadyRefunded)}_${String(requestedAmount)}`;
         await createRefund(
           config,
           locked.stripe_payment_intent_id,

@@ -124,8 +124,8 @@ export function calculateSplitSessionCost(
   let totalTimeCostCents = 0;
   let totalSessionFeeCents = 0;
   let totalIdleFeeCents = 0;
+  let totalTaxCents = 0;
   const currency = segments[0]?.tariff.currency ?? 'USD';
-  const taxRate = segments[0]?.tariff.taxRate != null ? Number(segments[0].tariff.taxRate) : 0;
 
   for (const segment of adjustedSegments) {
     // Zero out session fee for non-first segments
@@ -133,9 +133,14 @@ export function calculateSplitSessionCost(
       ? segment.tariff
       : { ...segment.tariff, pricePerSession: null };
 
-    // Calculate segment cost without tax (tax applied on aggregate subtotal)
+    // Calculate segment cost with the segment's own tax rate. Tax is applied
+    // per-segment (not on aggregate) so that sessions which cross tariffs with
+    // different tax rates -- different jurisdictions, tax-exempt promotional
+    // tariffs, peak-vs-off-peak rate differences -- are billed at the rate
+    // that applied during each window.
+    const segTaxRate = tariff.taxRate != null ? Number(tariff.taxRate) : 0;
     const breakdown = calculateSessionCost(
-      { ...tariff, taxRate: null },
+      tariff,
       segment.energyDeliveredWh,
       segment.durationMinutes,
       segment.idleMinutes,
@@ -146,16 +151,27 @@ export function calculateSplitSessionCost(
     totalTimeCostCents += breakdown.timeCostCents;
     totalIdleFeeCents += breakdown.idleFeeCents;
     totalSessionFeeCents += breakdown.sessionFeeCents;
+    // Per-segment subtotal -> per-segment tax
+    const segSubtotal =
+      breakdown.energyCostCents +
+      breakdown.timeCostCents +
+      breakdown.sessionFeeCents +
+      breakdown.idleFeeCents;
+    totalTaxCents += Math.round(segSubtotal * segTaxRate);
   }
 
   // Reservation holding fee is a session-level charge, not per-segment.
-  // Use the first segment's tariff rate (tariff active at session start).
+  // Use the first segment's tariff rate (tariff active at session start) and
+  // tax it under that same first-segment rate for consistency with how the
+  // session fee is treated.
   const firstTariff = segments[0]?.tariff;
   const reservationFeePerMinute =
     firstTariff?.reservationFeePerMinute != null ? Number(firstTariff.reservationFeePerMinute) : 0;
+  const firstTaxRate = firstTariff?.taxRate != null ? Number(firstTariff.taxRate) : 0;
   const reservationHoldingFeeCents = dollarsToCents(
     reservationHoldingMinutes * reservationFeePerMinute,
   );
+  totalTaxCents += Math.round(reservationHoldingFeeCents * firstTaxRate);
 
   const subtotalCents =
     totalEnergyCostCents +
@@ -163,8 +179,6 @@ export function calculateSplitSessionCost(
     totalSessionFeeCents +
     totalIdleFeeCents +
     reservationHoldingFeeCents;
-  // Apply tax once on the aggregate subtotal to avoid per-segment rounding drift
-  const totalTaxCents = Math.round(subtotalCents * taxRate);
   const totalCents = subtotalCents + totalTaxCents;
 
   return {

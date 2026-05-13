@@ -327,6 +327,17 @@ const portalPricingInfo = z
       .nullable()
       .describe('Idle fee per minute (after grace period) in major currency units'),
     taxRate: z.string().nullable().describe('Sales tax rate as a decimal (e.g. 0.0875 = 8.75%)'),
+    isFreeVend: z
+      .boolean()
+      .describe(
+        'True when the station&#39;s site has free vend mode enabled, meaning no charges apply regardless of the resolved tariff. The portal should surface this as a badge so drivers understand why pricing reads as free.',
+      ),
+    restrictions: z
+      .unknown()
+      .nullable()
+      .describe(
+        'When present, identifies the conditions under which the resolved tariff applies (time-of-day, days-of-week, seasonal date range, holiday-only, or energy threshold). Drivers should see this so they understand why a non-default rate is showing -- otherwise a "Peak rate $0.50/kWh" reads like the always-on price when it actually only applies 09:00-17:00.',
+      ),
   })
   .passthrough();
 
@@ -520,13 +531,34 @@ export function portalChargerRoutes(app: FastifyInstance): void {
       const { stationId } = request.params as z.infer<typeof stationIdParams>;
 
       const [station] = await db
-        .select({ id: chargingStations.id })
+        .select({ id: chargingStations.id, freeVendEnabled: sites.freeVendEnabled })
         .from(chargingStations)
+        .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .where(eq(chargingStations.stationId, stationId));
 
       if (station == null) {
         await reply.status(404).send({ error: 'Station not found', code: 'STATION_NOT_FOUND' });
         return;
+      }
+
+      // Free-vend sites legitimately operate without an assigned pricing
+      // group -- event-projections skips tariff snapshot and payment gate
+      // entirely when free_vend_enabled = true. Calling resolveTariff would
+      // 404 PRICING_NOT_FOUND and the portal would show nothing instead of
+      // the "Free charging at this site" badge. Short-circuit with a zeroed
+      // tariff payload + isFreeVend flag so PricingDisplay surfaces the
+      // badge regardless of whether a pricing group exists.
+      if (station.freeVendEnabled === true) {
+        return {
+          currency: 'USD',
+          pricePerKwh: null,
+          pricePerMinute: null,
+          pricePerSession: null,
+          idleFeePricePerMinute: null,
+          taxRate: null,
+          isFreeVend: true,
+          restrictions: null,
+        };
       }
 
       const tariff = await resolveTariff(station.id, driverId);
@@ -542,6 +574,8 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         pricePerSession: tariff.pricePerSession,
         idleFeePricePerMinute: tariff.idleFeePricePerMinute,
         taxRate: tariff.taxRate,
+        isFreeVend: false,
+        restrictions: tariff.restrictions ?? null,
       };
     },
   );
@@ -1406,8 +1440,10 @@ export function portalChargerRoutes(app: FastifyInstance): void {
           ocppProtocol: chargingStations.ocppProtocol,
           availability: chargingStations.availability,
           onboardingStatus: chargingStations.onboardingStatus,
+          freeVendEnabled: sites.freeVendEnabled,
         })
         .from(chargingStations)
+        .leftJoin(sites, eq(chargingStations.siteId, sites.id))
         .where(eq(chargingStations.stationId, params.stationId));
 
       if (station == null) {
@@ -1553,9 +1589,13 @@ export function portalChargerRoutes(app: FastifyInstance): void {
       } | null = null;
 
       if (config != null) {
-        // Check if pricing is free for this driver
+        // Check if pricing is free for this driver. Free-vend wins over the
+        // tariff lookup: event-projections skips the payment gate for
+        // free-vend sites, so demanding a payment method here would block
+        // drivers from starting at a free-vend site that happens to have a
+        // paid tariff assigned.
         const tariff = await resolveTariff(station.id, driverId);
-        const chargingIsFree = isTariffFree(tariff);
+        const chargingIsFree = station.freeVendEnabled === true || isTariffFree(tariff);
 
         if (!chargingIsFree) {
           // Payment is required -- validate the driver has a payment method

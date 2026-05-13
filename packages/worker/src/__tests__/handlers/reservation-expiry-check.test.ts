@@ -69,6 +69,7 @@ describe('reservationExpiryCheckHandler', () => {
           site_id: 'site_1',
           starts_at: new Date('2026-01-01T10:00:00Z'),
           expires_at: new Date('2026-01-01T11:00:00Z'),
+          created_at: new Date('2026-01-01T10:00:00Z'),
           has_session: false,
         },
       ])
@@ -88,8 +89,9 @@ describe('reservationExpiryCheckHandler', () => {
       await import('../../handlers/reservation-expiry-check.js');
     await reservationExpiryCheckHandler(log);
 
-    // 60 min * $0.05 = $3.00 = 300 cents
-    expect(mockChargeNoShow).toHaveBeenCalledWith('drv_1', 'site_1', 300, 'rsv_1');
+    // 60 min * $0.05 = $3.00 = 300 cents. 5th arg is the resolved tariff
+    // currency, which the fee helper persists on the payment record.
+    expect(mockChargeNoShow).toHaveBeenCalledWith('drv_1', 'site_1', 300, 'rsv_1', 'USD');
     expect(mockPublish).toHaveBeenCalledWith(
       'ocpp_commands',
       expect.stringContaining('"action":"CancelReservation"'),

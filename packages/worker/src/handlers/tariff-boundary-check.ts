@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, sql } from 'drizzle-orm';
 import {
   db,
   chargingSessions,
@@ -51,7 +51,32 @@ export async function tariffBoundaryCheckHandler(log: Logger): Promise<void> {
         if (currentTariff == null || currentTariff.id === session.tariffId) continue;
 
         const energyWh = session.energyDeliveredWh != null ? Number(session.energyDeliveredWh) : 0;
-        const idleMins = Number(session.idleMinutes);
+        const sessionIdleMins = Number(session.idleMinutes);
+
+        // session.idleMinutes is the WHOLE-session idle accumulator, not a
+        // per-segment delta. Subtract whatever was already attributed to
+        // closed segments so each segment carries only the idle that occurred
+        // inside its own window. Without this, sessions that cross multiple
+        // tariff boundaries inflate the per-segment idle column on every
+        // additional close (segment 1 holds idle@T1, segment 2 holds idle@T2
+        // which already includes segment 1's portion, etc.). The final
+        // invoice is unaffected (event-projections.ts overrides per-segment
+        // idle to zero except the last segment when it recomputes total
+        // cost) but per-segment cost reports and dispute audits would read
+        // inflated values from this column.
+        const [closedIdleAgg] = await db
+          .select({
+            total: sql<string>`COALESCE(SUM(${sessionTariffSegments.idleMinutes}), 0)`,
+          })
+          .from(sessionTariffSegments)
+          .where(
+            and(
+              eq(sessionTariffSegments.sessionId, session.sessionId),
+              isNotNull(sessionTariffSegments.endedAt),
+            ),
+          );
+        const closedIdleMins = Number(closedIdleAgg?.total ?? 0);
+        const segmentIdleMins = Math.max(0, sessionIdleMins - closedIdleMins);
 
         // Close open segment
         await db
@@ -60,7 +85,7 @@ export async function tariffBoundaryCheckHandler(log: Logger): Promise<void> {
             endedAt: now,
             energyWhEnd: String(energyWh),
             durationMinutes: sql`EXTRACT(EPOCH FROM (NOW() - started_at)) / 60`,
-            idleMinutes: String(idleMins),
+            idleMinutes: String(segmentIdleMins),
           })
           .where(
             and(

@@ -1,19 +1,9 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '@evtivity/database';
-import {
-  tariffs,
-  pricingGroups,
-  pricingGroupStations,
-  pricingGroupDrivers,
-  pricingGroupFleets,
-  pricingGroupSites,
-  pricingHolidays,
-  fleetDrivers,
-  chargingStations,
-} from '@evtivity/database';
+import { tariffs, pricingHolidays, chargingStations, sites } from '@evtivity/database';
 import { resolveActiveTariff, isTariffFree as isTariffFreeShared } from '@evtivity/lib';
 import type { TariffRestrictions, TariffWithRestrictions } from '@evtivity/lib';
 
@@ -37,71 +27,90 @@ interface ResolvedGroup {
   groupName: string;
 }
 
-const groupSelect = {
-  groupId: pricingGroups.id,
-  groupName: pricingGroups.name,
-};
-
 export async function resolveTariffGroup(
   stationUuid: string,
   driverUuid?: string | null,
 ): Promise<ResolvedGroup | null> {
-  // Priority 1: Driver-specific pricing group (applies at all stations)
-  if (driverUuid != null) {
-    const [driverGroup] = await db
-      .select(groupSelect)
-      .from(pricingGroupDrivers)
-      .innerJoin(pricingGroups, eq(pricingGroupDrivers.pricingGroupId, pricingGroups.id))
-      .where(eq(pricingGroupDrivers.driverId, driverUuid))
-      .limit(1);
-    if (driverGroup != null) return driverGroup;
-  }
-
-  // Priority 2: Fleet-specific pricing group (applies at all stations)
-  if (driverUuid != null) {
-    const [fleetGroup] = await db
-      .select(groupSelect)
-      .from(fleetDrivers)
-      .innerJoin(pricingGroupFleets, eq(pricingGroupFleets.fleetId, fleetDrivers.fleetId))
-      .innerJoin(pricingGroups, eq(pricingGroupFleets.pricingGroupId, pricingGroups.id))
-      .where(eq(fleetDrivers.driverId, driverUuid))
-      .limit(1);
-    if (fleetGroup != null) return fleetGroup;
-  }
-
-  // Priority 3: Station pricing group
-  const [stationGroup] = await db
-    .select(groupSelect)
-    .from(pricingGroupStations)
-    .innerJoin(pricingGroups, eq(pricingGroupStations.pricingGroupId, pricingGroups.id))
-    .where(eq(pricingGroupStations.stationId, stationUuid))
-    .limit(1);
-  if (stationGroup != null) return stationGroup;
-
-  // Priority 4: Site-specific pricing group
-  const [siteGroup] = await db
-    .select(groupSelect)
-    .from(chargingStations)
-    .innerJoin(pricingGroupSites, eq(pricingGroupSites.siteId, chargingStations.siteId))
-    .innerJoin(pricingGroups, eq(pricingGroupSites.pricingGroupId, pricingGroups.id))
-    .where(eq(chargingStations.id, stationUuid))
-    .limit(1);
-  if (siteGroup != null) return siteGroup;
-
-  // Priority 5: Default pricing group
-  const [defaultGroup] = await db
-    .select(groupSelect)
-    .from(pricingGroups)
-    .where(eq(pricingGroups.isDefault, true))
-    .limit(1);
-  if (defaultGroup != null) return defaultGroup;
-
-  return null;
+  // Single round-trip 5-tier resolution: driver > fleet > station > site >
+  // default. Each branch is a CTE that emits at most one row with its
+  // priority number; the final SELECT joins to pricing_groups for the name,
+  // orders by priority, and returns the winner. Replaces five sequential
+  // round-trips with one.
+  //
+  // fleet_drivers has no unique constraint on driverId -- a driver can
+  // belong to multiple fleets. ORDER BY fd.created_at picks the oldest
+  // membership deterministically.
+  const rows = await db.execute<{ group_id: string; group_name: string }>(sql`
+    WITH driver_group AS (
+      SELECT pgd.pricing_group_id AS id, 1 AS priority
+      FROM pricing_group_drivers pgd
+      WHERE pgd.driver_id = ${driverUuid ?? ''}
+      LIMIT 1
+    ),
+    fleet_group AS (
+      SELECT pgf.pricing_group_id AS id, 2 AS priority
+      FROM pricing_group_fleets pgf
+      JOIN fleet_drivers fd ON fd.fleet_id = pgf.fleet_id
+      WHERE fd.driver_id = ${driverUuid ?? ''}
+      ORDER BY fd.created_at ASC
+      LIMIT 1
+    ),
+    station_group AS (
+      SELECT pgs.pricing_group_id AS id, 3 AS priority
+      FROM pricing_group_stations pgs
+      WHERE pgs.station_id = ${stationUuid}
+      LIMIT 1
+    ),
+    site_group AS (
+      SELECT pgsit.pricing_group_id AS id, 4 AS priority
+      FROM pricing_group_sites pgsit
+      JOIN charging_stations cs ON cs.site_id = pgsit.site_id
+      WHERE cs.id = ${stationUuid}
+      LIMIT 1
+    ),
+    default_group AS (
+      SELECT pg.id, 5 AS priority
+      FROM pricing_groups pg
+      WHERE pg.is_default = true
+      LIMIT 1
+    ),
+    winner AS (
+      SELECT id FROM (
+        SELECT id, priority FROM driver_group
+        UNION ALL SELECT id, priority FROM fleet_group
+        UNION ALL SELECT id, priority FROM station_group
+        UNION ALL SELECT id, priority FROM site_group
+        UNION ALL SELECT id, priority FROM default_group
+      ) groups
+      ORDER BY priority
+      LIMIT 1
+    )
+    SELECT pg.id AS group_id, pg.name AS group_name
+    FROM winner w
+    JOIN pricing_groups pg ON pg.id = w.id
+  `);
+  const row = rows[0];
+  if (row == null) return null;
+  return { groupId: row.group_id, groupName: row.group_name };
 }
 
+// Holidays change rarely (operators add them in CSMS, then leave them alone)
+// but resolveTariff() is called by every portal pricing endpoint hit, every
+// authenticated-start request, and the reservation no-show cron. Match the
+// 60s TTL cache used by the OCPP event-projection loader so a flurry of
+// portal page loads doesn't fan out into one DB roundtrip per request.
+let holidayCache: { dates: Date[]; loadedAt: number } | null = null;
+const HOLIDAY_CACHE_TTL_MS = 60_000;
+
 async function loadHolidays(): Promise<Date[]> {
+  const now = Date.now();
+  if (holidayCache != null && now - holidayCache.loadedAt < HOLIDAY_CACHE_TTL_MS) {
+    return holidayCache.dates;
+  }
   const rows = await db.select({ date: pricingHolidays.date }).from(pricingHolidays);
-  return rows.map((r) => new Date(r.date));
+  const dates = rows.map((r) => new Date(r.date));
+  holidayCache = { dates, loadedAt: now };
+  return dates;
 }
 
 export function isTariffFree(tariff: ResolvedTariff | null): boolean {
@@ -138,6 +147,17 @@ export async function resolveTariff(
 
   const holidays = await loadHolidays();
   const now = new Date();
+  // Resolve in the SITE's timezone so time-of-day and holiday boundaries fire
+  // where the driver actually plugs in, not where the server lives. Falls
+  // back to server-local time when the station has no site or the site has
+  // no timezone column populated.
+  const [siteTz] = await db
+    .select({ timezone: sites.timezone })
+    .from(chargingStations)
+    .leftJoin(sites, eq(chargingStations.siteId, sites.id))
+    .where(eq(chargingStations.id, stationUuid))
+    .limit(1);
+  const timezone = siteTz?.timezone ?? undefined;
 
   const tariffInputs: TariffWithRestrictions[] = activeTariffs.map((t) => ({
     id: t.id,
@@ -153,7 +173,7 @@ export async function resolveTariff(
     isDefault: t.isDefault,
   }));
 
-  const resolved = resolveActiveTariff(tariffInputs, now, holidays, 0);
+  const resolved = resolveActiveTariff(tariffInputs, now, holidays, 0, timezone);
   if (resolved == null) return null;
 
   const match = activeTariffs.find((t) => t.id === resolved.id);

@@ -184,7 +184,22 @@ jobHandlers.set('tariff-boundary-check', async (log: FastifyBaseLogger) => {
         if (currentTariff == null || currentTariff.id === session.tariffId) continue;
 
         const energyWh = session.energyDeliveredWh != null ? Number(session.energyDeliveredWh) : 0;
-        const idleMins = Number(session.idleMinutes);
+        const sessionIdleMins = Number(session.idleMinutes);
+
+        // session.idleMinutes is the WHOLE-session accumulator, not a
+        // per-segment delta. Subtract idle already attributed to closed
+        // segments so this segment carries only the idle inside its own
+        // window. Mirrors the fix in worker/handlers/tariff-boundary-check.ts.
+        // (This file is @deprecated; the live handler is in the worker
+        // package. Keeping the bug in sync prevents drift if the file is
+        // ever resurrected.)
+        const closedIdleAggRows = await db.execute<{ total: string }>(sql`
+          SELECT COALESCE(SUM(idle_minutes), 0)::text AS total
+          FROM session_tariff_segments
+          WHERE session_id = ${session.sessionId} AND ended_at IS NOT NULL
+        `);
+        const closedIdleSum = Number(closedIdleAggRows[0]?.total ?? 0);
+        const segmentIdleMins = Math.max(0, sessionIdleMins - closedIdleSum);
 
         // Close open segment
         await db
@@ -193,7 +208,7 @@ jobHandlers.set('tariff-boundary-check', async (log: FastifyBaseLogger) => {
             endedAt: now,
             energyWhEnd: String(energyWh),
             durationMinutes: sql`EXTRACT(EPOCH FROM (NOW() - started_at)) / 60`,
-            idleMinutes: String(idleMins),
+            idleMinutes: String(segmentIdleMins),
           })
           .where(
             and(

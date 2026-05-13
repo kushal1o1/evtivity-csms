@@ -3,8 +3,17 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Minus } from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { Plus, Minus, Clock } from 'lucide-react';
 import { currencySymbol } from '@/lib/utils';
+
+export interface TariffRestrictionsLite {
+  timeRange?: { startTime: string; endTime: string };
+  daysOfWeek?: number[];
+  dateRange?: { startDate: string; endDate: string };
+  holidays?: boolean;
+  energyThresholdKwh?: number;
+}
 
 export interface PricingInfo {
   currency: string;
@@ -13,6 +22,41 @@ export interface PricingInfo {
   pricePerSession: string | null;
   idleFeePricePerMinute: string | null;
   taxRate: string | null;
+  isFreeVend?: boolean;
+  restrictions?: TariffRestrictionsLite | null;
+}
+
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+function formatRestrictions(
+  r: TariffRestrictionsLite | null | undefined,
+  t: TFunction,
+): string | null {
+  if (r == null) return null;
+  if (r.energyThresholdKwh != null) {
+    return t('charger.restrictionEnergyThreshold', { kwh: r.energyThresholdKwh });
+  }
+  if (r.holidays === true) return t('charger.restrictionHolidays');
+  if (r.dateRange != null) {
+    return t('charger.restrictionDateRange', {
+      start: r.dateRange.startDate,
+      end: r.dateRange.endDate,
+    });
+  }
+  const parts: string[] = [];
+  if (r.daysOfWeek != null && r.daysOfWeek.length > 0) {
+    const names = r.daysOfWeek
+      .map((d) => {
+        const key = DAY_KEYS[d];
+        return key != null ? t(`charger.day.${key}`) : null;
+      })
+      .filter((s): s is string => s != null);
+    if (names.length > 0) parts.push(names.join(', '));
+  }
+  if (r.timeRange != null) {
+    parts.push(`${r.timeRange.startTime}–${r.timeRange.endTime}`);
+  }
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 export function PricingDisplay({ pricing }: { pricing: PricingInfo }): React.JSX.Element {
@@ -24,6 +68,16 @@ export function PricingDisplay({ pricing }: { pricing: PricingInfo }): React.JSX
   const perSession = pricing.pricePerSession != null ? Number(pricing.pricePerSession) : 0;
   const idleFee = pricing.idleFeePricePerMinute != null ? Number(pricing.idleFeePricePerMinute) : 0;
   const taxRate = pricing.taxRate != null ? Number(pricing.taxRate) : 0;
+  const restrictionLabel = formatRestrictions(pricing.restrictions, t);
+
+  if (pricing.isFreeVend === true) {
+    return (
+      <div className="text-center space-y-1">
+        <p className="text-base font-semibold text-success">{t('charger.freeVendBadge')}</p>
+        <p className="text-xs text-muted-foreground">{t('charger.freeVendDescription')}</p>
+      </div>
+    );
+  }
 
   if (perKwh === 0 && perMin === 0 && perSession === 0 && idleFee === 0 && taxRate === 0) {
     return (
@@ -62,6 +116,12 @@ export function PricingDisplay({ pricing }: { pricing: PricingInfo }): React.JSX
           <Plus className="h-4 w-4 text-muted-foreground" />
         )}
       </button>
+      {restrictionLabel != null && (
+        <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          {restrictionLabel}
+        </p>
+      )}
       {expanded && (
         <div className="space-y-0.5 text-center">
           {breakdownLines.map((line) => (

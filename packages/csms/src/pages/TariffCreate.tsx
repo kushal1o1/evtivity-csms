@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { api, ApiError } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-message';
 
 interface Tariff {
   id: string;
@@ -158,8 +159,10 @@ export function TariffCreate(): React.JSX.Element {
     createMutation.mutate(body);
   }
 
-  const isOverlapError =
-    createMutation.error instanceof ApiError && createMutation.error.status === 409;
+  const conflictMessage =
+    createMutation.error instanceof ApiError && createMutation.error.status === 409
+      ? getErrorMessage(createMutation.error, t)
+      : null;
 
   return (
     <div className="space-y-6">
@@ -387,9 +390,9 @@ export function TariffCreate(): React.JSX.Element {
               )}
             </div>
 
-            {isOverlapError && (
+            {conflictMessage != null && (
               <div className="col-span-full">
-                <p className="text-sm text-destructive">{t('pricing.overlapError')}</p>
+                <p className="text-sm text-destructive">{conflictMessage}</p>
               </div>
             )}
 

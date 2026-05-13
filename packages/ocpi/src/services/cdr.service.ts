@@ -34,6 +34,23 @@ function getPartyId(): string {
   return config.OCPI_PARTY_ID;
 }
 
+/**
+ * Generate an OCPI CDR for a roaming session.
+ *
+ * Pricing model: roaming sessions ALWAYS use OUR tariff (the tariff resolved
+ * at the station as if a local driver had charged there) and OUR currency.
+ * The session cost is computed by the standard payment-gate / event-projection
+ * pipeline -- the only difference for `is_roaming = true` sessions is that
+ * `runPaymentGate()` skips Stripe pre-auth (event-projections.ts:2955) because
+ * the eMSP partner pays us via this CDR, then bills their own driver however
+ * they want.
+ *
+ * In practical terms: a partner's driver charging at our station pays whatever
+ * our tariff says; we never honour the partner's tariff for sessions hosted on
+ * our hardware. If two partners want different rates at the same station, that
+ * is modelled via OCPI tariff negotiation outside the CDR (tariff_id reference
+ * on the CDR points to the partner's view of our published tariff).
+ */
 export async function generateCdr(
   chargingSessionId: string,
   partnerId: string,

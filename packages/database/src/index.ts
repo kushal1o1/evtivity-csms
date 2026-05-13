@@ -19,6 +19,12 @@ export type {
   ReservationAuditActor,
   WriteReservationAuditArgs,
 } from './lib/reservation-audit.js';
+export { writePricingAudit } from './lib/pricing-audit.js';
+export type {
+  PricingAuditAction,
+  PricingAuditEntity,
+  WritePricingAuditArgs,
+} from './lib/pricing-audit.js';
 export { isFleetEnabled } from './lib/fleet-setting.js';
 export { isGuestChargingEnabled } from './lib/guest-setting.js';
 export { getIdlingGracePeriodMinutes } from './lib/idling-setting.js';

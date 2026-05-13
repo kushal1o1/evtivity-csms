@@ -20,6 +20,7 @@ import {
   pricingGroups,
   configTemplates,
   carbonIntensityFactors,
+  writePricingAudit,
 } from '@evtivity/database';
 import { isValidTimezone } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
@@ -1722,6 +1723,10 @@ export function siteRoutes(app: FastifyInstance): void {
         return;
       }
       const body = request.body as z.infer<typeof addSitePricingGroupBody>;
+      const [previous] = await db
+        .select()
+        .from(pricingGroupSites)
+        .where(eq(pricingGroupSites.siteId, id));
       const [record] = await db
         .insert(pricingGroupSites)
         .values({ siteId: id, pricingGroupId: body.pricingGroupId })
@@ -1730,6 +1735,21 @@ export function siteRoutes(app: FastifyInstance): void {
           set: { pricingGroupId: body.pricingGroupId, createdAt: new Date() },
         })
         .returning();
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: previous == null ? 'created' : 'updated',
+          actorUserId: userId,
+          before:
+            previous == null
+              ? null
+              : { scope: 'site', siteId: id, pricingGroupId: previous.pricingGroupId },
+          after: { scope: 'site', siteId: id, pricingGroupId: body.pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       await reply.status(201).send(record);
     },
   );
@@ -1773,6 +1793,17 @@ export function siteRoutes(app: FastifyInstance): void {
           .send({ error: 'Pricing group not found for site', code: 'NOT_FOUND' });
         return;
       }
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: 'deleted',
+          actorUserId: userId,
+          before: { scope: 'site', siteId: id, pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       return record;
     },
   );

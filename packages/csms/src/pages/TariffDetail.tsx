@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api, ApiError } from '@/lib/api';
+import { getErrorMessage } from '@/lib/error-message';
 import { formatDateTime, useUserTimezone } from '@/lib/timezone';
 
 interface TariffRestrictions {
@@ -265,8 +266,14 @@ export function TariffDetail(): React.JSX.Element {
     return parts.join(' ') || 'n/a';
   }
 
-  const isOverlapError =
-    updateMutation.error instanceof ApiError && updateMutation.error.status === 409;
+  // Surface the API's specific 409 reason (overlap, currency mismatch, in-use)
+  // rather than collapsing every conflict into "overlap" -- the operator needs
+  // to know whether to change the time window, the currency, or wait for the
+  // referenced sessions to end.
+  const conflictMessage =
+    updateMutation.error instanceof ApiError && updateMutation.error.status === 409
+      ? getErrorMessage(updateMutation.error, t)
+      : null;
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>;
@@ -520,9 +527,9 @@ export function TariffDetail(): React.JSX.Element {
                 )}
               </div>
 
-              {isOverlapError && (
+              {conflictMessage != null && (
                 <div className="col-span-full">
-                  <p className="text-sm text-destructive">{t('pricing.overlapError')}</p>
+                  <p className="text-sm text-destructive">{conflictMessage}</p>
                 </div>
               )}
 

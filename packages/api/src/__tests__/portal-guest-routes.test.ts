@@ -74,6 +74,7 @@ vi.mock('@evtivity/database', () => ({
   meterValues: {},
   paymentRecords: {},
   reservations: {},
+  sites: { id: 'id', freeVendEnabled: 'freeVendEnabled' },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -172,7 +173,7 @@ describe('Portal guest routes - handler logic', () => {
     });
 
     it('returns 404 when EVSE does not exist', async () => {
-      setupDbResults([{ id: 'sta_000000000001', siteId: null }], []);
+      setupDbResults([{ id: 'sta_000000000001', siteId: null, freeVendEnabled: false }], []);
       const response = await app.inject({
         method: 'GET',
         url: '/portal/guest/charger-config/CS-001/1',
@@ -182,7 +183,10 @@ describe('Portal guest routes - handler logic', () => {
     });
 
     it('returns paymentEnabled false when no stripe config', async () => {
-      setupDbResults([{ id: 'sta_000000000001', siteId: null }], [{ id: 'evs_000000000001' }]);
+      setupDbResults(
+        [{ id: 'sta_000000000001', siteId: null, freeVendEnabled: false }],
+        [{ id: 'evs_000000000001' }],
+      );
       vi.mocked(getStripeConfig).mockResolvedValue(null);
 
       const response = await app.inject({
@@ -195,7 +199,10 @@ describe('Portal guest routes - handler logic', () => {
     });
 
     it('returns payment config when stripe is configured', async () => {
-      setupDbResults([{ id: 'sta_000000000001', siteId: 'site-1' }], [{ id: 'evs_000000000001' }]);
+      setupDbResults(
+        [{ id: 'sta_000000000001', siteId: 'site-1', freeVendEnabled: false }],
+        [{ id: 'evs_000000000001' }],
+      );
       vi.mocked(getStripeConfig).mockResolvedValue({
         stripe: {} as never,
         publishableKey: 'pk_test_abc',
@@ -314,7 +321,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
-        [],
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
       );
       vi.mocked(isTariffFree).mockReturnValue(true);
 
@@ -343,6 +351,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
       );
       vi.mocked(getStripeConfig).mockResolvedValue(null);
 
@@ -371,6 +381,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
       );
       vi.mocked(getStripeConfig).mockResolvedValue({
         stripe: {
@@ -412,7 +424,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
-        [],
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
       );
       vi.mocked(getStripeConfig).mockResolvedValue({
         stripe: {
@@ -467,6 +480,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
         [], // INSERT guest_sessions
         [], // DELETE guest_sessions (rollback)
       );
@@ -516,6 +531,8 @@ describe('Portal guest routes - handler logic', () => {
         [{ id: 'evs_000000000001' }],
         [{ status: 'available' }],
         [], // active reservation gate (no reservation)
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
         [], // INSERT guest_sessions (paid)
         [], // DELETE guest_sessions (rollback)
       );
@@ -704,7 +721,14 @@ describe('Portal guest routes - handler logic', () => {
     });
 
     it('allows guest session start when reservation starts outside the buffer window', async () => {
-      setupDbResults([stationRow], [{ id: 'evs_000000000001' }], [{ status: 'available' }], []);
+      setupDbResults(
+        [stationRow],
+        [{ id: 'evs_000000000001' }],
+        [{ status: 'available' }],
+        [], // active reservation gate (no reservation)
+        [], // evse active session check (none)
+        [{ freeVendEnabled: false }], // siteFreeVend lookup before tariff resolve
+      );
       vi.mocked(isEvseInReservationBuffer).mockResolvedValue(false);
       vi.mocked(isTariffFree).mockReturnValue(true);
 

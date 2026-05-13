@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { eq, and, sql, isNull, between } from 'drizzle-orm';
+import { eq, and, sql, isNull, isNotNull, between } from 'drizzle-orm';
 import {
   db,
   invoices,
@@ -65,11 +65,26 @@ export async function createSessionInvoice(sessionId: string): Promise<InvoiceWi
     throw new Error('Session is not completed');
   }
 
-  // Use session.finalCostCents as the authoritative total
-  const totalCents = session.finalCostCents ?? 0;
+  // A completed session with null finalCostCents indicates the cost-calc
+  // path in event-projections never ran (or threw and was swallowed). Issuing
+  // a $0 invoice here would silently bill the driver nothing for a
+  // successful charge -- worse than failing loudly. The operator needs to
+  // resolve the underlying cost-calc gap before an invoice can be issued.
+  if (session.finalCostCents == null) {
+    throw new Error(
+      `Session ${sessionId} has no finalCostCents; cannot invoice an uncosted session`,
+    );
+  }
+  const totalCents = session.finalCostCents;
   const currency = session.currency ?? 'USD';
 
-  // Load tariff segments to check for split-billing
+  // Load tariff segments to check for split-billing. ORDER BY started_at is
+  // load-bearing: the per-segment line items downstream key the session-fee
+  // attribution and the backward grace-period distribution off
+  // `index === 0` (first segment) and `index === length - 1` (last segment).
+  // Postgres returns rows in undefined order without ORDER BY, so a missing
+  // sort would silently mis-attribute the session fee to a non-first segment
+  // and skew the grace distribution.
   const segments = await db
     .select({
       startedAt: sessionTariffSegments.startedAt,
@@ -80,7 +95,8 @@ export async function createSessionInvoice(sessionId: string): Promise<InvoiceWi
       tariffId: sessionTariffSegments.tariffId,
     })
     .from(sessionTariffSegments)
-    .where(eq(sessionTariffSegments.sessionId, sessionId));
+    .where(eq(sessionTariffSegments.sessionId, sessionId))
+    .orderBy(sessionTariffSegments.startedAt);
 
   // Build line items based on split-billing segments or single tariff
   let costBreakdown: CostBreakdown | null = null;
@@ -115,13 +131,33 @@ export async function createSessionInvoice(sessionId: string): Promise<InvoiceWi
           currency: t?.currency ?? currency,
         },
         durationMinutes: (segEndMs - segStartMs) / 60000,
-        energyDeliveredWh: Number(seg.energyWhEnd ?? 0) - Number(seg.energyWhStart),
+        // Defensive: a completed session should have energyWhEnd on every
+        // segment, but if it's still null (race with segment-close, or DB
+        // drift) fall back to energyWhStart so the delta is 0, not a large
+        // negative that the cost calculator would multiply into a refund.
+        energyDeliveredWh: Number(seg.energyWhEnd ?? seg.energyWhStart) - Number(seg.energyWhStart),
         idleMinutes: Number(seg.idleMinutes),
         isFirstSegment: index === 0,
       };
     });
 
     costBreakdown = calculateSplitSessionCost(tariffSegments, gracePeriod);
+
+    // Mirror the aggregate's grace-period distribution: idle reduction is
+    // taken from the LAST segment first, then spilled backward. Without this
+    // mirror, the per-segment line items below applied grace only to the
+    // last segment, so when grace > last-segment idle the line-item subtotal
+    // sums to MORE than the invoice header (segments earlier in the session
+    // double-billed for idle that the header already absorbed).
+    const totalSegmentIdle = tariffSegments.reduce((s, seg) => s + seg.idleMinutes, 0);
+    const adjustedIdleBySegment = tariffSegments.map((s) => s.idleMinutes);
+    let remainingReduction = Math.min(totalSegmentIdle, gracePeriod);
+    for (let i = adjustedIdleBySegment.length - 1; i >= 0 && remainingReduction > 0; i--) {
+      const cur = adjustedIdleBySegment[i] ?? 0;
+      const deduct = Math.min(cur, remainingReduction);
+      adjustedIdleBySegment[i] = cur - deduct;
+      remainingReduction -= deduct;
+    }
 
     // Track per-segment breakdowns for multi-segment line items
     for (const [i, seg] of tariffSegments.entries()) {
@@ -130,8 +166,8 @@ export async function createSessionInvoice(sessionId: string): Promise<InvoiceWi
         segTariff,
         seg.energyDeliveredWh,
         seg.durationMinutes,
-        seg.idleMinutes,
-        i === tariffSegments.length - 1 ? gracePeriod : 0,
+        adjustedIdleBySegment[i] ?? 0,
+        0, // grace already applied via adjustedIdleBySegment
       );
       segmentBreakdowns.push({ breakdown: bd, segmentIndex: i });
     }
@@ -378,6 +414,12 @@ export async function createAggregatedInvoice(
       and(
         eq(chargingSessions.driverId, driverId),
         eq(chargingSessions.status, 'completed'),
+        // Skip uncosted sessions instead of silently aggregating them at $0.
+        // A completed session with null finalCostCents is a cost-calc gap
+        // that needs operator triage; rolling it into a monthly invoice would
+        // hide the problem. Operators noticing fewer sessions than expected
+        // can investigate the unbilled ones individually.
+        isNotNull(chargingSessions.finalCostCents),
         between(chargingSessions.endedAt, startDate, endDate),
         isNull(invoiceLineItems.id),
       ),

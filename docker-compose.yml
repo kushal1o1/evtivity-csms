@@ -44,6 +44,10 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-dev-encryption-key-32chars-long!}
       SEED_DEMO: ${SEED_DEMO:-true}
       REGISTRATION_POLICY: ${REGISTRATION_POLICY:-approval-required}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@evtivity.local}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-admin123}
+      INITIAL_DRIVER_EMAIL: ${INITIAL_DRIVER_EMAIL:-driver@evtivity.local}
+      INITIAL_DRIVER_PASSWORD: ${INITIAL_DRIVER_PASSWORD:-driver123}
     depends_on:
       postgres:
         condition: service_healthy

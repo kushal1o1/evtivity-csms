@@ -53,12 +53,22 @@ vi.mock('@evtivity/database', () => ({
     insert: vi.fn(() => makeChain()),
     update: vi.fn(() => makeChain()),
     delete: vi.fn(() => makeChain()),
+    execute: vi.fn(() => {
+      const result = dbResults[dbCallIndex] ?? [];
+      dbCallIndex++;
+      return Promise.resolve(result);
+    }),
     transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         select: vi.fn(() => makeChain()),
         insert: vi.fn(() => makeChain()),
         update: vi.fn(() => makeChain()),
         delete: vi.fn(() => makeChain()),
+        execute: vi.fn(() => {
+          const result = dbResults[dbCallIndex] ?? [];
+          dbCallIndex++;
+          return Promise.resolve(result);
+        }),
       };
       return fn(tx);
     }),
@@ -559,7 +569,9 @@ describe('Pricing Service', () => {
 // Tariff Service (resolveTariff)
 // ---------------------------------------------------------------------------
 describe('Tariff Service', () => {
-  const mockGroup = { groupId: 'pgr_000000000001', groupName: 'Test Group' };
+  // resolveTariffGroup uses a single db.execute() with a CTE returning
+  // { group_id, group_name } (snake_case raw SQL columns).
+  const mockExecuteGroup = { group_id: 'pgr_000000000001', group_name: 'Test Group' };
   const mockTariffRow = {
     id: 't1',
     name: 'Test Tariff',
@@ -575,19 +587,17 @@ describe('Tariff Service', () => {
   };
 
   // resolveTariff does:
-  // 1. resolveTariffGroup(): queries up to 5 priority levels (driver, fleet, station, site, default)
-  //    Driver and fleet groups apply at all stations (no station join).
-  //    Station and site groups require station assignment.
-  // 2. Fetches ALL active tariffs in the resolved group (1 query)
-  // 3. Loads holidays (1 query)
-  // 4. Calls resolveActiveTariff() from @evtivity/lib to pick the matching tariff
+  // 1. resolveTariffGroup(): single db.execute() CTE that resolves driver/fleet/station/site/default
+  //    in one round-trip. Returns either zero rows (no match) or one row.
+  // 2. Fetches ALL active tariffs in the resolved group (1 db.select)
+  // 3. Loads holidays via cached helper (1 db.select on first call, cached after)
+  // 4. Fetches site timezone (1 db.select)
+  // 5. Calls resolveActiveTariff() from @evtivity/lib to pick the matching tariff
 
   describe('resolveTariff', () => {
     it('returns driver-specific tariff when found (priority 1)', async () => {
-      // Q1: driver group query (no station join) -> found
-      // Q2: active tariffs fetch
-      // Q3: holidays load
-      setupDbResults([mockGroup], [mockTariffRow], []);
+      // execute -> mockExecuteGroup, then select tariffs, holidays, timezone
+      setupDbResults([mockExecuteGroup], [mockTariffRow], [], []);
 
       const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
 
@@ -595,11 +605,8 @@ describe('Tariff Service', () => {
     });
 
     it('returns fleet tariff when driver query returns empty (priority 2)', async () => {
-      // Q1: driver group -> empty
-      // Q2: fleet group (no station join) -> found
-      // Q3: active tariffs fetch
-      // Q4: holidays load
-      setupDbResults([], [mockGroup], [mockTariffRow], []);
+      // Same flow: one execute call returns the winning group regardless of priority.
+      setupDbResults([mockExecuteGroup], [mockTariffRow], [], []);
 
       const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
 
@@ -607,9 +614,7 @@ describe('Tariff Service', () => {
     });
 
     it('returns station tariff when driver and fleet return empty (priority 3)', async () => {
-      // Q1: driver group -> empty, Q2: fleet group -> empty, Q3: station group -> found
-      // Q4: active tariffs fetch, Q5: holidays load
-      setupDbResults([], [], [mockGroup], [mockTariffRow], []);
+      setupDbResults([mockExecuteGroup], [mockTariffRow], [], []);
 
       const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
 
@@ -617,8 +622,8 @@ describe('Tariff Service', () => {
     });
 
     it('returns null when no tariff matches any priority', async () => {
-      // All 5 group queries return empty (driver, fleet, station, site, default)
-      setupDbResults([], [], [], [], []);
+      // execute returns no rows -> resolveTariffGroup returns null -> resolveTariff returns null.
+      setupDbResults([]);
 
       const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
 
@@ -626,9 +631,10 @@ describe('Tariff Service', () => {
     });
 
     it('skips driver and fleet queries when driverId is null', async () => {
-      // With null driverId: Q1: station -> empty, Q2: site -> empty, Q3: default group -> found
-      // Q4: active tariffs fetch, Q5: holidays load
-      setupDbResults([], [], [mockGroup], [mockTariffRow], []);
+      // The CTE still runs as one execute call; null driverId is passed as empty string
+      // and the driver/fleet sub-queries produce no rows. Station/site/default branches
+      // still resolve the group.
+      setupDbResults([mockExecuteGroup], [mockTariffRow], [], []);
 
       const result = await resolveTariff('sta_000000000001', null);
 

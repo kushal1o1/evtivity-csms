@@ -4,6 +4,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as fleetService from '../services/fleet.service.js';
+import { writePricingAudit } from '@evtivity/database';
+import type { JwtPayload } from '../plugins/auth.js';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
@@ -704,8 +706,23 @@ export function fleetRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const { id } = request.params as z.infer<typeof fleetParams>;
+      const { userId } = request.user as JwtPayload;
       const body = request.body as z.infer<typeof addPricingGroupBody>;
+      const previous = await fleetService.getFleetPricingGroup(id);
       const record = await fleetService.addPricingGroupToFleet(id, body.pricingGroupId);
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: previous == null ? 'created' : 'updated',
+          actorUserId: userId,
+          before:
+            previous == null ? null : { scope: 'fleet', fleetId: id, pricingGroupId: previous.id },
+          after: { scope: 'fleet', fleetId: id, pricingGroupId: body.pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       await reply.status(201).send(record);
     },
   );
@@ -728,6 +745,7 @@ export function fleetRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const { id, pricingGroupId } = request.params as z.infer<typeof pricingGroupParams>;
+      const { userId } = request.user as JwtPayload;
       const record = await fleetService.removePricingGroupFromFleet(id, pricingGroupId);
       if (record == null) {
         await reply
@@ -735,6 +753,17 @@ export function fleetRoutes(app: FastifyInstance): void {
           .send({ error: 'Pricing group not found for fleet', code: 'NOT_FOUND' });
         return;
       }
+      await writePricingAudit(
+        {
+          entityType: 'pricing_assignment',
+          entityId: id,
+          action: 'deleted',
+          actorUserId: userId,
+          before: { scope: 'fleet', fleetId: id, pricingGroupId },
+        },
+        undefined,
+        request.log,
+      );
       return record;
     },
   );

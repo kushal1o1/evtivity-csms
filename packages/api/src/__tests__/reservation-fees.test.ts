@@ -35,18 +35,18 @@ describe('chargeReservationNoShowFee', () => {
 
   it('no-ops when amountCents <= 0 (skips DB and Stripe)', async () => {
     const { chargeReservationNoShowFee } = await import('../lib/reservation-fees.js');
-    await chargeReservationNoShowFee('drv_1', 'site_1', 0, 'rsv_1');
+    await chargeReservationNoShowFee('drv_1', 'site_1', 0, 'rsv_1', 'USD');
     expect(mockGetStripeConfig).not.toHaveBeenCalled();
     expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
 
-    await chargeReservationNoShowFee('drv_1', 'site_1', -100, 'rsv_1');
+    await chargeReservationNoShowFee('drv_1', 'site_1', -100, 'rsv_1', 'USD');
     expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
   });
 
   it('no-ops when driver has no default payment method', async () => {
     pmRows = [];
     const { chargeReservationNoShowFee } = await import('../lib/reservation-fees.js');
-    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_1');
+    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_1', 'USD');
     expect(mockGetStripeConfig).not.toHaveBeenCalled();
     expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
   });
@@ -55,14 +55,14 @@ describe('chargeReservationNoShowFee', () => {
     pmRows = [{ stripeCustomerId: 'cus_1', stripePaymentMethodId: 'pm_1' }];
     mockGetStripeConfig.mockResolvedValueOnce(null);
     const { chargeReservationNoShowFee } = await import('../lib/reservation-fees.js');
-    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_1');
+    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_1', 'USD');
     expect(mockCreatePaymentIntent).not.toHaveBeenCalled();
   });
 
   it('creates a Stripe PaymentIntent off-session with idempotency key', async () => {
     pmRows = [{ stripeCustomerId: 'cus_1', stripePaymentMethodId: 'pm_1' }];
     const { chargeReservationNoShowFee } = await import('../lib/reservation-fees.js');
-    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_42');
+    await chargeReservationNoShowFee('drv_1', 'site_1', 500, 'rsv_42', 'USD');
 
     expect(mockCreatePaymentIntent).toHaveBeenCalledWith(
       expect.objectContaining({
