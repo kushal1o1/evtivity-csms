@@ -42,7 +42,6 @@ services:
     environment:
       DATABASE_URL: postgres://evtivity:evtivity@postgres:5432/evtivity
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-dev-encryption-key-32chars-long!}
-      SEED_DEMO: ${SEED_DEMO:-false}
       REGISTRATION_POLICY: ${REGISTRATION_POLICY:-approval-required}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@evtivity.local}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-admin123}

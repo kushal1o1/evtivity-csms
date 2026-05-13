@@ -278,3 +278,18 @@ VALUES
   ('con_000000000001', 'evs_000000000001', 1, 'Type2', 22.0, 'available'),
   ('con_000000000002', 'evs_000000000002', 1, 'CCS2', 150.0, 'available')
 ON CONFLICT (id) DO NOTHING;
+
+-- Paired css_stations rows so SimulatorManager boots CS-0001 / CS-0002
+-- without depending on the chaos orchestrator (which only runs in
+-- CSS_MODE=chaos). target_url uses the docker-compose service hostname.
+INSERT INTO css_stations (id, station_id, target_url, password, source_type, enabled)
+VALUES
+  ('css_000000000001', 'CS-0001', 'ws://ocpp:7103', 'password', 'seed', true),
+  ('css_000000000002', 'CS-0002', 'ws://ocpp:7103', 'password', 'seed', true)
+ON CONFLICT (station_id) DO NOTHING;
+
+INSERT INTO css_evses (id, css_station_id, evse_id, connector_id, connector_type, max_power_w, phases, voltage)
+VALUES
+  ('cev_000000000001', 'css_000000000001', 1, 1, 'ac_type2', 22000, 3, 230),
+  ('cev_000000000002', 'css_000000000002', 1, 1, 'ac_type2', 22000, 3, 230)
+ON CONFLICT (css_station_id, evse_id, connector_id) DO NOTHING;
