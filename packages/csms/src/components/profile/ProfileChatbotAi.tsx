@@ -198,7 +198,7 @@ export function ProfileChatbotAi(): React.JSX.Element {
           />
           <p className="text-xs text-muted-foreground">{t('settings.chatbotAiSystemPromptHint')}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex justify-end gap-2">
           <SaveButton
             isPending={chatbotAiSaveMutation.isPending}
             onClick={() => {

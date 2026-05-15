@@ -116,7 +116,7 @@ function CardForm({
         />
       </div>
       {error != null && <p className="text-sm text-destructive">{error}</p>}
-      <div className="flex gap-2">
+      <div className="flex justify-end gap-2">
         <Button type="submit" disabled={stripe == null || saveMutation.isPending}>
           {t('payments.addCard')}
         </Button>
@@ -179,7 +179,7 @@ export function PaymentMethodForm({
     return (
       <div className="space-y-4">
         <p className="text-sm text-destructive">{error}</p>
-        <div className="flex gap-2">
+        <div className="flex justify-end gap-2">
           <Button
             onClick={() => {
               void initSetup();

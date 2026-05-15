@@ -454,7 +454,7 @@ export function StationMessageSettings({
                 <AlertDescription>{t('messages.description')}</AlertDescription>
               </Alert>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex justify-end flex-wrap items-center gap-3">
                 <SaveButton
                   isPending={saveMutation.isPending}
                   type="button"

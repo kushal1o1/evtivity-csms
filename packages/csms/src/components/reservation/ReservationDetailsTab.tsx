@@ -405,14 +405,14 @@ export function ReservationDetailsTab({
               {editMutation.isError && (
                 <p className="text-sm text-destructive">{getErrorMessage(editMutation.error, t)}</p>
               )}
-              <div className="flex gap-2">
-                <SaveButton isPending={editMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setEditSubmitted(false);
                   }}
                 />
+                <SaveButton isPending={editMutation.isPending} />
               </div>
             </form>
           ) : (

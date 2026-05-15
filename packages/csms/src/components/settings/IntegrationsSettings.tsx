@@ -783,7 +783,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex justify-end gap-2">
                   <SaveButton
                     isPending={pncSaveMutation.isPending}
                     type="button"
@@ -961,7 +961,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{t('settings.idlingDescription')}</p>
-            <div className="grid gap-2 max-w-xs">
+            <div className="grid justify-end gap-2 max-w-xs">
               <Label htmlFor="idling-grace-period">{t('settings.idleGracePeriodMinutes')}</Label>
               <Input
                 id="idling-grace-period"
@@ -1234,7 +1234,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <SaveButton
                 isPending={s3Mutation.isPending}
                 type="button"

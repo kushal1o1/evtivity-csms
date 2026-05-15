@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { CancelButton } from '@/components/cancel-button';
 import { SaveButton } from '@/components/save-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
 
@@ -27,6 +28,16 @@ interface Vehicle {
   vin: string | null;
   licensePlate: string | null;
 }
+
+interface VehicleLookup {
+  makes: string[];
+  models: { make: string; model: string }[];
+}
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_OPTIONS: string[] = Array.from({ length: CURRENT_YEAR + 1 - 2010 + 1 }, (_, i) =>
+  String(CURRENT_YEAR + 1 - i),
+);
 
 interface Driver {
   id: string;
@@ -60,6 +71,19 @@ export function VehicleDetail(): React.JSX.Element {
     queryFn: () => api.get<Driver>(`/v1/drivers/${id ?? ''}`),
     enabled: id != null,
   });
+
+  const { data: lookup } = useQuery({
+    queryKey: ['vehicle-lookup'],
+    queryFn: () => api.get<VehicleLookup>('/v1/vehicles/lookup'),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const filteredModels = useMemo(() => {
+    if (lookup == null) return [];
+    const trimmed = make.trim().toLowerCase();
+    if (trimmed === '') return lookup.models.map((m) => m.model);
+    return lookup.models.filter((m) => m.make.toLowerCase() === trimmed).map((m) => m.model);
+  }, [lookup, make]);
 
   const updateMutation = useMutation({
     mutationFn: (body: {
@@ -100,6 +124,12 @@ export function VehicleDetail(): React.JSX.Element {
     const errors: Record<string, string> = {};
     if (!make.trim()) errors.make = t('validation.required');
     if (!model.trim()) errors.model = t('validation.required');
+    if (year.trim() !== '' && !/^\d{4}$/.test(year.trim())) {
+      errors.year = t('vehicles.yearFormat');
+    }
+    if (vin.trim() !== '' && !/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin.trim())) {
+      errors.vin = t('vehicles.vinFormat');
+    }
     return errors;
   }
 
@@ -154,15 +184,14 @@ export function VehicleDetail(): React.JSX.Element {
         <CardContent>
           {editing ? (
             <form onSubmit={handleSave} noValidate className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-make">{t('vehicles.make')}</Label>
-                  <Input
+                  <Combobox
                     id="edit-make"
                     value={make}
-                    onChange={(e) => {
-                      setMake(e.target.value);
-                    }}
+                    onChange={setMake}
+                    options={lookup?.makes ?? []}
                     className={hasSubmitted && validationErrors.make ? 'border-destructive' : ''}
                   />
                   {hasSubmitted && validationErrors.make && (
@@ -171,57 +200,68 @@ export function VehicleDetail(): React.JSX.Element {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-model">{t('vehicles.model')}</Label>
-                  <Input
+                  <Combobox
                     id="edit-model"
                     value={model}
-                    onChange={(e) => {
-                      setModel(e.target.value);
-                    }}
+                    onChange={setModel}
+                    options={filteredModels}
                     className={hasSubmitted && validationErrors.model ? 'border-destructive' : ''}
                   />
                   {hasSubmitted && validationErrors.model && (
                     <p className="text-sm text-destructive">{validationErrors.model}</p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-year">{t('vehicles.year')}</Label>
+                  <Combobox
+                    id="edit-year"
+                    value={year}
+                    onChange={setYear}
+                    options={YEAR_OPTIONS}
+                    inputMode="numeric"
+                    maxLength={4}
+                    className={hasSubmitted && validationErrors.year ? 'border-destructive' : ''}
+                  />
+                  {hasSubmitted && validationErrors.year && (
+                    <p className="text-sm text-destructive">{validationErrors.year}</p>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-year">{t('vehicles.year')}</Label>
-                <Input
-                  id="edit-year"
-                  value={year}
-                  onChange={(e) => {
-                    setYear(e.target.value);
-                  }}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-vin">{t('vehicles.vin')}</Label>
+                  <Input
+                    id="edit-vin"
+                    value={vin}
+                    onChange={(e) => {
+                      setVin(e.target.value);
+                    }}
+                    maxLength={17}
+                    className={hasSubmitted && validationErrors.vin ? 'border-destructive' : ''}
+                  />
+                  {hasSubmitted && validationErrors.vin && (
+                    <p className="text-sm text-destructive">{validationErrors.vin}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-plate">{t('vehicles.licensePlate')}</Label>
+                  <Input
+                    id="edit-plate"
+                    value={licensePlate}
+                    onChange={(e) => {
+                      setLicensePlate(e.target.value);
+                    }}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-vin">{t('vehicles.vin')}</Label>
-                <Input
-                  id="edit-vin"
-                  value={vin}
-                  onChange={(e) => {
-                    setVin(e.target.value);
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-plate">{t('vehicles.licensePlate')}</Label>
-                <Input
-                  id="edit-plate"
-                  value={licensePlate}
-                  onChange={(e) => {
-                    setLicensePlate(e.target.value);
-                  }}
-                />
-              </div>
-              <div className="flex gap-2">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setHasSubmitted(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
               </div>
             </form>
           ) : (

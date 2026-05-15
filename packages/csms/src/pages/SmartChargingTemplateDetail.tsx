@@ -719,14 +719,14 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end items-center gap-3">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setHasSubmitted(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
                 {updateMutation.isError && (
                   <p className="text-sm text-destructive">
                     {getApiErrorCode(updateMutation.error) === 'PROFILE_ID_IN_USE'

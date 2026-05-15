@@ -202,7 +202,7 @@ export function LoadManagement({ siteId }: LoadManagementProps): React.JSX.Eleme
                 <option value="priority_based">{t('loadManagement.priorityBased')}</option>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex justify-end items-center gap-2">
               <input
                 id="lm-enabled"
                 type="checkbox"

@@ -163,13 +163,13 @@ export function FleetDetailsTab({ fleetId, fleet }: FleetDetailsTabProps): React
                   className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 />
               </div>
-              <div className="flex gap-2">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
               </div>
             </form>
           ) : (

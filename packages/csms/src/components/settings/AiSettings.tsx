@@ -302,7 +302,7 @@ export function AiSettings({ settings }: AiSettingsProps): React.JSX.Element {
               {t('settings.chatbotAiSystemPromptHint')}
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex justify-end items-center gap-4">
             <SaveButton
               isPending={chatbotAiSaveMutation.isPending}
               onClick={() => {
@@ -471,7 +471,7 @@ export function AiSettings({ settings }: AiSettingsProps): React.JSX.Element {
               placeholder={t('settings.supportAiSystemPromptDefault')}
             />
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex justify-end items-center gap-4">
             <SaveButton
               isPending={supportAiSaveMutation.isPending}
               onClick={() => {

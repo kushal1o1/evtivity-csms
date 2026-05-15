@@ -734,6 +734,8 @@
     "yearPlaceholder": "YYYY",
     "yearFormat": "Year must be 4 digits",
     "delete": "Delete vehicle",
+    "confirmDelete": "Delete this vehicle?",
+    "confirmDeleteDesc": "This vehicle will be removed from your account. Mileage estimates will use the default efficiency until you add another vehicle.",
     "noVehicles": "No vehicles added.",
     "helper": "Used to estimate miles from energy consumed.",
     "addFailed": "Failed to add vehicle. Please try again."

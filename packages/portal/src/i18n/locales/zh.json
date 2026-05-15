@@ -734,6 +734,8 @@
     "yearPlaceholder": "YYYY",
     "yearFormat": "年份必须为 4 位数字",
     "delete": "删除车辆",
+    "confirmDelete": "删除此车辆？",
+    "confirmDeleteDesc": "此车辆将从您的账户中删除。在您添加其他车辆之前，里程估算将使用默认效率。",
     "noVehicles": "未添加车辆。",
     "helper": "用于根据用电量估算里程。",
     "addFailed": "添加车辆失败，请重试。"

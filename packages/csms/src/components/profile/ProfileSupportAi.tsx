@@ -211,7 +211,7 @@ export function ProfileSupportAi(): React.JSX.Element {
             placeholder="You are a helpful support agent for an EV charging network. Draft professional replies to driver support cases. Be empathetic, concise, and solution-oriented."
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex justify-end gap-2">
           <SaveButton
             isPending={saiSaveMutation.isPending}
             onClick={() => {

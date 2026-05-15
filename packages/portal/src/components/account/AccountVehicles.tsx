@@ -6,8 +6,17 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { api, ApiError } from '@/lib/api';
+
+const CURRENT_YEAR = new Date().getFullYear();
+// Reasonable EV window: current model year + next year (manufacturers preview
+// next year's models), back to 2010 (Nissan Leaf release year).
+const YEAR_OPTIONS: string[] = Array.from({ length: CURRENT_YEAR + 1 - 2010 + 1 }, (_, i) =>
+  String(CURRENT_YEAR + 1 - i),
+);
+const YEAR_REGEX = /^\d{4}$/;
 
 interface Vehicle {
   id: string;
@@ -21,8 +30,6 @@ interface VehicleLookup {
   models: { make: string; model: string }[];
 }
 
-const YEAR_REGEX = /^\d{4}$/;
-
 export function AccountVehicles(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -31,6 +38,7 @@ export function AccountVehicles(): React.JSX.Element {
   const [year, setYear] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const { data: vehicles } = useQuery({
     queryKey: ['portal-vehicles'],
@@ -112,63 +120,79 @@ export function AccountVehicles(): React.JSX.Element {
 
       <div className="space-y-2">
         {vehicles?.map((v) => (
-          <div key={v.id} className="flex items-center justify-between">
+          <div key={v.id} className="flex items-center justify-between gap-3">
             <span className="text-sm">
               {v.make ?? ''} {v.model ?? ''} {v.year != null ? `(${v.year})` : ''}
             </span>
-            <button
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={() => {
-                deleteMutation.mutate(v.id);
+                setPendingDeleteId(v.id);
               }}
-              className="text-muted-foreground hover:text-destructive transition-colors"
               aria-label={t('vehicles.delete')}
             >
-              <Trash2 className="h-4 w-4" />
-            </button>
+              <Trash2 className="h-4 w-4 mr-1" />
+              {t('vehicles.delete')}
+            </Button>
           </div>
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-3">
-        <datalist id="vehicle-make-options">
-          {lookup?.makes.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-        <datalist id="vehicle-model-options">
-          {filteredModels.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
+      <ConfirmDialog
+        open={pendingDeleteId != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+        title={t('vehicles.confirmDelete')}
+        description={t('vehicles.confirmDeleteDesc')}
+        confirmLabel={t('vehicles.delete')}
+        variant="destructive"
+        isPending={deleteMutation.isPending}
+        onConfirm={() => {
+          if (pendingDeleteId == null) return;
+          deleteMutation.mutate(pendingDeleteId, {
+            onSuccess: () => {
+              setPendingDeleteId(null);
+            },
+          });
+          // Keep the dialog open until the mutation resolves; ConfirmDialog
+          // closes itself on success when onConfirm doesn't return false.
+          return false;
+        }}
+      />
 
+      <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
-          <Input
-            value={make}
-            onChange={(e) => {
-              setMake(e.target.value);
-              clearFeedback();
-            }}
+          <Combobox
+            aria-label={t('vehicles.make')}
             placeholder={t('vehicles.make')}
-            list="vehicle-make-options"
-            autoComplete="off"
-          />
-          <Input
-            value={model}
-            onChange={(e) => {
-              setModel(e.target.value);
+            value={make}
+            onChange={(v) => {
+              setMake(v);
               clearFeedback();
             }}
+            options={lookup?.makes ?? []}
+          />
+          <Combobox
+            aria-label={t('vehicles.model')}
             placeholder={t('vehicles.model')}
-            list="vehicle-model-options"
-            autoComplete="off"
-          />
-          <Input
-            value={year}
-            onChange={(e) => {
-              setYear(e.target.value);
+            value={model}
+            onChange={(v) => {
+              setModel(v);
               clearFeedback();
             }}
+            options={filteredModels}
+          />
+          <Combobox
+            aria-label={t('vehicles.year')}
             placeholder={t('vehicles.yearPlaceholder')}
+            value={year}
+            onChange={(v) => {
+              setYear(v);
+              clearFeedback();
+            }}
+            options={YEAR_OPTIONS}
             inputMode="numeric"
             maxLength={4}
             className={hasSubmitted && yearError ? 'border-destructive' : ''}

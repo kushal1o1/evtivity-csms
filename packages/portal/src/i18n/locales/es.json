@@ -734,6 +734,8 @@
     "yearPlaceholder": "AAAA",
     "yearFormat": "El ano debe tener 4 digitos",
     "delete": "Eliminar vehiculo",
+    "confirmDelete": "¿Eliminar este vehículo?",
+    "confirmDeleteDesc": "Este vehículo se eliminará de tu cuenta. Las estimaciones de millas usarán la eficiencia predeterminada hasta que añadas otro vehículo.",
     "noVehicles": "No hay vehiculos agregados.",
     "helper": "Usado para estimar millas del consumo de energia.",
     "addFailed": "No se pudo agregar el vehiculo. Intente nuevamente."

@@ -734,6 +734,8 @@
     "yearPlaceholder": "YYYY",
     "yearFormat": "年份必須為 4 位數字",
     "delete": "刪除車輛",
+    "confirmDelete": "刪除此車輛？",
+    "confirmDeleteDesc": "此車輛將從您的帳戶中移除。在您新增其他車輛之前，里程估算將使用預設效率。",
     "noVehicles": "未新增車輛。",
     "helper": "用於根據用電量估算里程。",
     "addFailed": "新增車輛失敗，請重試。"

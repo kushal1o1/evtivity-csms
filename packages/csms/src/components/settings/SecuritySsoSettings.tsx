@@ -313,7 +313,7 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
                     }}
                   />
                 </div>
-                <div className="grid gap-2">
+                <div className="grid justify-end gap-2">
                   <Label htmlFor="sso-attr-last-name">{t('settings.ssoAttrLastName')}</Label>
                   <Input
                     id="sso-attr-last-name"

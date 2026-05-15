@@ -730,6 +730,8 @@
     "yearPlaceholder": "JJJJ",
     "yearFormat": "Baujahr muss 4 Ziffern haben",
     "delete": "Fahrzeug löschen",
+    "confirmDelete": "Dieses Fahrzeug löschen?",
+    "confirmDeleteDesc": "Dieses Fahrzeug wird aus Ihrem Konto entfernt. Reichweitenschätzungen verwenden den Standard-Verbrauch, bis Sie ein anderes Fahrzeug hinzufügen.",
     "noVehicles": "Keine Fahrzeuge hinzugefügt.",
     "helper": "Wird verwendet, um Meilen aus der verbrauchten Energie zu schätzen.",
     "addFailed": "Fahrzeug konnte nicht hinzugefügt werden. Bitte erneut versuchen."

@@ -253,6 +253,13 @@
       "when": 1778700000017,
       "tag": "0035_unify_legacy_audit_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1778700000018,
+      "tag": "0036_seed_vehicle_efficiency_lookup",
+      "breakpoints": true
     }
   ]
 }

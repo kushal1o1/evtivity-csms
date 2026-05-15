@@ -297,7 +297,8 @@ export function StationSecurity({
                       <p className="text-sm text-destructive">{passwordErrors.confirmPassword}</p>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2">
+                    <CancelButton onClick={resetPasswordForm} />
                     <SaveButton
                       isPending={setPasswordMutation.isPending}
                       type="button"
@@ -308,7 +309,6 @@ export function StationSecurity({
                       }}
                       label={hasPassword ? t('stations.changePassword') : t('stations.setPassword')}
                     />
-                    <CancelButton onClick={resetPasswordForm} />
                   </div>
                 </div>
               )}
@@ -427,7 +427,8 @@ export function StationSecurity({
                       {t('stations.profileChangeOcppOffline')}
                     </p>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2">
+                    <CancelButton onClick={resetPendingProfile} />
                     <SaveButton
                       isPending={updateProfileMutation.isPending}
                       type="button"
@@ -438,7 +439,6 @@ export function StationSecurity({
                       }}
                       label={t('stations.savePassword')}
                     />
-                    <CancelButton onClick={resetPendingProfile} />
                   </div>
                 </div>
               )}
@@ -452,13 +452,13 @@ export function StationSecurity({
                       {t('stations.profileChangeOcppOffline')}
                     </p>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2">
+                    <CancelButton onClick={resetPendingProfile} />
                     <SaveButton
                       isPending={updateProfileMutation.isPending}
                       type="button"
                       onClick={handleProfileSave}
                     />
-                    <CancelButton onClick={resetPendingProfile} />
                   </div>
                 </div>
               )}
@@ -507,7 +507,8 @@ export function StationSecurity({
                       {t('stations.changePasswordOcppOffline')}
                     </p>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex justify-end gap-2">
+                    <CancelButton onClick={resetPasswordForm} />
                     <SaveButton
                       isPending={setPasswordMutation.isPending}
                       type="button"
@@ -522,7 +523,6 @@ export function StationSecurity({
                       }}
                       label={t('stations.changePassword')}
                     />
-                    <CancelButton onClick={resetPasswordForm} />
                   </div>
                 </div>
               )}

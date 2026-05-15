@@ -259,7 +259,7 @@ export function NotificationSettings({ settings }: NotificationSettingsProps): R
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <SaveButton
                 isPending={smtpMutation.isPending}
                 type="button"
@@ -343,7 +343,7 @@ export function NotificationSettings({ settings }: NotificationSettingsProps): R
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <SaveButton
                 isPending={twilioMutation.isPending}
                 type="button"
@@ -438,7 +438,7 @@ export function NotificationSettings({ settings }: NotificationSettingsProps): R
                   }}
                   spellCheck={false}
                 />
-                <div className="flex gap-2">
+                <div className="flex justify-end gap-2">
                   <SaveButton
                     isPending={emailLayoutMutation.isPending}
                     type="button"

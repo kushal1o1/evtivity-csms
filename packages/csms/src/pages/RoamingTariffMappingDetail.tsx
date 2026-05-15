@@ -162,14 +162,14 @@ export function RoamingTariffMappingDetail(): React.JSX.Element {
                   {getErrorMessage(updateMutation.error, t)}
                 </p>
               )}
-              <div className="flex gap-2">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setHasSubmitted(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
               </div>
             </form>
           ) : (

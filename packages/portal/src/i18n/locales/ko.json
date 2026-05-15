@@ -734,6 +734,8 @@
     "yearPlaceholder": "YYYY",
     "yearFormat": "연식은 4자리 숫자여야 합니다",
     "delete": "차량 삭제",
+    "confirmDelete": "이 차량을 삭제하시겠습니까?",
+    "confirmDeleteDesc": "이 차량이 계정에서 제거됩니다. 새 차량을 추가할 때까지 마일리지 추정은 기본 효율을 사용합니다.",
     "noVehicles": "등록된 차량이 없습니다.",
     "helper": "에너지 소비량에서 마일을 추정하는 데 사용됩니다.",
     "addFailed": "차량을 추가하지 못했습니다. 다시 시도해 주세요."

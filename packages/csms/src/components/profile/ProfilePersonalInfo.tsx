@@ -170,13 +170,13 @@ export function ProfilePersonalInfo({ user }: ProfilePersonalInfoProps): React.J
                 </select>
               </div>
             </div>
-            <div className="flex gap-2">
-              <SaveButton isPending={updateMutation.isPending} />
+            <div className="flex justify-end gap-2">
               <CancelButton
                 onClick={() => {
                   setEditing(false);
                 }}
               />
+              <SaveButton isPending={updateMutation.isPending} />
             </div>
           </form>
         ) : (

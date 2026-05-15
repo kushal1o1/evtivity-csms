@@ -273,7 +273,7 @@ export function PaymentSettings({ settings }: PaymentSettingsProps): React.JSX.E
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex justify-end gap-2">
               <SaveButton
                 isPending={stripeSaveMutation.isPending}
                 type="button"

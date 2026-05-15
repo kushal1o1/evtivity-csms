@@ -3,12 +3,13 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, or, ilike, sql, desc } from 'drizzle-orm';
+import { eq, and, or, ilike, sql, desc, asc } from 'drizzle-orm';
 import { db } from '@evtivity/database';
 import {
   drivers,
   driverTokens,
   vehicles,
+  vehicleEfficiencyLookup,
   chargingSessions,
   chargingStations,
   sites,
@@ -693,6 +694,73 @@ export function driverRoutes(app: FastifyInstance): void {
       );
 
       await reply.status(204).send();
+    },
+  );
+
+  // --- Vehicle lookup catalog (typeahead source) ---
+
+  const vehicleLookupQuery = z.object({
+    make: z.string().optional().describe('Filter models by make (case-insensitive)'),
+  });
+  const vehicleLookupResponse = z
+    .object({
+      makes: z.array(z.string()).describe('Distinct vehicle makes seeded in the lookup table'),
+      models: z
+        .array(
+          z
+            .object({
+              make: z.string().describe('Vehicle make'),
+              model: z.string().describe('Vehicle model'),
+            })
+            .passthrough(),
+        )
+        .describe('Make/model pairs, optionally filtered by ?make='),
+    })
+    .passthrough();
+
+  app.get(
+    '/vehicles/lookup',
+    {
+      onRequest: [authorize('drivers:read')],
+      schema: {
+        tags: ['Drivers'],
+        summary: 'List known vehicle makes and models for autocomplete',
+        operationId: 'lookupVehicles',
+        security: [{ bearerAuth: [] }],
+        querystring: zodSchema(vehicleLookupQuery),
+        response: { 200: itemResponse(vehicleLookupResponse) },
+      },
+    },
+    async (request) => {
+      const { make } = request.query as z.infer<typeof vehicleLookupQuery>;
+
+      const makeRows = await db
+        .selectDistinct({ make: vehicleEfficiencyLookup.make })
+        .from(vehicleEfficiencyLookup)
+        .orderBy(asc(vehicleEfficiencyLookup.make));
+
+      const modelRows =
+        make != null && make.trim() !== ''
+          ? await db
+              .selectDistinct({
+                make: vehicleEfficiencyLookup.make,
+                model: vehicleEfficiencyLookup.model,
+              })
+              .from(vehicleEfficiencyLookup)
+              .where(sql`LOWER(${vehicleEfficiencyLookup.make}) = LOWER(${make})`)
+              .orderBy(asc(vehicleEfficiencyLookup.model))
+          : await db
+              .selectDistinct({
+                make: vehicleEfficiencyLookup.make,
+                model: vehicleEfficiencyLookup.model,
+              })
+              .from(vehicleEfficiencyLookup)
+              .orderBy(asc(vehicleEfficiencyLookup.make), asc(vehicleEfficiencyLookup.model));
+
+      return {
+        makes: makeRows.map((r) => r.make),
+        models: modelRows,
+      };
     },
   );
 

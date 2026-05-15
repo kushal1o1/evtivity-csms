@@ -167,14 +167,14 @@ export function DriverDetailsTab({ driver, timezone }: DriverDetailsTabProps): R
                 />
                 <Label htmlFor="edit-active">{t('common.active')}</Label>
               </div>
-              <div className="flex gap-2">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setHasSubmittedEdit(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
               </div>
             </form>
           ) : (

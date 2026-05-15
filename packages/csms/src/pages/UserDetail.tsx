@@ -357,14 +357,14 @@ export function UserDetail(): React.JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
-                <SaveButton isPending={updateMutation.isPending} />
+              <div className="flex justify-end gap-2">
                 <CancelButton
                   onClick={() => {
                     setEditing(false);
                     setHasSubmittedEdit(false);
                   }}
                 />
+                <SaveButton isPending={updateMutation.isPending} />
               </div>
             </form>
           ) : (
@@ -445,15 +445,15 @@ export function UserDetail(): React.JSX.Element {
                 disabled={!editingPermissions}
               />
               {editingPermissions && (
-                <div className="flex gap-2">
-                  <SaveButton
-                    isPending={permissionsMutation.isPending}
-                    onClick={handleSavePermissions}
-                  />
+                <div className="flex justify-end gap-2">
                   <CancelButton
                     onClick={() => {
                       setEditingPermissions(false);
                     }}
+                  />
+                  <SaveButton
+                    isPending={permissionsMutation.isPending}
+                    onClick={handleSavePermissions}
                   />
                 </div>
               )}
