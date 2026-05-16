@@ -57,8 +57,6 @@ const portalSessionListItem = z
 const paymentRecordItem = z
   .object({
     id: z.number().int().min(1).describe('Payment record ID'),
-    sessionId: z.string().nullable().describe('Charging session ID this payment is linked to'),
-    driverId: z.string().nullable().describe('Driver ID that owns the payment'),
     status: z
       .string()
       .max(50)
@@ -73,8 +71,18 @@ const paymentRecordItem = z
       .nullable()
       .describe('Pre-authorized amount in cents'),
     capturedAmountCents: z.number().int().min(0).nullable().describe('Captured amount in cents'),
-    stripePaymentIntentId: z.string().max(255).nullable().describe('Stripe PaymentIntent ID'),
+    refundedAmountCents: z.number().int().min(0).describe('Refunded amount in cents'),
+    paymentSource: z
+      .string()
+      .max(20)
+      .describe('Source channel (web_portal, guest, terminal, etc.)'),
+    failureReason: z
+      .string()
+      .max(500)
+      .nullable()
+      .describe('Failure reason if the payment did not capture'),
     createdAt: z.coerce.date().describe('Timestamp the payment record was created'),
+    updatedAt: z.coerce.date().describe('Timestamp the payment record was last updated'),
   })
   .passthrough();
 

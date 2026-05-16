@@ -2781,6 +2781,8 @@
     "pricingFormatDesc": "可用範本中 pricingDisplay 變數使用的格式。",
     "refreshSeconds": "充電重新整理間隔 (秒)",
     "refreshSecondsDesc": "充電狀態訊息在會話期間的重新整理頻率。較低的值會增加 OCPP 流量。",
+    "eventMessageTtlSeconds": "事件訊息TTL（秒）",
+    "eventMessageTtlSecondsDesc": "事件驅動的一次性訊息（付款失敗、需要授權）在自動清除前在充電站螢幕上停留的時間。用作OCPP 2.1的endDateTime以及OCPP 1.6的程序內後備清除。",
     "brandLine": "品牌行",
     "brandLineDesc": "brandLine 變數使用的選用文字。為空時回退到公司名稱。",
     "varCompanyName": "來自設定的公司名稱",

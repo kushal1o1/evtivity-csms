@@ -2781,6 +2781,8 @@
     "pricingFormatDesc": "사용 가능 템플릿의 pricingDisplay 변수에 사용되는 형식.",
     "refreshSeconds": "충전 새로고침 간격 (초)",
     "refreshSecondsDesc": "세션 중 충전 상태 메시지가 새로고침되는 빈도. 낮은 값은 OCPP 트래픽을 증가시킵니다.",
+    "eventMessageTtlSeconds": "이벤트 메시지 TTL (초)",
+    "eventMessageTtlSecondsDesc": "이벤트 기반 일회성 메시지(결제 실패, 인증 필요)가 자동으로 사라지기 전까지 충전소 화면에 표시되는 시간입니다. OCPP 2.1의 endDateTime 및 OCPP 1.6의 프로세스 내 대체 지우기로 사용됩니다.",
     "brandLine": "브랜드 라인",
     "brandLineDesc": "brandLine 변수에 사용되는 선택적 텍스트. 비워두면 회사 이름으로 대체됩니다.",
     "varCompanyName": "설정의 회사 이름",

@@ -301,16 +301,15 @@ describe('Portal sessions routes - handler logic', () => {
         [
           {
             id: 1,
-            sessionId: VALID_SESSION_ID,
-            driverId: DRIVER_ID,
             status: 'captured',
             paymentSource: 'stripe',
             currency: 'USD',
             preAuthAmountCents: 5000,
             capturedAmountCents: null,
             refundedAmountCents: 0,
-            stripePaymentIntentId: null,
+            failureReason: null,
             createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
           },
         ],
         [],

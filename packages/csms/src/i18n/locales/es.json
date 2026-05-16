@@ -2797,6 +2797,8 @@
     "pricingFormatDesc": "Formato usado para la variable pricingDisplay en la plantilla Disponible.",
     "refreshSeconds": "Intervalo de actualización durante la carga (segundos)",
     "refreshSecondsDesc": "Frecuencia con la que se actualiza el mensaje del estado Cargando. Valores bajos aumentan el tráfico OCPP.",
+    "eventMessageTtlSeconds": "TTL de mensaje de evento (segundos)",
+    "eventMessageTtlSecondsDesc": "Cuanto tiempo los mensajes unicos basados en eventos (fallo de pago, autorizacion requerida) permanecen en la pantalla de la estacion antes de borrarse automaticamente. Se usa como endDateTime de OCPP 2.1 y como borrado de respaldo en proceso para OCPP 1.6.",
     "brandLine": "Línea de marca",
     "brandLineDesc": "Texto opcional usado por la variable brandLine. Vacío usa el nombre de la empresa.",
     "varCompanyName": "Nombre de la empresa desde ajustes",

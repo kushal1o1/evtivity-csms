@@ -1815,12 +1815,16 @@ export function registerProjections(
         await notifyChange('session.updated', stationUuid, siteId, sessionId);
         await notifyOcpiPush('session', { sessionId });
 
-        // Driver notification: transaction updated (throttled to once per 15 min via DB)
+        // Driver notification: transaction updated (throttled to once per 15 min via DB).
+        // Gate on status = 'active' so a stray TransactionEvent.Updated that
+        // arrives after the payment gate stopped the session (faulted/failed)
+        // does not fire a phantom "session update" notification.
         const throttleResult = await sql`
           UPDATE charging_sessions
           SET last_update_notified_at = now()
           WHERE id = ${sessionId}
             AND driver_id IS NOT NULL
+            AND status = 'active'
             AND (last_update_notified_at IS NULL
               OR last_update_notified_at < now() - make_interval(secs => ${SESSION_UPDATE_THROTTLE_MS / 1000}))
           RETURNING driver_id, energy_delivered_wh, current_cost_cents, currency, started_at
@@ -2169,11 +2173,25 @@ export function registerProjections(
           // Non-critical
         }
 
-        // Driver notification: transaction completed (skip if session failed due to payment)
+        // Driver notification: transaction completed (skip when the session
+        // didn't actually complete successfully). The earlier hasPaymentFailure
+        // check only covered Stripe-decline cases (a payment_records row with
+        // status='failed') and missed the MissingPaymentMethod path, which
+        // never inserts a payment record - so drivers who tapped without a PM
+        // received a phantom "session is complete" + "session receipt" pair
+        // alongside the correct payment-required notification.
         const endedDriverRows =
-          await sql`SELECT driver_id, energy_delivered_wh, final_cost_cents, currency, started_at, ended_at FROM charging_sessions WHERE id = ${sessionId}`;
+          await sql`SELECT driver_id, energy_delivered_wh, final_cost_cents, currency, started_at, ended_at, status FROM charging_sessions WHERE id = ${sessionId}`;
         const endedSession = endedDriverRows[0];
-        if (endedSession != null && endedSession.driver_id != null && !hasPaymentFailure) {
+        const endedSessionStatus = endedSession?.status as string | undefined;
+        const isTerminalSuccess =
+          endedSessionStatus !== 'faulted' && endedSessionStatus !== 'failed';
+        if (
+          endedSession != null &&
+          endedSession.driver_id != null &&
+          !hasPaymentFailure &&
+          isTerminalSuccess
+        ) {
           const startedAtDate = new Date(endedSession.started_at as string);
           const endedAtDate = new Date(endedSession.ended_at as string);
           const durationMinutes = Math.round(

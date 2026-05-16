@@ -160,6 +160,7 @@ export function StationMessageSettings({
   const [enabled, setEnabled] = useState(false);
   const [pricingFormat, setPricingFormat] = useState('compact');
   const [refreshSeconds, setRefreshSeconds] = useState('30');
+  const [eventMessageTtlSeconds, setEventMessageTtlSeconds] = useState('30');
   const [brandLine, setBrandLine] = useState('');
 
   useEffect(() => {
@@ -174,6 +175,14 @@ export function StationMessageSettings({
       setRefreshSeconds(refresh);
     } else {
       setRefreshSeconds('30');
+    }
+    const ttl = settings['stationMessage.eventMessageTtlSeconds'];
+    if (typeof ttl === 'number') {
+      setEventMessageTtlSeconds(ttl.toString());
+    } else if (typeof ttl === 'string' && ttl !== '') {
+      setEventMessageTtlSeconds(ttl);
+    } else {
+      setEventMessageTtlSeconds('30');
     }
     const brand = settings['stationMessage.brandLine'];
     setBrandLine(typeof brand === 'string' ? brand : '');
@@ -214,6 +223,7 @@ export function StationMessageSettings({
       enabled: boolean;
       pricingFormat: string;
       refreshSeconds: number;
+      eventMessageTtlSeconds: number;
       brandLine: string;
     }) =>
       Promise.all([
@@ -221,6 +231,9 @@ export function StationMessageSettings({
         api.put('/v1/settings/stationMessage.pricingFormat', { value: vals.pricingFormat }),
         api.put('/v1/settings/stationMessage.charging.refreshSeconds', {
           value: vals.refreshSeconds,
+        }),
+        api.put('/v1/settings/stationMessage.eventMessageTtlSeconds', {
+          value: vals.eventMessageTtlSeconds,
         }),
         api.put('/v1/settings/stationMessage.brandLine', { value: vals.brandLine }),
       ]),
@@ -305,6 +318,8 @@ export function StationMessageSettings({
 
   const refreshSecondsNumber = Number(refreshSeconds);
   const refreshSecondsValid = Number.isFinite(refreshSecondsNumber) && refreshSecondsNumber > 0;
+  const eventMessageTtlNumber = Number(eventMessageTtlSeconds);
+  const eventMessageTtlValid = Number.isFinite(eventMessageTtlNumber) && eventMessageTtlNumber > 0;
 
   return (
     <div className="space-y-6">
@@ -319,11 +334,12 @@ export function StationMessageSettings({
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!refreshSecondsValid) return;
+              if (!refreshSecondsValid || !eventMessageTtlValid) return;
               settingsMutation.mutate({
                 enabled,
                 pricingFormat,
                 refreshSeconds: refreshSecondsNumber,
+                eventMessageTtlSeconds: eventMessageTtlNumber,
                 brandLine,
               });
             }}
@@ -377,6 +393,25 @@ export function StationMessageSettings({
                   }}
                 />
                 <p className="text-xs text-muted-foreground">{t('messages.refreshSecondsDesc')}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="station-message-event-ttl-seconds">
+                  {t('messages.eventMessageTtlSeconds')}
+                </Label>
+                <Input
+                  id="station-message-event-ttl-seconds"
+                  type="number"
+                  min={5}
+                  step={1}
+                  value={eventMessageTtlSeconds}
+                  onChange={(e) => {
+                    setEventMessageTtlSeconds(e.target.value);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('messages.eventMessageTtlSecondsDesc')}
+                </p>
               </div>
             </div>
 

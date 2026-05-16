@@ -2766,6 +2766,8 @@
     "pricingFormatDesc": "Format für die Variable pricingDisplay in der Verfügbar-Vorlage.",
     "refreshSeconds": "Aktualisierungsintervall beim Laden (Sekunden)",
     "refreshSecondsDesc": "Wie oft die Lade-Nachricht während einer Sitzung aktualisiert wird. Niedrige Werte erhöhen den OCPP-Verkehr.",
+    "eventMessageTtlSeconds": "Ereignis-Nachricht TTL (Sekunden)",
+    "eventMessageTtlSecondsDesc": "Wie lange ereignisbasierte Einmal-Nachrichten (Zahlungsfehler, Autorisierung erforderlich) auf dem Stationsbildschirm verbleiben, bevor sie automatisch verschwinden. Wird als OCPP 2.1 endDateTime und als prozessinternes Fallback-Clear für OCPP 1.6 verwendet.",
     "brandLine": "Markenzeile",
     "brandLineDesc": "Optionaler Text für die Variable brandLine. Leer verwendet den Firmennamen.",
     "varCompanyName": "Firmenname aus den Einstellungen",

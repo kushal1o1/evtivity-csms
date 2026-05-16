@@ -2800,6 +2800,8 @@
     "pricingFormatDesc": "Format used for the pricingDisplay variable in the Available template.",
     "refreshSeconds": "Charging Refresh Interval (seconds)",
     "refreshSecondsDesc": "How often the Charging-state message refreshes during a session. Lower values increase OCPP traffic.",
+    "eventMessageTtlSeconds": "Event message TTL (seconds)",
+    "eventMessageTtlSecondsDesc": "How long event-driven one-shot messages (payment failure, authorization required) stay on the station screen before auto-clearing. Used as the OCPP 2.1 endDateTime and as an in-process fallback clear for OCPP 1.6.",
     "brandLine": "Brand Line",
     "brandLineDesc": "Optional text used by the brandLine variable. Empty falls back to Company Name.",
     "varCompanyName": "Company name from settings",
