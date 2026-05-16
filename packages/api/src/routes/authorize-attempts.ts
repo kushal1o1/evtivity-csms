@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { eq, and, ilike, sql, desc, gte, lte } from 'drizzle-orm';
-import { db, authorizeAttempts, chargingStations } from '@evtivity/database';
+import { db, authorizeAttempts, chargingStations, chargingSessions } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { paginationQuery } from '../lib/pagination.js';
 import { paginatedResponse } from '../lib/response-schemas.js';
@@ -39,6 +39,12 @@ const attemptItem = z
       .string()
       .nullable()
       .describe('drivers.id when the token resolved to a driver'),
+    sessionId: z
+      .string()
+      .nullable()
+      .describe(
+        'charging_sessions.id when this attempt resulted in a charging session (correlated by matched token + start within 10 minutes of the attempt). Null when no session followed.',
+      ),
     outcome: z.string().describe('Outcome enum'),
     ocppVersion: z.string().nullable().describe('OCPP protocol version of the request'),
     reason: z.string().nullable().describe('Short machine-readable reason tag'),
@@ -121,6 +127,14 @@ export function authorizeAttemptRoutes(app: FastifyInstance): void {
             tokenType: authorizeAttempts.tokenType,
             matchedTokenId: authorizeAttempts.matchedTokenId,
             matchedDriverId: authorizeAttempts.matchedDriverId,
+            sessionId: sql<string | null>`(
+              SELECT ${chargingSessions.id} FROM ${chargingSessions}
+              WHERE ${chargingSessions.tokenId} = ${authorizeAttempts.matchedTokenId}
+                AND ${chargingSessions.startedAt} >= ${authorizeAttempts.createdAt}
+                AND ${chargingSessions.startedAt} <= ${authorizeAttempts.createdAt} + interval '10 minutes'
+              ORDER BY ${chargingSessions.startedAt} ASC
+              LIMIT 1
+            )`,
             outcome: authorizeAttempts.outcome,
             ocppVersion: authorizeAttempts.ocppVersion,
             reason: authorizeAttempts.reason,

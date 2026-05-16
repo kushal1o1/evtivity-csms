@@ -143,6 +143,7 @@
     "changeVehicleDescription": "选择本次充电使用的车辆。",
     "noVehiclesAdd": "您还没有添加车辆。请在账户中添加一辆以估算里程。",
     "goToAccount": "前往账户",
+    "goToVehicles": "前往车辆",
     "clearVehicle": "清除车辆",
     "vehicleUpdateFailed": "更新车辆失败。"
   },
@@ -723,7 +724,8 @@
     "confirmDeactivateTitle": "停用 RFID 卡",
     "confirmDeactivateDescription": "确定要停用此 RFID 卡吗？停用后将无法在充电站使用。",
     "removeCard": "删除",
-    "cardRemoved": "RFID 卡已删除。",
+    "cardRemoved": "RFID卡已停用。",
+    "cardReactivated": "RFID卡已重新激活。",
     "removeFailed": "删除信用卡失败。",
     "confirmRemoveTitle": "删除 RFID 卡",
     "confirmRemoveDescription": "确定要删除此 RFID 卡吗？此操作无法撤消。",

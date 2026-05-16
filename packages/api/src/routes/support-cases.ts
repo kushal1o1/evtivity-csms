@@ -287,10 +287,9 @@ const confirmAttachmentBody = z.object({
 });
 
 const refundBody = z.object({
-  sessionId: z
-    .string()
-    .uuid()
-    .describe('Charging session UUID to refund (must be linked to this case)'),
+  sessionId: ID_PARAMS.sessionId.describe(
+    'Charging session ID (ses_ prefixed nanoid) to refund. Must be linked to this case via support_case_sessions.',
+  ),
   amountCents: z
     .number()
     .int()

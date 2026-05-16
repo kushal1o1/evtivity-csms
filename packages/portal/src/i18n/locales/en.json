@@ -143,6 +143,7 @@
     "changeVehicleDescription": "Select the vehicle you used for this session.",
     "noVehiclesAdd": "You don't have any vehicles yet. Add one in your account to estimate distance.",
     "goToAccount": "Go to Account",
+    "goToVehicles": "Go to Vehicles",
     "clearVehicle": "Clear vehicle",
     "vehicleUpdateFailed": "Failed to update vehicle."
   },
@@ -723,7 +724,8 @@
     "confirmDeactivateTitle": "Deactivate RFID Card",
     "confirmDeactivateDescription": "Are you sure you want to deactivate this RFID card? It will no longer work at charging stations.",
     "removeCard": "Remove",
-    "cardRemoved": "RFID card removed.",
+    "cardRemoved": "RFID card deactivated.",
+    "cardReactivated": "RFID card reactivated.",
     "removeFailed": "Failed to remove card.",
     "confirmRemoveTitle": "Remove RFID Card",
     "confirmRemoveDescription": "Are you sure you want to remove this RFID card? This action cannot be undone.",

@@ -519,14 +519,14 @@ export function SessionDetail(): React.JSX.Element {
         }
         confirmLabel={
           driverVehicles != null && driverVehicles.length === 0
-            ? t('sessionDetail.goToAccount')
+            ? t('sessionDetail.goToVehicles')
             : t('common.save')
         }
         cancelLabel={t('common.cancel')}
         isPending={setVehicleMutation.isPending}
         onConfirm={() => {
           if (driverVehicles != null && driverVehicles.length === 0) {
-            void navigate('/account');
+            void navigate('/vehicles');
             return undefined;
           }
           if (pendingVehicleId !== (session.vehicle?.id ?? null)) {
@@ -565,15 +565,17 @@ export function SessionDetail(): React.JSX.Element {
               );
             })}
             {pendingVehicleId != null && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingVehicleId(null);
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
-              >
-                {t('sessionDetail.clearVehicle')}
-              </button>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingVehicleId(null);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  {t('sessionDetail.clearVehicle')}
+                </button>
+              </div>
             )}
           </div>
         )}

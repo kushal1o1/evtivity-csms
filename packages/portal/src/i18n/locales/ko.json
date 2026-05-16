@@ -143,6 +143,7 @@
     "changeVehicleDescription": "이 세션에 사용한 차량을 선택하세요.",
     "noVehiclesAdd": "등록된 차량이 없습니다. 거리를 추정하려면 계정에서 차량을 추가하세요.",
     "goToAccount": "계정으로 이동",
+    "goToVehicles": "차량으로 이동",
     "clearVehicle": "차량 해제",
     "vehicleUpdateFailed": "차량을 업데이트하지 못했습니다."
   },
@@ -723,7 +724,8 @@
     "confirmDeactivateTitle": "RFID 카드 비활성화",
     "confirmDeactivateDescription": "이 RFID 카드를 비활성화하시겠습니까? 비활성화하면 충전소에서 사용할 수 없습니다.",
     "removeCard": "삭제",
-    "cardRemoved": "RFID 카드가 삭제되었습니다.",
+    "cardRemoved": "RFID 카드가 비활성화되었습니다.",
+    "cardReactivated": "RFID 카드가 다시 활성화되었습니다.",
     "removeFailed": "카드 삭제에 실패했습니다.",
     "confirmRemoveTitle": "RFID 카드 삭제",
     "confirmRemoveDescription": "이 RFID 카드를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",

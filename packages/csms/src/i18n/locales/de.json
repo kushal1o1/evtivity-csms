@@ -1138,6 +1138,7 @@
     "matchedDriver": "Übereinstimmender Fahrer",
     "reason": "Grund",
     "stationColumn": "Station",
+    "sessionColumn": "Sitzung",
     "filterStation": "Nach Station filtern",
     "filterIdToken": "idToken suchen",
     "filterOutcome": "Alle Ergebnisse",

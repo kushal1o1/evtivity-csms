@@ -1162,6 +1162,7 @@
     "matchedDriver": "일치한 드라이버",
     "reason": "사유",
     "stationColumn": "충전기",
+    "sessionColumn": "세션",
     "filterStation": "충전기로 필터링",
     "filterIdToken": "idToken 검색",
     "filterOutcome": "모든 결과",

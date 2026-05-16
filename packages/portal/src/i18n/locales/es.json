@@ -143,6 +143,7 @@
     "changeVehicleDescription": "Selecciona el vehiculo que usaste en esta sesion.",
     "noVehiclesAdd": "Aun no tienes vehiculos. Agrega uno en tu cuenta para estimar la distancia.",
     "goToAccount": "Ir a Cuenta",
+    "goToVehicles": "Ir a Vehiculos",
     "clearVehicle": "Quitar vehiculo",
     "vehicleUpdateFailed": "No se pudo actualizar el vehiculo."
   },
@@ -723,7 +724,8 @@
     "confirmDeactivateTitle": "Desactivar tarjeta RFID",
     "confirmDeactivateDescription": "Estas seguro de que deseas desactivar esta tarjeta RFID? Ya no funcionara en las estaciones de carga.",
     "removeCard": "Eliminar",
-    "cardRemoved": "Tarjeta RFID eliminada.",
+    "cardRemoved": "Tarjeta RFID desactivada.",
+    "cardReactivated": "Tarjeta RFID reactivada.",
     "removeFailed": "Error al eliminar tarjeta.",
     "confirmRemoveTitle": "Eliminar tarjeta RFID",
     "confirmRemoveDescription": "Estas seguro de que deseas eliminar esta tarjeta RFID? Esta accion no se puede deshacer.",

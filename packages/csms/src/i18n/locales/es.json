@@ -1167,6 +1167,7 @@
     "matchedDriver": "Conductor coincidente",
     "reason": "Motivo",
     "stationColumn": "Estacion",
+    "sessionColumn": "Sesion",
     "filterStation": "Filtrar por estacion",
     "filterIdToken": "Buscar idToken",
     "filterOutcome": "Todos los resultados",

@@ -504,11 +504,7 @@ export function SupportCaseDetail(): React.JSX.Element {
           }
         }}
         title={t('supportCases.issueRefund')}
-        description={
-          refundSession != null
-            ? `${t('supportCases.confirmRefund')} (${refundSession.transactionId})`
-            : t('supportCases.confirmRefund')
-        }
+        description={t('supportCases.confirmRefund')}
         confirmLabel={t('supportCases.issueRefund')}
         confirmIcon={<RotateCcw className="h-4 w-4" />}
         onConfirm={handleRefundConfirm}

@@ -143,6 +143,7 @@
     "changeVehicleDescription": "選擇本次工作階段使用的車輛。",
     "noVehiclesAdd": "您尚未新增車輛。請在帳戶中新增一輛以估算里程。",
     "goToAccount": "前往帳戶",
+    "goToVehicles": "前往車輛",
     "clearVehicle": "清除車輛",
     "vehicleUpdateFailed": "更新車輛失敗。"
   },
@@ -723,7 +724,8 @@
     "confirmDeactivateTitle": "停用 RFID 卡",
     "confirmDeactivateDescription": "確定要停用此 RFID 卡嗎？停用後將無法在充電站使用。",
     "removeCard": "刪除",
-    "cardRemoved": "RFID 卡已刪除。",
+    "cardRemoved": "RFID卡已停用。",
+    "cardReactivated": "RFID卡已重新啟用。",
     "removeFailed": "刪除信用卡失敗。",
     "confirmRemoveTitle": "刪除 RFID 卡",
     "confirmRemoveDescription": "確定要刪除此 RFID 卡嗎？此操作無法撤銷。",

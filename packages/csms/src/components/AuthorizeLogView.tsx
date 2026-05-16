@@ -28,6 +28,7 @@ interface AuthorizeAttempt {
   tokenType: string | null;
   matchedTokenId: string | null;
   matchedDriverId: string | null;
+  sessionId: string | null;
   outcome: string;
   ocppVersion: string | null;
   reason: string | null;
@@ -67,6 +68,7 @@ export interface AuthorizeLogViewProps {
   hideIdTokenFilter?: boolean;
   hideStationColumn?: boolean;
   hideMatchedTokenColumn?: boolean;
+  hideSessionColumn?: boolean;
   queryKey?: string;
 }
 
@@ -75,6 +77,7 @@ export function AuthorizeLogView({
   hideIdTokenFilter,
   hideStationColumn,
   hideMatchedTokenColumn,
+  hideSessionColumn,
   queryKey,
 }: AuthorizeLogViewProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -98,8 +101,12 @@ export function AuthorizeLogView({
     filters,
   );
 
-  // Columns: timestamp, idToken, type, outcome, reason (always 5) + station + matchedToken (conditional).
-  const visibleColumns = 5 + (hideStationColumn ? 0 : 1) + (hideMatchedTokenColumn ? 0 : 1);
+  // Columns: timestamp, idToken, type, outcome, reason (always 5) + station + matchedToken + session (conditional).
+  const visibleColumns =
+    5 +
+    (hideStationColumn ? 0 : 1) +
+    (hideMatchedTokenColumn ? 0 : 1) +
+    (hideSessionColumn ? 0 : 1);
 
   return (
     <Card>
@@ -139,6 +146,7 @@ export function AuthorizeLogView({
                 <TableHead>{t('tokens.outcome')}</TableHead>
                 <TableHead>{t('tokens.reason')}</TableHead>
                 {!hideMatchedTokenColumn && <TableHead>{t('tokens.matchedToken')}</TableHead>}
+                {!hideSessionColumn && <TableHead>{t('tokens.sessionColumn')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -196,6 +204,20 @@ export function AuthorizeLogView({
                             className="text-primary hover:underline text-xs"
                           >
                             {row.matchedTokenId}
+                          </Link>
+                        ) : (
+                          'n/a'
+                        )}
+                      </TableCell>
+                    )}
+                    {!hideSessionColumn && (
+                      <TableCell>
+                        {row.sessionId != null ? (
+                          <Link
+                            to={`/sessions/${row.sessionId}`}
+                            className="text-primary hover:underline text-xs"
+                          >
+                            {row.sessionId}
                           </Link>
                         ) : (
                           'n/a'

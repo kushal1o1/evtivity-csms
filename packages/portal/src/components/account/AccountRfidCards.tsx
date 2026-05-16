@@ -32,13 +32,21 @@ interface DriverToken {
   isActive: boolean;
 }
 
+interface Feedback {
+  // tokenId === null anchors the message under the add form (e.g. duplicate
+  // card error). A non-null tokenId centers the message under the matching
+  // card so the driver sees feedback for the specific row they acted on.
+  tokenId: string | null;
+  text: string;
+  type: 'success' | 'error';
+}
+
 export function AccountRfidCards(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [newToken, setNewToken] = useState('');
   const [newTokenType, setNewTokenType] = useState<(typeof PORTAL_TOKEN_TYPES)[number]>('ISO14443');
-  const [msg, setMsg] = useState('');
-  const [msgType, setMsgType] = useState<'success' | 'error'>('error');
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [confirmToken, setConfirmToken] = useState<DriverToken | null>(null);
   const [deleteToken, setDeleteToken] = useState<DriverToken | null>(null);
 
@@ -50,19 +58,18 @@ export function AccountRfidCards(): React.JSX.Element {
   const addMutation = useMutation({
     mutationFn: (body: { idToken: string; tokenType: (typeof PORTAL_TOKEN_TYPES)[number] }) =>
       api.post<DriverToken>('/v1/portal/tokens', body),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: ['portal-tokens'] });
       setNewToken('');
       setNewTokenType('ISO14443');
-      setMsgType('success');
-      setMsg(t('rfid.cardAdded'));
+      // Anchor the success message under the newly-created card row.
+      setFeedback({ tokenId: created.id, type: 'success', text: t('rfid.cardAdded') });
     },
     onError: (error) => {
-      setMsgType('error');
       if (error instanceof ApiError && error.status === 409) {
-        setMsg(t('rfid.duplicate'));
+        setFeedback({ tokenId: null, type: 'error', text: t('rfid.duplicate') });
       } else {
-        setMsg(t('rfid.addFailed'));
+        setFeedback({ tokenId: null, type: 'error', text: t('rfid.addFailed') });
       }
     },
   });
@@ -70,22 +77,30 @@ export function AccountRfidCards(): React.JSX.Element {
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       api.patch<DriverToken>(`/v1/portal/tokens/${id}`, { isActive }),
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: ['portal-tokens'] });
+      setFeedback({
+        tokenId: updated.id,
+        type: 'success',
+        text: updated.isActive ? t('rfid.cardReactivated') : t('rfid.cardRemoved'),
+      });
+    },
+    onError: (_err, variables) => {
+      setFeedback({ tokenId: variables.id, type: 'error', text: t('rfid.removeFailed') });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/v1/portal/tokens/${id}`),
-    onSuccess: async () => {
+    onSuccess: async (_data, id) => {
       await queryClient.invalidateQueries({ queryKey: ['portal-tokens'] });
       setDeleteToken(null);
-      setMsgType('success');
-      setMsg(t('rfid.cardRemoved'));
+      // Soft-delete: the row still appears in the list with isActive=false,
+      // so anchor under it.
+      setFeedback({ tokenId: id, type: 'success', text: t('rfid.cardRemoved') });
     },
-    onError: () => {
-      setMsgType('error');
-      setMsg(t('rfid.removeFailed'));
+    onError: (_err, id) => {
+      setFeedback({ tokenId: id, type: 'error', text: t('rfid.removeFailed') });
     },
   });
 
@@ -101,68 +116,90 @@ export function AccountRfidCards(): React.JSX.Element {
 
       {/* Card list mirrors the Payment Methods page: icon + identifier on the
           left, type badge + status + trash on the right. Inactive rows dim and
-          strike-through the number so the soft-delete is visually obvious. */}
+          strike-through the number so the soft-delete is visually obvious.
+          Per-card feedback (deactivated / reactivated / removed) renders
+          centered immediately below its anchor card, so the driver sees the
+          confirmation for the specific row they touched. */}
       <div className="space-y-2">
         {sortedTokens?.map((token) => (
-          <Card key={token.id} className={token.isActive ? '' : 'opacity-60'}>
-            <CardContent className="flex items-center justify-between gap-2 p-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <CreditCard className="h-5 w-5 shrink-0 text-muted-foreground" />
-                <p
-                  className={`truncate text-sm font-medium ${token.isActive ? '' : 'line-through'}`}
-                >
-                  {token.idToken}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant="outline">{token.tokenType}</Badge>
-                <span
-                  className={`text-xs font-medium ${
-                    token.isActive ? 'text-success' : 'text-muted-foreground'
-                  }`}
-                >
-                  {token.isActive ? t('rfid.active') : t('rfid.inactive')}
-                </span>
-                {/* Always render an icon button so active and inactive rows
+          <div key={token.id} className="space-y-1">
+            <Card className={token.isActive ? '' : 'opacity-60'}>
+              <CardContent className="flex items-center justify-between gap-2 p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <CreditCard className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <p
+                    className={`truncate text-sm font-medium ${
+                      token.isActive ? '' : 'line-through'
+                    }`}
+                  >
+                    {token.idToken}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant="outline">{token.tokenType}</Badge>
+                  <span
+                    className={`text-xs font-medium ${
+                      token.isActive ? 'text-success' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {token.isActive ? t('rfid.active') : t('rfid.inactive')}
+                  </span>
+                  {/* Always render an icon button so active and inactive rows
                     have the same height. Active row → trash to deactivate.
                     Inactive row → reactivate icon to restore. Both open a
                     confirm dialog rather than mutating directly. */}
-                {token.isActive ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-12 w-12"
-                    onClick={() => {
-                      setDeleteToken(token);
-                    }}
-                    aria-label={t('rfid.removeCard')}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-12 w-12"
-                    onClick={() => {
-                      setConfirmToken(token);
-                    }}
-                    aria-label={t('rfid.reactivateCard')}
-                  >
-                    <RotateCw className="h-4 w-4 text-primary" />
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  {token.isActive ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-12 w-12"
+                      onClick={() => {
+                        setDeleteToken(token);
+                      }}
+                      aria-label={t('rfid.removeCard')}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-12 w-12"
+                      onClick={() => {
+                        setConfirmToken(token);
+                      }}
+                      aria-label={t('rfid.reactivateCard')}
+                    >
+                      <RotateCw className="h-4 w-4 text-primary" />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            {feedback != null && feedback.tokenId === token.id && (
+              <p
+                className={`text-center text-sm ${
+                  feedback.type === 'success' ? 'text-success' : 'text-destructive'
+                }`}
+              >
+                {feedback.text}
+              </p>
+            )}
+          </div>
         ))}
       </div>
 
-      {msg !== '' && (
-        <p className={`text-sm ${msgType === 'success' ? 'text-success' : 'text-destructive'}`}>
-          {msg}
+      {/* Form-level feedback (add errors that don't tie to a specific card,
+          e.g. duplicate or generic failure) lives under the add form below. */}
+      {feedback != null && feedback.tokenId === null && (
+        <p
+          className={`text-center text-sm ${
+            feedback.type === 'success' ? 'text-success' : 'text-destructive'
+          }`}
+        >
+          {feedback.text}
         </p>
       )}
 
@@ -183,7 +220,7 @@ export function AccountRfidCards(): React.JSX.Element {
           value={newToken}
           onChange={(e) => {
             setNewToken(e.target.value);
-            setMsg('');
+            setFeedback(null);
           }}
           placeholder={t('rfid.cardNumber')}
           maxLength={64}
@@ -194,7 +231,7 @@ export function AccountRfidCards(): React.JSX.Element {
           value={newTokenType}
           onChange={(e) => {
             setNewTokenType(e.target.value as (typeof PORTAL_TOKEN_TYPES)[number]);
-            setMsg('');
+            setFeedback(null);
           }}
           aria-label={t('rfid.tokenType')}
         >

@@ -1162,6 +1162,7 @@
     "matchedDriver": "匹配的駕駛員",
     "reason": "原因",
     "stationColumn": "充電站",
+    "sessionColumn": "工作階段",
     "filterStation": "按充電站篩選",
     "filterIdToken": "搜尋 idToken",
     "filterOutcome": "所有結果",

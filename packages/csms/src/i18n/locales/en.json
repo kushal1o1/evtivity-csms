@@ -1162,6 +1162,7 @@
     "matchedDriver": "Matched Driver",
     "reason": "Reason",
     "stationColumn": "Station",
+    "sessionColumn": "Session",
     "filterStation": "Filter by station",
     "filterIdToken": "Search idToken",
     "filterOutcome": "All outcomes",
