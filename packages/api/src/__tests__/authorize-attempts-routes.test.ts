@@ -60,6 +60,14 @@ vi.mock('@evtivity/database', () => ({
     id: 'id',
     stationId: 'stationId',
   },
+  // Referenced by the correlated subquery that resolves the charging_sessions
+  // row produced by the authorize attempt (joined on matched token + start
+  // within 10 minutes of the attempt timestamp).
+  chargingSessions: {
+    id: 'id',
+    tokenId: 'tokenId',
+    startedAt: 'startedAt',
+  },
 }));
 
 vi.mock('drizzle-orm', () => {
@@ -121,6 +129,7 @@ describe('Authorize attempts route', () => {
         tokenType: 'ISO14443',
         matchedTokenId: null,
         matchedDriverId: null,
+        sessionId: null,
         outcome: 'accepted',
         ocppVersion: 'ocpp2.1',
         reason: 'active',

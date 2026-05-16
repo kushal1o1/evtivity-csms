@@ -135,7 +135,7 @@
     "lastUpdated": "Updated {{time}}",
     "free": "Free",
     "battery": "Battery",
-    "collectingData": "Collecting data...",
+    "collectingData": "Waiting for station...",
     "fromReservation": "From Reservation",
     "fromReservationHint": "View the reservation that started this session",
     "tapToSetVehicle": "Tap to set vehicle",

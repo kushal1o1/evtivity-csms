@@ -1,6 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
+import { useTranslation } from 'react-i18next';
+
 interface EnergyDataPoint {
   timestamp: string;
   energyWh: number;
@@ -12,13 +14,14 @@ interface EnergyChartProps {
 }
 
 export function EnergyChart({ data, height = 160 }: EnergyChartProps): React.JSX.Element {
+  const { t } = useTranslation();
   if (data.length < 2) {
     return (
       <div
         className="flex items-center justify-center text-sm text-muted-foreground"
         style={{ height }}
       >
-        Collecting data...
+        {t('sessionDetail.collectingData')}
       </div>
     );
   }

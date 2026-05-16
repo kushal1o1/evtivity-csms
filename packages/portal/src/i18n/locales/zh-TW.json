@@ -135,7 +135,7 @@
     "lastUpdated": "更新於 {{time}}",
     "free": "免費",
     "battery": "電池電量",
-    "collectingData": "正在收集資料...",
+    "collectingData": "等待充電樁...",
     "fromReservation": "來自預約",
     "fromReservationHint": "查看啟動此工作階段的預約",
     "tapToSetVehicle": "點擊設定車輛",

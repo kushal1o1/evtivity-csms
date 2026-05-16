@@ -132,7 +132,7 @@
     "lastUpdated": "Aktualisiert {{time}}",
     "free": "Kostenlos",
     "battery": "Batterie",
-    "collectingData": "Daten werden gesammelt...",
+    "collectingData": "Warte auf Station...",
     "fromReservation": "Aus Reservierung",
     "fromReservationHint": "Reservierung anzeigen, die diese Sitzung gestartet hat",
     "tapToSetVehicle": "Tippen, um Fahrzeug festzulegen",

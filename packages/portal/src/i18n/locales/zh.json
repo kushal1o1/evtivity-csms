@@ -135,7 +135,7 @@
     "lastUpdated": "更新于 {{time}}",
     "free": "免费",
     "battery": "电池电量",
-    "collectingData": "正在收集数据...",
+    "collectingData": "等待充电桩...",
     "fromReservation": "来自预约",
     "fromReservationHint": "查看启动此会话的预约",
     "tapToSetVehicle": "点击设置车辆",

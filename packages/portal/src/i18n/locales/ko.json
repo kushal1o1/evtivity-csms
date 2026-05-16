@@ -135,7 +135,7 @@
     "lastUpdated": "{{time}} 업데이트됨",
     "free": "무료",
     "battery": "배터리",
-    "collectingData": "데이터 수집 중...",
+    "collectingData": "충전기 대기 중...",
     "fromReservation": "예약에서 시작",
     "fromReservationHint": "이 세션을 시작한 예약 보기",
     "tapToSetVehicle": "차량을 설정하려면 누르세요",

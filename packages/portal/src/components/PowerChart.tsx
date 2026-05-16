@@ -1,6 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
+import { useTranslation } from 'react-i18next';
+
 interface PowerDataPoint {
   timestamp: string;
   powerW: number;
@@ -12,13 +14,14 @@ interface PowerChartProps {
 }
 
 export function PowerChart({ data, height = 160 }: PowerChartProps): React.JSX.Element {
+  const { t } = useTranslation();
   if (data.length < 2) {
     return (
       <div
         className="flex items-center justify-center text-sm text-muted-foreground"
         style={{ height }}
       >
-        Collecting data...
+        {t('sessionDetail.collectingData')}
       </div>
     );
   }

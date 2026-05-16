@@ -711,7 +711,10 @@ export function portalSessionRoutes(app: FastifyInstance): void {
       const { id } = request.params as z.infer<typeof sessionParams>;
 
       const [session] = await db
-        .select({ driverId: chargingSessions.driverId })
+        .select({
+          driverId: chargingSessions.driverId,
+          startedAt: chargingSessions.startedAt,
+        })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, id));
 
@@ -733,6 +736,15 @@ export function portalSessionRoutes(app: FastifyInstance): void {
         .from(meterValues)
         .where(and(eq(meterValues.sessionId, id), eq(meterValues.measurand, 'Power.Active.Import')))
         .orderBy(asc(meterValues.timestamp));
+
+      // Prepend a synthetic 0-point at session start so the chart renders as
+      // soon as the first MeterValue arrives (one real + one synthetic = 2
+      // points, the chart's render threshold). Stations typically send the
+      // first MeterValue ~30s after start; without this, the chart waits for
+      // a second MeterValue (~60s), which feels broken on the portal.
+      if (session.startedAt != null) {
+        return { data: [{ timestamp: session.startedAt, powerW: 0 }, ...rows] };
+      }
 
       return { data: rows };
     },
@@ -769,6 +781,7 @@ export function portalSessionRoutes(app: FastifyInstance): void {
         .select({
           driverId: chargingSessions.driverId,
           meterStart: chargingSessions.meterStart,
+          startedAt: chargingSessions.startedAt,
         })
         .from(chargingSessions)
         .where(eq(chargingSessions.id, id));
@@ -798,6 +811,13 @@ export function portalSessionRoutes(app: FastifyInstance): void {
           ),
         )
         .orderBy(asc(meterValues.timestamp));
+
+      // Prepend a synthetic 0-point at session start (delta from meterStart is
+      // 0 by definition). Same rationale as power-history: chart renders after
+      // the first real MeterValue instead of waiting for the second.
+      if (session.startedAt != null) {
+        return { data: [{ timestamp: session.startedAt, energyWh: 0 }, ...rows] };
+      }
 
       return { data: rows };
     },
