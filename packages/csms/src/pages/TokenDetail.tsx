@@ -16,6 +16,7 @@ import { TokenDetailsTab } from '@/components/token/TokenDetailsTab';
 import { AuthorizeLogView } from '@/components/AuthorizeLogView';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { useUserTimezone } from '@/lib/timezone';
 
 interface TokenData {
@@ -34,6 +35,7 @@ interface TokenData {
 export function TokenDetail(): React.JSX.Element {
   const timezone = useUserTimezone();
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   const { id } = useParams<{ id: string }>();
 
   const [activeTab, setActiveTab] = useTab('details');
@@ -76,7 +78,7 @@ export function TokenDetail(): React.JSX.Element {
         <TabsList>
           <TabsTrigger value="details">{t('tokens.tokenDetails')}</TabsTrigger>
           <TabsTrigger value="sessions">{t('sessions.title')}</TabsTrigger>
-          <TabsTrigger value="history">{t('tokens.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('tokens.history')}</TabsTrigger>}
           <TabsTrigger value="authorize-log">{t('tokens.authorizeLog')}</TabsTrigger>
         </TabsList>
 

@@ -4,6 +4,7 @@
 import { useTranslation } from 'react-i18next';
 import { useTab } from '@/hooks/use-tab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useHasPermission } from '@/lib/auth';
 import { CaCertificatesTab } from '@/components/certificates/CaCertificatesTab';
 import { StationCertificatesTab } from '@/components/certificates/StationCertificatesTab';
 import { CsrRequestsTab } from '@/components/certificates/CsrRequestsTab';
@@ -12,6 +13,7 @@ import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 export function Certificates(): React.JSX.Element {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useTab('ca');
+  const canReadAudit = useHasPermission('audit:read');
 
   return (
     <div>
@@ -22,7 +24,7 @@ export function Certificates(): React.JSX.Element {
           <TabsTrigger value="ca">{t('pnc.caCertificates')}</TabsTrigger>
           <TabsTrigger value="station">{t('pnc.stationCertificates')}</TabsTrigger>
           <TabsTrigger value="csr">{t('pnc.csrRequests')}</TabsTrigger>
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
 
         <CaCertificatesTab />

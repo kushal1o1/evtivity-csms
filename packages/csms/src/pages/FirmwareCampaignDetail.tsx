@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 import { useTab } from '@/hooks/use-tab';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 
 const STATUS_VARIANT: Record<
   string,
@@ -30,6 +31,7 @@ const STATUS_VARIANT: Record<
 
 export function FirmwareCampaignDetail(): React.JSX.Element {
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   const { id } = useParams<{ id: string }>();
   const campaignId = id ?? '';
   const [activeTab, setActiveTab] = useTab('details');
@@ -72,7 +74,9 @@ export function FirmwareCampaignDetail(): React.JSX.Element {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="details">{t('common.details')}</TabsTrigger>
-          <TabsTrigger value="history">{t('firmwareCampaigns.campaignHistory')}</TabsTrigger>
+          {canReadAudit && (
+            <TabsTrigger value="history">{t('firmwareCampaigns.campaignHistory')}</TabsTrigger>
+          )}
           <TabsTrigger value="matching" className="gap-2">
             {t('firmwareCampaigns.matchingStations')}
             <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-foreground/15 px-1.5 text-xs font-semibold">

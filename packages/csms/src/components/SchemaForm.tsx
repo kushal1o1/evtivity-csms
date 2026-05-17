@@ -66,6 +66,7 @@ function FieldRenderer({
   value: unknown;
   onChange: (val: unknown) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   switch (field.kind) {
     case 'enum':
       return (
@@ -78,7 +79,7 @@ function FieldRenderer({
             }}
             className="h-9"
           >
-            {!field.required && <option value="">n/a</option>}
+            {!field.required && <option value="">{t('common.select')}</option>}
             {field.enumValues?.map((v) => (
               <option key={v} value={v}>
                 {v}

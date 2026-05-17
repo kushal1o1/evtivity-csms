@@ -17,6 +17,7 @@ import { TokensTable } from '@/components/TokensTable';
 import { VehiclesTable, type Vehicle } from '@/components/VehiclesTable';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { useUserTimezone } from '@/lib/timezone';
 import { DriverDetailsTab } from '@/components/driver/DriverDetailsTab';
 import { DriverPaymentMethodsTab } from '@/components/driver/DriverPaymentMethodsTab';
@@ -47,6 +48,7 @@ interface DriverToken {
 export function DriverDetail(): React.JSX.Element {
   const timezone = useUserTimezone();
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -121,7 +123,7 @@ export function DriverDetail(): React.JSX.Element {
           )}
           <TabsTrigger value="authorize-log">{t('tokens.authorizeLog')}</TabsTrigger>
           <TabsTrigger value="pricing">{t('drivers.pricing')}</TabsTrigger>
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
 
         <DriverDetailsTab driver={driver} timezone={timezone} />

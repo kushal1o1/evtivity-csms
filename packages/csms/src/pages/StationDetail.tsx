@@ -91,6 +91,7 @@ export function StationDetail(): React.JSX.Element {
   const [detailsTab, setDetailsTab] = useTab('info');
   const { t } = useTranslation();
   const canReadAuthorizeLog = useHasPermission('drivers:read');
+  const canReadAudit = useHasPermission('audit:read');
 
   const { data: sitesResponse } = useQuery({
     queryKey: ['sites'],
@@ -248,7 +249,7 @@ export function StationDetail(): React.JSX.Element {
           {reservationEnabled && (
             <TabsTrigger value="reservations">{t('reservations.title')}</TabsTrigger>
           )}
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="info" className="space-y-6">

@@ -369,15 +369,20 @@ const seedDemo = process.env['SEED_DEMO'] === 'true';
 async function seed(): Promise<void> {
   console.log(`Seeding database...${seedDemo ? '' : ' (demo data disabled)'}`);
 
-  // Clear existing data (truncate all tables with cascade)
+  // Clear existing data (truncate all tables with cascade). Tables whose
+  // rows are seeded ONLY by migrations (not re-inserted by this seed script)
+  // must be excluded -- otherwise re-seeding wipes the catalog and the
+  // feature that depends on it stops working until the next migration runs.
+  // Add to this set when a new migration seeds reference data that the seed
+  // script does not also populate.
+  const TRUNCATE_EXCLUDED = new Set<string>(['drizzle_migrations', 'vehicle_efficiency_lookup']);
   console.log('  Clearing existing data...');
   const tables = await db.execute<{ tablename: string }>(sql`
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public' AND tablename != 'drizzle_migrations'
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
   `);
-  if (tables.length > 0) {
-    const tableNames = tables.map((t) => t.tablename).join(', ');
-    await db.execute(sql.raw(`TRUNCATE TABLE ${tableNames} CASCADE`));
+  const truncatable = tables.map((t) => t.tablename).filter((name) => !TRUNCATE_EXCLUDED.has(name));
+  if (truncatable.length > 0) {
+    await db.execute(sql.raw(`TRUNCATE TABLE ${truncatable.join(', ')} CASCADE`));
   }
   console.log('  Tables cleared.');
 

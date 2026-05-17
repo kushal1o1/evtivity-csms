@@ -19,6 +19,7 @@ import { Select } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { ResponsiveFilters } from '@/components/responsive-filters';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { Pagination } from '@/components/ui/pagination';
 import { SessionsTable, type Session } from '@/components/SessionsTable';
 import { ReservationsTable } from '@/components/ReservationsTable';
@@ -77,6 +78,7 @@ export function SiteDetail(): React.JSX.Element {
   const [sessionsStationId, setSessionsStationId] = useState('');
   const [activeTab, setActiveTab] = useTab('details');
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
 
   const { data: site, isLoading } = useQuery({
     queryKey: ['sites', id],
@@ -188,7 +190,7 @@ export function SiteDetail(): React.JSX.Element {
             <TabsTrigger value="reservations">{t('reservations.title')}</TabsTrigger>
           )}
           <TabsTrigger value="free-vend">{t('sites.freeVend')}</TabsTrigger>
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
 
         <SiteDetailsTab

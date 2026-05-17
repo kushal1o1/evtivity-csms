@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -104,6 +105,7 @@ export function EntityHistoryTab({
   title,
 }: Props): React.JSX.Element {
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   // Default the header to the shared "History" label so every detail page
   // shows a consistent title. Pass title={''} (or null via a future opt-out)
   // to suppress when the surrounding container already labels the section.
@@ -120,11 +122,21 @@ export function EntityHistoryTab({
     // without manually reloading the page.
     refetchOnMount: 'always',
     staleTime: 0,
+    // Don't fetch when the operator lacks audit:read. The component renders
+    // null below so the request would just 403.
+    enabled: canReadAudit,
   });
 
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Hide entirely when the operator lacks audit:read. Standalone callers
+  // (Card-wrapped, no surrounding Tabs) get full hiding from this branch.
+  // Callers that render this inside a Tabs panel should also hide their
+  // TabsTrigger via useHasPermission('audit:read'); otherwise the trigger
+  // remains but the panel renders blank.
+  if (!canReadAudit) return <></>;
 
   return (
     <Card>

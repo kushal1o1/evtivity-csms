@@ -337,6 +337,13 @@
       "when": 1778700000029,
       "tag": "0047_rename_plaintext_secrets_to_enc",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1778700000030,
+      "tag": "0048_backfill_audit_permissions",
+      "breakpoints": true
     }
   ]
 }

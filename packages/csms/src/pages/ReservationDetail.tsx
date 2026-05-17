@@ -14,6 +14,7 @@ import { ReservationCommandsTab } from '@/components/reservation/ReservationComm
 import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 import { useTab } from '@/hooks/use-tab';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { useUserTimezone } from '@/lib/timezone';
 import { reservationStatusVariant } from '@/lib/status-variants';
 
@@ -73,6 +74,7 @@ function getStatusLabel(status: string, t: (key: string) => string): string {
 export function ReservationDetail(): React.JSX.Element {
   const { t } = useTranslation();
   const timezone = useUserTimezone();
+  const canReadAudit = useHasPermission('audit:read');
   const { id } = useParams<{ id: string }>();
 
   const [tab, setTab] = useTab('details');
@@ -114,7 +116,9 @@ export function ReservationDetail(): React.JSX.Element {
         <TabsList>
           <TabsTrigger value="details">{t('reservations.detailsTab')}</TabsTrigger>
           {hasSession && <TabsTrigger value="session">{t('reservations.sessionTab')}</TabsTrigger>}
-          <TabsTrigger value="history">{t('reservations.historyTab')}</TabsTrigger>
+          {canReadAudit && (
+            <TabsTrigger value="history">{t('reservations.historyTab')}</TabsTrigger>
+          )}
           <TabsTrigger value="commands">{t('reservations.commands')}</TabsTrigger>
         </TabsList>
 

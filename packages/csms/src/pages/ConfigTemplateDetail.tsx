@@ -14,9 +14,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 import { useTab } from '@/hooks/use-tab';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 
 export function ConfigTemplateDetail(): React.JSX.Element {
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   const { id } = useParams<{ id: string }>();
   const templateId = id ?? '';
   const [activeTab, setActiveTab] = useTab('details');
@@ -67,7 +69,7 @@ export function ConfigTemplateDetail(): React.JSX.Element {
               {matchingTotal?.total ?? 0}
             </span>
           </TabsTrigger>
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="details" className="space-y-6">
           <ConfigTemplateDetailsTab template={template} />

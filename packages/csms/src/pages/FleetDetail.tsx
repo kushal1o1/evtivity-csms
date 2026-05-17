@@ -17,6 +17,7 @@ import { FleetDriversTab } from '@/components/fleet/FleetDriversTab';
 import { FleetPricingTab } from '@/components/fleet/FleetPricingTab';
 import { FleetReservationsTab } from '@/components/fleet/FleetReservationsTab';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 
 interface Fleet {
   id: string;
@@ -29,6 +30,7 @@ interface Fleet {
 export function FleetDetail(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
+  const canReadAudit = useHasPermission('audit:read');
   const [activeTab, setActiveTab] = useTab('details');
 
   const { data: fleet, isLoading } = useQuery({
@@ -66,7 +68,7 @@ export function FleetDetail(): React.JSX.Element {
           <TabsTrigger value="drivers">{t('fleets.drivers')}</TabsTrigger>
           <TabsTrigger value="pricing">{t('fleets.pricing')}</TabsTrigger>
           <TabsTrigger value="reservations">{t('fleets.bulkReservations')}</TabsTrigger>
-          <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('audit.history')}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="details" className="space-y-6">

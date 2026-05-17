@@ -94,6 +94,7 @@ export function SmartChargingTemplates({
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t('common.name')}</TableHead>
+                      <TableHead>{t('common.description')}</TableHead>
                       <TableHead>{t('smartCharging.profilePurpose')}</TableHead>
                       <TableHead>{t('smartCharging.profileKind')}</TableHead>
                       <TableHead>{t('smartCharging.chargingRateUnit')}</TableHead>
@@ -116,6 +117,9 @@ export function SmartChargingTemplates({
                       >
                         <TableCell className="font-medium" data-testid="row-click-target">
                           {template.name}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
+                          {template.description ?? ''}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">

@@ -13,6 +13,7 @@ import { PricingGroupTariffsTab } from '@/components/pricing/PricingGroupTariffs
 import { PricingGroupScheduleTab } from '@/components/pricing/PricingGroupScheduleTab';
 import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 import { api } from '@/lib/api';
+import { useHasPermission } from '@/lib/auth';
 import { useUserTimezone } from '@/lib/timezone';
 import type { PricingGroup } from '@/lib/types';
 
@@ -21,6 +22,7 @@ export function PricingGroupDetail(): React.JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const timezone = useUserTimezone();
+  const canReadAudit = useHasPermission('audit:read');
 
   const [tab, setTab] = useTab('details');
 
@@ -53,7 +55,7 @@ export function PricingGroupDetail(): React.JSX.Element {
           <TabsTrigger value="details">{t('common.details')}</TabsTrigger>
           <TabsTrigger value="tariffs">{t('pricing.tariffs')}</TabsTrigger>
           <TabsTrigger value="schedule">{t('pricing.schedule')}</TabsTrigger>
-          <TabsTrigger value="history">{t('common.history')}</TabsTrigger>
+          {canReadAudit && <TabsTrigger value="history">{t('common.history')}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="details" className="space-y-6">

@@ -8,6 +8,7 @@
 
 import argon2 from 'argon2';
 import postgres from 'postgres';
+import { ADMIN_DEFAULT_PERMISSIONS } from '@evtivity/lib';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 const INITIAL_ADMIN_EMAIL = process.env['INITIAL_ADMIN_EMAIL'];
@@ -18,68 +19,12 @@ if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 if (!INITIAL_ADMIN_EMAIL) throw new Error('INITIAL_ADMIN_EMAIL is required');
 if (!INITIAL_ADMIN_PASSWORD) throw new Error('INITIAL_ADMIN_PASSWORD is required');
 
-const ADMIN_PERMISSIONS = [
-  'dashboard:read',
-  'dashboard:write',
-  'stations:read',
-  'stations:write',
-  'sites:read',
-  'sites:write',
-  'sessions:read',
-  'sessions:write',
-  'drivers:read',
-  'drivers:write',
-  'fleets:read',
-  'fleets:write',
-  'reservations:read',
-  'reservations:write',
-  'support:read',
-  'support:write',
-  'payments:read',
-  'payments:write',
-  'pricing:read',
-  'pricing:write',
-  'roaming:read',
-  'roaming:write',
-  'smartCharging:read',
-  'smartCharging:write',
-  'certificates:read',
-  'certificates:write',
-  'conformance:read',
-  'conformance:write',
-  'reports:read',
-  'reports:write',
-  'sustainability:read',
-  'sustainability:write',
-  'loadManagement:read',
-  'loadManagement:write',
-  'logs:read',
-  'logs:write',
-  'users:read',
-  'users:write',
-  'settings.system:read',
-  'settings.system:write',
-  'settings.notification:read',
-  'settings.notification:write',
-  'settings.payment:read',
-  'settings.payment:write',
-  'settings.integrations:read',
-  'settings.integrations:write',
-  'settings.security:read',
-  'settings.security:write',
-  'settings.apiKeys:read',
-  'settings.apiKeys:write',
-  'settings.firmware:read',
-  'settings.firmware:write',
-  'settings.stationConfig:read',
-  'settings.stationConfig:write',
-  'settings.smartCharging:read',
-  'settings.smartCharging:write',
-  'settings.ai:read',
-  'settings.ai:write',
-  'settings.conformance:read',
-  'settings.conformance:write',
-];
+// Source of truth lives in @evtivity/lib so adding a new permission to
+// PERMISSIONS automatically flows here. Previously this file kept its own
+// hardcoded list and silently drifted -- new permissions added to the lib
+// (audit:read, audit:write) never reached freshly seeded admins, leaving
+// every "History" tab broken with 403 until manual backfill.
+const ADMIN_PERMISSIONS = ADMIN_DEFAULT_PERMISSIONS;
 
 const ID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
 function rid(prefix: string): string {
@@ -121,19 +66,36 @@ try {
     RETURNING id, email
   `;
 
+  let adminUserId: string;
   if (insertedUser.length > 0 && insertedUser[0]) {
     const user = insertedUser[0];
     console.log(`Initial admin user created: ${user.email}`);
-
-    const rows = ADMIN_PERMISSIONS.map((permission) => ({ user_id: user.id, permission }));
-    await sql`
-      INSERT INTO user_permissions ${sql(rows, 'user_id', 'permission')}
-      ON CONFLICT DO NOTHING
-    `;
-    console.log(`Assigned ${String(ADMIN_PERMISSIONS.length)} permissions to admin.`);
+    adminUserId = user.id;
   } else {
+    const existing = await sql<{ id: string }[]>`
+      SELECT id FROM users WHERE email = ${INITIAL_ADMIN_EMAIL}
+    `;
+    if (existing.length === 0 || !existing[0]) {
+      throw new Error('Admin user lookup failed after ON CONFLICT');
+    }
+    adminUserId = existing[0].id;
     console.log(`Admin user already exists: ${INITIAL_ADMIN_EMAIL}`);
   }
+
+  // Always re-assert the full permission set. Without this, permissions added
+  // to ADMIN_DEFAULT_PERMISSIONS after the admin was first created would never
+  // reach existing installs -- the upgrade would create no new admin row, the
+  // ON CONFLICT path would skip perm insertion, and the new feature's RBAC
+  // gate would 403 until a manual SQL backfill. ON CONFLICT DO NOTHING on
+  // user_permissions is safe to run on every upgrade.
+  const rows = ADMIN_PERMISSIONS.map((permission) => ({ user_id: adminUserId, permission }));
+  const result = await sql`
+    INSERT INTO user_permissions ${sql(rows, 'user_id', 'permission')}
+    ON CONFLICT DO NOTHING
+  `;
+  console.log(
+    `Permission sync: ${String(result.count)} new of ${String(ADMIN_PERMISSIONS.length)} assigned.`,
+  );
 } finally {
   await sql.end();
 }
