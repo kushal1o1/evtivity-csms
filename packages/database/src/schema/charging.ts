@@ -13,6 +13,7 @@ import {
   timestamp,
   jsonb,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { createId } from '../lib/id.js';
 import { tariffs } from './pricing.js';
@@ -143,5 +144,21 @@ export const meterValues = pgTable(
     index('idx_meter_values_station_id').on(table.stationId),
     index('idx_meter_values_session_id').on(table.sessionId),
     index('idx_meter_values_timestamp').on(table.timestamp),
+    // Dedup retransmits: OCPP allows the station to resend a MeterValues batch
+    // if the CALLRESULT is lost. Without this, duplicate rows inflate energy
+    // sums in dashboards, cost calculations, and OCPI CDRs. The backing
+    // migration 0044_meter_values_dedup_unique.sql creates this index with
+    // NULLS NOT DISTINCT (PG 15+) so null phase/location compare equal; the
+    // drizzle schema can't express NULLS NOT DISTINCT in this version, so the
+    // schema declaration is for drift detection only and the migration is the
+    // source of truth.
+    uniqueIndex('meter_values_dedup_idx').on(
+      table.sessionId,
+      table.evseId,
+      table.timestamp,
+      table.measurand,
+      table.phase,
+      table.location,
+    ),
   ],
 );

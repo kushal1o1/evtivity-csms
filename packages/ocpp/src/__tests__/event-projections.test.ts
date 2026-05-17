@@ -777,11 +777,14 @@ describe('Event projections', () => {
     it('creates session on Started event', async () => {
       await setup();
 
+      // Payload below has no idToken, so the eager OCPI roaming SELECT
+      // (skipped when earlyIdToken is null) does not consume a result.
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id FROM charging_sessions
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // INSERT transaction_events
+        [{ free_vend_enabled: false }], // free_vend check
+        [{ is_roaming: false }], // SELECT is_roaming
         [{ driver_id: null }], // SELECT driver_id (no driver yet)
         // resolveTariff: no driver group
         [], // station pricing group
@@ -1380,13 +1383,15 @@ describe('Event projections', () => {
     it('transitions reservation to in_use when Started event includes reservationId', async () => {
       await setup();
 
+      // Payload below has no idToken, so the eager OCPI roaming SELECT
+      // (skipped when earlyIdToken is null) does not consume a result.
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id FROM charging_sessions
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE charging_sessions SET status='faulted' (close stale sessions)
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id FROM charging_sessions (no driver)
         // resolveTariff: single CTE that resolves driver/fleet/station/site/default
         // in one round-trip. Empty result here means no pricing group matched.

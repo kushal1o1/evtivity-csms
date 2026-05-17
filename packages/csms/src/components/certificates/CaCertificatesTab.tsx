@@ -4,7 +4,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { Upload, RefreshCw, Trash2, Loader2, Info } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -147,7 +148,11 @@ export function CaCertificatesTab(): React.JSX.Element {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <Alert variant="info">
+              <Info className="h-4 w-4" />
+              <AlertDescription>{t('pnc.caCertificatesHelp')}</AlertDescription>
+            </Alert>
             {caCerts == null || caCerts.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {t('pnc.noCaCertificates')}

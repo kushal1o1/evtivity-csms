@@ -68,6 +68,30 @@ function registerHubClientInfoRoutes(app: FastifyInstance, version: OcpiVersion)
         party_id: string;
       };
 
+      // Defense in depth: an OCPI partner may only PUT its OWN HubClientInfo
+      // row. Without this check, any authenticated partner can PUT
+      // /hubclientinfo/{otherCountry}/{otherParty} and mark a competing
+      // partner as offline / suspended, breaking roaming routing. The OCPI
+      // spec reserves cross-partner updates for the hub itself; EVtivity
+      // does not currently distinguish hub-mode tokens, so the tightest
+      // correct behavior is "you can only PUT your own row".
+      const authenticated = request.ocpiPartner;
+      if (
+        authenticated == null ||
+        authenticated.countryCode !== country_code ||
+        authenticated.partyId !== party_id
+      ) {
+        await reply
+          .status(403)
+          .send(
+            ocpiError(
+              OcpiStatusCode.CLIENT_ERROR,
+              'Cannot update HubClientInfo for another partner',
+            ),
+          );
+        return;
+      }
+
       const body = request.body as HubClientInfo | null;
       if (body == null || typeof body.status !== 'string') {
         await reply

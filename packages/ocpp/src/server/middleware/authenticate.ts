@@ -133,7 +133,51 @@ export async function authenticateConnection(
       };
     }
 
-    logger.debug({ stationId, cn: cert.subject.CN }, 'SP3: authenticated via client certificate');
+    // Defense in depth: the CA chain check above only proves the cert was
+    // issued by a trusted CA. It does NOT prove this cert belongs to THIS
+    // station. Without the per-station serial check, any station holding a
+    // valid CA-signed cert could impersonate any other SP3 station. Match
+    // on (stationId, serialNumber, active, ChargingStationCertificate).
+    const certSerial = cert.serialNumber;
+    if (certSerial === '') {
+      await logAuthEvent(sql, station.id, 'auth_failed', remoteAddress, {
+        reason: 'Client certificate missing serial number',
+      });
+      return {
+        authenticated: false,
+        stationId,
+        stationDbId: station.id,
+        error: 'Client certificate missing serial number',
+      };
+    }
+    // Node returns the serial uppercase without separators; normalize the DB
+    // side too in case it was stored from a different source.
+    const normalizedSerial = certSerial.toUpperCase().replace(/[^0-9A-F]/g, '');
+    const certRows = await sql`
+      SELECT id FROM station_certificates
+      WHERE station_id = ${station.id}
+        AND UPPER(REGEXP_REPLACE(serial_number, '[^0-9A-Fa-f]', '', 'g')) = ${normalizedSerial}
+        AND status = 'active'
+        AND certificate_type = 'ChargingStationCertificate'
+      LIMIT 1
+    `;
+    if (certRows.length === 0) {
+      await logAuthEvent(sql, station.id, 'auth_failed', remoteAddress, {
+        reason: 'Client certificate serial not registered for this station',
+        certSerial: normalizedSerial,
+      });
+      return {
+        authenticated: false,
+        stationId,
+        stationDbId: station.id,
+        error: 'Client certificate not registered for this station',
+      };
+    }
+
+    logger.debug(
+      { stationId, cn: cert.subject.CN, certSerial: normalizedSerial },
+      'SP3: authenticated via client certificate',
+    );
     return { authenticated: true, stationId, stationDbId: station.id };
   }
 

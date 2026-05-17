@@ -103,6 +103,10 @@ export function EntityHistoryTab({
   title,
 }: Props): React.JSX.Element {
   const { t } = useTranslation();
+  // Default the header to the shared "History" label so every detail page
+  // shows a consistent title. Pass title={''} (or null via a future opt-out)
+  // to suppress when the surrounding container already labels the section.
+  const resolvedTitle = title ?? t('audit.history');
   const [page, setPage] = useState(1);
   const { data, isLoading, error } = useQuery<AuditPage>({
     queryKey: ['audit', entityType, entityId, page, pageSize],
@@ -122,9 +126,9 @@ export function EntityHistoryTab({
 
   return (
     <Card>
-      {title != null && (
+      {resolvedTitle !== '' && (
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>{resolvedTitle}</CardTitle>
         </CardHeader>
       )}
       <CardContent className="p-0">

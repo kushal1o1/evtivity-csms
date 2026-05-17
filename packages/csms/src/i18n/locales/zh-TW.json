@@ -1164,7 +1164,7 @@
     "stationColumn": "充電站",
     "sessionColumn": "工作階段",
     "filterStation": "按充電站篩選",
-    "filterIdToken": "搜尋 idToken",
+    "filterIdToken": "搜尋 ID 權杖",
     "filterOutcome": "所有結果",
     "filterFrom": "起始",
     "filterTo": "結束",

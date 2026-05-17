@@ -1143,31 +1143,43 @@ export function smartChargingRoutes(app: FastifyInstance): void {
           .where(eq(chargingProfilePushes.templateId, id)),
       ]);
 
-      // Get status counts for each push
-      const data = await Promise.all(
-        pushes.map(async (push) => {
-          const statusCounts = await db
-            .select({
-              status: chargingProfilePushStations.status,
-              count: count(),
-            })
-            .from(chargingProfilePushStations)
-            .where(eq(chargingProfilePushStations.pushId, push.id))
-            .groupBy(chargingProfilePushStations.status);
+      // One grouped query for all push IDs on this page replaces N parallel
+      // per-push queries. The previous Promise.all hid the N+1 with
+      // concurrency, but still consumed N pool slots and N round-trips for
+      // data that lives in one table. WHERE pushId IN (...) + GROUP BY
+      // pushId, status returns one row per (push, status); reduce into
+      // a Map<pushId, counts> and stamp each push at render time.
+      const pushIds = pushes.map((p) => p.id);
+      const statusCountRows =
+        pushIds.length > 0
+          ? await db
+              .select({
+                pushId: chargingProfilePushStations.pushId,
+                status: chargingProfilePushStations.status,
+                count: count(),
+              })
+              .from(chargingProfilePushStations)
+              .where(inArray(chargingProfilePushStations.pushId, pushIds))
+              .groupBy(chargingProfilePushStations.pushId, chargingProfilePushStations.status)
+          : [];
 
-          const counts: Record<string, number> = {
-            pendingCount: 0,
-            acceptedCount: 0,
-            rejectedCount: 0,
-            failedCount: 0,
-          };
-          for (const row of statusCounts) {
-            counts[`${row.status}Count`] = row.count;
-          }
+      const emptyCounts = (): Record<string, number> => ({
+        pendingCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        failedCount: 0,
+      });
+      const countsByPush = new Map<string, Record<string, number>>();
+      for (const row of statusCountRows) {
+        const entry = countsByPush.get(row.pushId) ?? emptyCounts();
+        entry[`${row.status}Count`] = row.count;
+        countsByPush.set(row.pushId, entry);
+      }
 
-          return { ...push, ...counts };
-        }),
-      );
+      const data = pushes.map((push) => ({
+        ...push,
+        ...(countsByPush.get(push.id) ?? emptyCounts()),
+      }));
 
       return { data, total: countResult[0]?.total ?? 0 } satisfies PaginatedResponse<
         (typeof data)[number]

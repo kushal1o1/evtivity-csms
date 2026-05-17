@@ -257,6 +257,21 @@ export class OcppServer {
 
     const auth = await authenticateConnection(req, this.logger, this.sql);
     if (!auth.authenticated || auth.stationId == null) {
+      // Surface buffered messages so operators can see what an unauthenticated
+      // client tried to send before being kicked. Silent drop here hid both
+      // misconfigured stations (legitimate but with bad creds) and probe
+      // traffic. Cap the logged payload to avoid log-flood from a flooder.
+      if (pendingMessages.length > 0) {
+        this.logger.warn(
+          {
+            stationId: auth.stationId,
+            droppedCount: pendingMessages.length,
+            firstMessagePreview: pendingMessages[0]?.slice(0, 200),
+            error: auth.error,
+          },
+          'Discarded buffered messages from unauthenticated connection',
+        );
+      }
       this.logger.warn({ error: auth.error }, 'Connection rejected');
       ws.close(1008, auth.error ?? 'Authentication failed');
       return;

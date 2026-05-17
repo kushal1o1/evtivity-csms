@@ -362,8 +362,16 @@ describe('Local auth list routes', () => {
 
       // 1. getStation, 2. delete orphaned entries, 3. entries with token status,
       // 4. reconciled entries, 5. getOrCreateVersionRow,
-      // 6. update version, 7. update pushedAt
-      setupDbResults([station], [], entriesWithTokenStatus, trackedEntries, [versionRow], [], []);
+      // 6. UPDATE ... RETURNING (atomic version increment), 7. update pushedAt
+      setupDbResults(
+        [station],
+        [],
+        entriesWithTokenStatus,
+        trackedEntries,
+        [versionRow],
+        [{ localVersion: versionRow.localVersion + 1 }],
+        [],
+      );
 
       mockPublish.mockImplementation(async (_channel: string, data: string) => {
         if (_channel === 'ocpp_commands' && mockSubscribeCallback != null) {
@@ -411,8 +419,16 @@ describe('Local auth list routes', () => {
 
       // 1. getStation, 2. delete orphaned, 3. entries with token status (none),
       // 4. reconciled entries (none), 5. getOrCreateVersionRow,
-      // 6. update version, 7. update pushedAt
-      setupDbResults([station], [], [], [], [versionRow], [], []);
+      // 6. UPDATE ... RETURNING (atomic version increment), 7. update pushedAt
+      setupDbResults(
+        [station],
+        [],
+        [],
+        [],
+        [versionRow],
+        [{ localVersion: versionRow.localVersion + 1 }],
+        [],
+      );
 
       let capturedPayload: Record<string, unknown> | undefined;
       mockPublish.mockImplementation(async (_channel: string, data: string) => {

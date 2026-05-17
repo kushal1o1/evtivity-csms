@@ -56,6 +56,16 @@ export class CommandDispatcher {
       throw new Error(`Command ${commandName} is not supported for ${version}`);
     }
 
+    // The translation layer returns { action: 'NotSupported' } for commands
+    // that exist in newer OCPP versions but have no equivalent in this
+    // station's version. Dispatching that literal string as an OCPP action
+    // makes the station reply with CALLERROR (unknown action), which the API
+    // caller sees as an opaque protocol error. Translate it here into a
+    // clear, version-aware rejection at the dispatcher.
+    if (translated.action === 'NotSupported') {
+      throw new Error(`Command ${commandName} is not supported on ${version} stations`);
+    }
+
     this.logger.info(
       { stationId, commandName, translatedAction: translated.action, version },
       'Dispatching version-aware command',

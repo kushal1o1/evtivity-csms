@@ -357,16 +357,15 @@ describe('Event projections - coverage expansion', () => {
     it('logs port status transitions for disconnected EVSEs with their current statuses', async () => {
       await setup();
 
+      // Pass 2 batched the per-connector INSERT loop into a single
+      // INSERT ... SELECT, so the previous SELECT-then-loop pattern is now
+      // one query (INSERT only). The mock no longer needs the SELECT
+      // placeholder or the per-connector inserts.
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
         [], // UPDATE charging_stations
-        [], // INSERT connection_logs
-        [
-          { evse_id: 1, status: 'occupied' },
-          { evse_id: 2, status: 'available' },
-        ], // SELECT evse_id, status FROM evses
-        [], // INSERT port_status_log #1
-        [], // INSERT port_status_log #2
+        [{ count: 1 }], // INSERT connection_logs (WHERE EXISTS returns 1)
+        [], // INSERT INTO port_status_log SELECT ... (batched)
         [{ site_id: 'site-1' }], // resolveSiteId
       );
 
@@ -377,7 +376,7 @@ describe('Event projections - coverage expansion', () => {
         makeDomainEvent('station.Disconnected', 'CS-PORTS', {}),
       );
 
-      expect(sqlCalls.length).toBeGreaterThanOrEqual(6);
+      expect(sqlCalls.length).toBeGreaterThanOrEqual(4);
       // OCPI push should fire since site is not null
       expect(mockPubSub.publish).toHaveBeenCalledWith(
         'ocpi_push',
@@ -551,12 +550,17 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [], // eager OCPI roaming check (idToken present)
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'existing-driver' }], // SELECT driver_id (already set)
+        [{ id: 'tok-1', driver_id: 'existing-driver' }], // SELECT id, driver_id FROM driver_tokens
+        [], // UPDATE charging_sessions SET token_id
         // resolveTariff: driver-specific found
         [
           {
@@ -605,15 +609,15 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-roaming' }], // SELECT id
+        [{ '?column?': 1 }], // eager OCPI roaming check (token found → is_roaming=true at INSERT)
+        [{ id: 'session-roaming' }], // INSERT charging_sessions (with is_roaming = true)
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+        [{ is_roaming: true }], // SELECT is_roaming (seeded true by eager check)
         [{ driver_id: null }], // SELECT driver_id (no driver)
         [], // SELECT driver_tokens (not found)
-        [{ 1: 1 }], // SELECT ocpi_external_tokens (found!)
-        [], // UPDATE charging_sessions SET is_roaming
+        // (downstream redundant OCPI check + UPDATE is_roaming removed in Step 2)
         // resolveTariff: station pricing group found
         [],
         [],
@@ -702,11 +706,12 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id (no driver)
         // No token lookup since idToken is null
         // resolveTariff: goes straight to station group then default
@@ -738,13 +743,14 @@ describe('Event projections - coverage expansion', () => {
     it('uses default pricing group when no driver or station group matches', async () => {
       await setup();
 
+      // Payload has no idToken, so eager OCPI check is skipped.
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id
         // resolvePricingGroupId is now one CTE that resolves driver/fleet/
         // station/site/default in a single round-trip. Default group returned.
@@ -794,11 +800,12 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id
         // resolveTariff: all empty
         [], // station pricing group
@@ -846,11 +853,14 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [], // eager OCPI roaming check (idToken present)
+
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id
         // Token resolution chain: driver_tokens -> ocpi_external_tokens -> guest_sessions
         [], // driver_tokens (empty)
@@ -2184,6 +2194,8 @@ describe('Event projections - coverage expansion', () => {
         [], // 3: UPDATE stale sessions (RETURNING id, empty)
         [], // 4: INSERT transaction_events
         [], // 5: SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-pay' }], // 6: SELECT driver_id
         [], // 7: SELECT driver_tokens by idToken (no match for 'rfid-pay')
         [], // 8: SELECT vehicle_id (no previous vehicle, auto-link skipped)
@@ -2276,11 +2288,12 @@ describe('Event projections - coverage expansion', () => {
       setupSqlResults(
         // First subscriber
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-1' }], // SELECT id
+        [{ id: 'session-1' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id
         [], // station tariff
         [], // default tariff
@@ -2315,6 +2328,8 @@ describe('Event projections - coverage expansion', () => {
         [], // UPDATE stale sessions
         [],
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-nopay' }],
         [
           {
@@ -2365,6 +2380,8 @@ describe('Event projections - coverage expansion', () => {
         [], // UPDATE stale sessions
         [],
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-1' }],
         [
           {
@@ -2415,6 +2432,8 @@ describe('Event projections - coverage expansion', () => {
         [], // UPDATE stale sessions
         [],
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-1' }],
         [
           {
@@ -2460,16 +2479,16 @@ describe('Event projections - coverage expansion', () => {
 
       mockLoggerError.mockClear();
 
-      // No idToken in payload, so driver_tokens lookup is skipped.
-      // Driver auto-link from session driver_id triggers the vehicle lookup.
+      // No idToken in payload, so eager OCPI check + driver_tokens lookup
+      // are skipped. Driver auto-link triggers vehicle lookup later.
       setupSqlResults(
         // First subscriber (TransactionEvent.Started)
         [{ id: 'sta_000000000001' }], // 0: resolveStationId
-        [], // 1: INSERT charging_sessions
-        [{ id: 'session-1' }], // 2: SELECT id
-        [], // 3: UPDATE stale sessions (RETURNING id, empty)
-        [], // 4: INSERT transaction_events
-        [], // 5: SELECT free_vend_enabled
+        [{ id: 'session-1' }], // 1: INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
+        [], // 2: UPDATE stale sessions (RETURNING id, empty)
+        [], // 3: INSERT transaction_events
+        [], // 4: SELECT free_vend_enabled
+        [{ is_roaming: false }], // 5: SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-1' }], // 6: SELECT driver_id
         // idToken is null on this payload, so no driver_tokens lookup
         [], // 7: SELECT vehicle_id (auto-link)
@@ -2571,14 +2590,15 @@ describe('Event projections - coverage expansion', () => {
       const mathRandomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
       await setup();
 
-      // No idToken in payload, so driver_tokens lookup is skipped.
+      // No idToken in payload, so eager OCPI check is skipped + driver_tokens
+      // lookup is skipped.
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // 0: resolveStationId
-        [], // 1: INSERT charging_sessions
-        [{ id: 'session-sim' }], // 2: SELECT id
-        [], // 3: UPDATE stale sessions
-        [], // 4: INSERT transaction_events
-        [], // 5: SELECT free_vend_enabled
+        [{ id: 'session-sim' }], // 1: INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
+        [], // 2: UPDATE stale sessions
+        [], // 3: INSERT transaction_events
+        [], // 4: SELECT free_vend_enabled
+        [{ is_roaming: false }], // 5: SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-sim' }], // 6: SELECT driver_id
         [], // 7: SELECT vehicle_id
         [{ id: 'pg-1' }], // 8: resolvePricingGroupId CTE
@@ -2673,6 +2693,8 @@ describe('Event projections - coverage expansion', () => {
         [], // 3: UPDATE stale
         [], // 4: INSERT transaction_events
         [], // 5: SELECT free_vend_enabled
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: 'driver-site' }], // 6: SELECT driver_id
         [], // 7: SELECT driver_tokens by idToken (no match)
         [], // 8: SELECT vehicle_id (auto-link)
@@ -2768,17 +2790,17 @@ describe('Event projections - coverage expansion', () => {
       setupSqlResults(
         // First subscriber
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-roaming' }], // SELECT id
+        [{ '?column?': 1 }], // eager OCPI roaming check (token found -> is_roaming = true in INSERT)
+        [{ id: 'session-roaming' }], // INSERT charging_sessions (with is_roaming = true)
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+        [{ is_roaming: true }], // SELECT is_roaming (seeded true by eager check)
         [{ driver_id: null }], // SELECT driver_id (null)
         // idToken + tokenType present -> SELECT driver_tokens (no match)
         [], // driver_tokens (empty)
-        // Check ocpi_external_tokens -> found (roaming)
-        [{ '?column?': 1 }], // external token found
-        [], // UPDATE charging_sessions SET is_roaming = true
+        // (redundant downstream OCPI check was removed in Step 2; no further
+        //  ocpi_external_tokens lookup or is_roaming UPDATE here)
         // resolvePricingGroupId: station, site, default
         [], // station group
         [], // site group
@@ -2829,19 +2851,20 @@ describe('Event projections - coverage expansion', () => {
       setupSqlResults(
         // First subscriber
         [{ id: 'sta_000000000001' }], // 0: resolveStationId
-        [], // 1: INSERT charging_sessions
-        [{ id: 'session-nopay-nofree' }], // 2: SELECT id
+        [], // 1: eager OCPI roaming check (idToken present, but no match)
+        [{ id: 'session-nopay-nofree' }], // 2: INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // 3: UPDATE stale sessions
         [], // 4: INSERT transaction_events
         [], // 5: SELECT free_vend_enabled (not free vend)
-        [{ driver_id: 'drv_nopay' }], // 6: SELECT driver_id
+        [{ is_roaming: false }], // 6: SELECT is_roaming (eager-state seed)
+        [{ driver_id: 'drv_nopay' }], // 7: SELECT driver_id
         // driver_tokens lookup runs because idToken='rfid-nopay'
-        [], // 7: SELECT driver_tokens (no match)
-        [], // 8: SELECT vehicle_id (auto-link)
+        [], // 8: SELECT driver_tokens (no match)
+        [], // 9: SELECT vehicle_id (auto-link)
       );
       // resolveTariffForStation: single CTE returns a group
-      sqlResults[9] = [{ id: 'pg-1' }]; // resolvePricingGroupId CTE
-      sqlResults[10] = [
+      sqlResults[10] = [{ id: 'pg-1' }]; // resolvePricingGroupId CTE
+      sqlResults[11] = [
         {
           id: 'tariff-nofree',
           currency: 'USD',
@@ -2855,18 +2878,18 @@ describe('Event projections - coverage expansion', () => {
           is_default: true,
         },
       ]; // SELECT tariffs
-      sqlResults[11] = []; // loadHolidays
-      sqlResults[12] = []; // timezone lookup
-      sqlResults[13] = []; // UPDATE session (tariff snapshot)
-      sqlResults[14] = []; // INSERT session_tariff_segments
-      sqlResults[15] = [{ site_id: null }]; // resolveSiteId
-      sqlResults[16] = [{ name: null }]; // resolveSiteName
+      sqlResults[12] = []; // loadHolidays
+      sqlResults[13] = []; // timezone lookup
+      sqlResults[14] = []; // UPDATE session (tariff snapshot)
+      sqlResults[15] = []; // INSERT session_tariff_segments
+      sqlResults[16] = [{ site_id: null }]; // resolveSiteId
+      sqlResults[17] = [{ name: null }]; // resolveSiteName
 
       // runPaymentGate
-      sqlResults[17] = []; // SELECT driver_payment_methods (empty -> MissingPaymentMethod path)
+      sqlResults[18] = []; // SELECT driver_payment_methods (empty -> MissingPaymentMethod path)
       // isTariffFreeForStation: single CTE + tariffs + holidays + timezone
-      sqlResults[18] = [{ id: 'pg-1' }]; // groupRows CTE
-      sqlResults[19] = [
+      sqlResults[19] = [{ id: 'pg-1' }]; // groupRows CTE
+      sqlResults[20] = [
         {
           id: 'tariff-paid',
           currency: 'USD',
@@ -2881,8 +2904,8 @@ describe('Event projections - coverage expansion', () => {
           is_default: true,
         },
       ]; // tariffRows
-      sqlResults[20] = []; // holidayRows
-      sqlResults[21] = []; // timezone lookup
+      sqlResults[21] = []; // holidayRows
+      sqlResults[22] = []; // timezone lookup
 
       await eventBus.emit(
         'ocpp.TransactionEvent',
@@ -2916,20 +2939,21 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         // First subscriber
-        [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-free' }], // SELECT id
-        [], // UPDATE stale sessions
-        [], // INSERT transaction_events
-        [{ driver_id: 'drv_free' }], // SELECT driver_id
-        // resolvePricingGroupId: driver group
-        [], // driver group (empty)
-        [], // fleet group (empty)
+        [{ id: 'sta_000000000001' }], // 0: resolveStationId
+        [], // 1: eager OCPI roaming check (idToken present, no match)
+        [{ id: 'session-free' }], // 2: INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
+        [], // 3: UPDATE stale sessions
+        [], // 4: INSERT transaction_events
+        [], // 5: SELECT free_vend_enabled
+        [{ is_roaming: false }], // 6: SELECT is_roaming (eager-state seed)
+        [{ driver_id: 'drv_free' }], // 7: SELECT driver_id
+        [], // 8: SELECT driver_tokens (no match)
+        [], // 9: SELECT vehicle_id (auto-link)
       );
-      // station group
-      sqlResults[8] = [{ id: 'pg-free' }];
+      // resolvePricingGroupId CTE
+      sqlResults[10] = [{ id: 'pg-free' }];
       // SELECT tariffs
-      sqlResults[9] = [
+      sqlResults[11] = [
         {
           id: 'tariff-free',
           currency: 'USD',
@@ -2944,22 +2968,24 @@ describe('Event projections - coverage expansion', () => {
         },
       ];
       // loadHolidays
-      sqlResults[10] = [];
-      // UPDATE session tariff
-      sqlResults[11] = [];
-      // INSERT segment
       sqlResults[12] = [];
-      // resolveSiteId
-      sqlResults[13] = [{ site_id: null }];
-      // resolveSiteName
-      sqlResults[14] = [{ name: null }];
-
-      // runPaymentGate (no session query needed)
-      // SELECT driver_payment_methods (empty)
+      // timezone lookup
+      sqlResults[13] = [];
+      // UPDATE session tariff
+      sqlResults[14] = [];
+      // INSERT segment
       sqlResults[15] = [];
+      // resolveSiteId
+      sqlResults[16] = [{ site_id: null }];
+      // resolveSiteName
+      sqlResults[17] = [{ name: null }];
+
+      // runPaymentGate
+      // SELECT driver_payment_methods (empty)
+      sqlResults[18] = [];
       // isTariffFreeForStation: 3 sequential queries (group, tariffs, holidays)
-      sqlResults[16] = [{ id: 'pg-free' }]; // groupRows
-      sqlResults[17] = [
+      sqlResults[19] = [{ id: 'pg-free' }]; // groupRows
+      sqlResults[20] = [
         {
           id: 'tariff-free',
           currency: 'USD',
@@ -2974,7 +3000,8 @@ describe('Event projections - coverage expansion', () => {
           is_default: true,
         },
       ]; // tariffRows (free)
-      sqlResults[18] = []; // holidayRows
+      sqlResults[21] = []; // holidayRows
+      sqlResults[22] = []; // timezone lookup
 
       await eventBus.emit(
         'ocpp.TransactionEvent',
@@ -3009,8 +3036,9 @@ describe('Event projections - coverage expansion', () => {
       setupSqlResults(
         // First subscriber
         [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-anon' }], // SELECT id
+        [], // eager OCPI roaming check (idToken present)
+
+        [{ id: 'session-anon' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         [], // INSERT transaction_events
         [{ driver_id: null }], // SELECT driver_id (null)
@@ -3059,22 +3087,24 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         // First subscriber
-        [{ id: 'sta_000000000001' }], // resolveStationId
-        [], // INSERT charging_sessions
-        [{ id: 'session-guest' }], // SELECT id
-        [], // UPDATE stale sessions
-        [], // INSERT transaction_events
-        [{ driver_id: null }], // SELECT driver_id (null)
-        // Token resolution chain: driver_tokens -> ocpi_external_tokens -> guest_sessions
-        [], // driver_tokens (empty)
-        [], // external tokens (empty)
-        [{ status: 'payment_authorized', guest_email: 'g@test.com' }], // guest_sessions (authorized)
+        [{ id: 'sta_000000000001' }], // 0: resolveStationId
+        [], // 1: eager OCPI roaming check (idToken present, no match)
+        [{ id: 'session-guest' }], // 2: INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
+        [], // 3: UPDATE stale sessions
+        [], // 4: INSERT transaction_events
+        [], // 5: SELECT free_vend_enabled
+        [{ is_roaming: false }], // 6: SELECT is_roaming (eager-state seed)
+        [{ driver_id: null }], // 7: SELECT driver_id (null)
+        // Token resolution chain: driver_tokens -> guest_sessions
+        // (downstream redundant OCPI check was removed in Step 2)
+        [], // 8: driver_tokens (empty)
+        [{ status: 'payment_authorized', guest_email: 'g@test.com' }], // 9: guest_sessions (authorized)
         // resolvePricingGroupId: station, site, default
-        [], // station group
-        [], // site group
-        [], // default group
+        [], // 10: station group
+        [], // 11: site group
+        [], // 12: default group
         // resolveSiteId
-        [{ site_id: null }],
+        [{ site_id: null }], // 13
         // runPaymentGate: guestStatus=payment_authorized -> allow (no SQL)
       );
 
@@ -4194,13 +4224,14 @@ describe('Event projections - coverage expansion', () => {
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationUuid
-        [], // INSERT charging_sessions
-        [{ id: 'session-timeout' }], // SELECT id FROM charging_sessions
+        [{ id: 'session-timeout' }], // INSERT charging_sessions ON CONFLICT DO UPDATE RETURNING id
         [], // UPDATE stale sessions
         // NO SELECT evse_id or UPDATE connectors (skipped for EVConnectTimeout)
         [], // UPDATE charging_sessions SET status = 'failed'
         [], // INSERT transaction_events
         [], // SELECT free_vend_enabled (not free vend)
+
+        [{ is_roaming: false }], // SELECT is_roaming (eager-state seed)
         [{ driver_id: null }], // SELECT driver_id
         // resolveTariffForStation -> resolvePricingGroupId (no driver)
         [], // station pricing group

@@ -11,6 +11,7 @@ import { CommandListener } from './server/command-listener.js';
 import { PgEventPersistence, getSentryConfig } from '@evtivity/database';
 import { RedisPubSubClient, RedisConnectionRegistry, initSentry } from '@evtivity/lib';
 import { registerProjections } from './server/event-projections.js';
+import { subscribeOcppEventSettingsInvalidation } from './server/notification-dispatcher.js';
 import { config } from './lib/config.js';
 
 const OCPP_PORT = config.OCPP_PORT;
@@ -59,6 +60,7 @@ const OCPP_TLS_CA = resolvePem(config.OCPP_TLS_CA_PEM, config.OCPP_TLS_CA);
 const eventPersistence = new PgEventPersistence();
 const server = new OcppServer({ eventPersistence, databaseUrl: DATABASE_URL });
 let commandListener: CommandListener | null = null;
+let cacheInvalidateSub: { unsubscribe: () => Promise<void> } | null = null;
 let healthServer: Server | null = null;
 let pubsub: RedisPubSubClient | null = null;
 let registryRedis: Redis | null = null;
@@ -98,6 +100,11 @@ async function start(): Promise<void> {
     { registry, instanceId },
   );
   await commandListener.start();
+
+  // Cross-process cache invalidation: the API publishes here after an
+  // operator updates OCPP event settings. The subscription keeps each pod&#39;s
+  // in-memory dispatcher cache fresh without waiting for the 60s TTL.
+  cacheInvalidateSub = await subscribeOcppEventSettingsInvalidation(pubsub);
 
   // Health check HTTP server
   // Returns 503 during shutdown so Kubernetes stops routing traffic before
@@ -167,6 +174,9 @@ async function shutdown(): Promise<void> {
   }
   if (commandListener != null) {
     await commandListener.stop();
+  }
+  if (cacheInvalidateSub != null) {
+    await cacheInvalidateSub.unsubscribe();
   }
   if (pubsub != null) {
     await pubsub.close();

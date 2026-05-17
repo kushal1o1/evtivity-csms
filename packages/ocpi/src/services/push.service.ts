@@ -204,37 +204,42 @@ async function pushLocationUpdate(siteId: string): Promise<void> {
     partnerIds = rows.map((r) => r.partnerId);
   }
 
-  for (const partnerId of partnerIds) {
-    try {
-      // Endpoint, outbound token, and partner identity are independent
-      // lookups - fetch in parallel rather than three sequential RTTs
-      // before the outbound HTTP push can fire.
-      const [url, token, partnerRows] = await Promise.all([
-        getPartnerEndpoint(partnerId, 'locations', 'RECEIVER'),
-        getPartnerToken(partnerId),
-        db
-          .select({ countryCode: ocpiPartners.countryCode, partyId: ocpiPartners.partyId })
-          .from(ocpiPartners)
-          .where(eq(ocpiPartners.id, partnerId))
-          .limit(1),
-      ]);
-      if (url == null) continue;
-      if (token == null) {
-        logger.debug({ partnerId }, 'No outbound token for partner, skipping push');
-        continue;
-      }
-      const partner = partnerRows[0];
-      if (partner == null) continue;
+  // Push to every partner in parallel. The inner Promise.all already batches
+  // the 3 lookups per partner, but the outer loop was serial: at 10 partners
+  // a single location update spent ~3s blocked on sequential HTTP. Each
+  // partner is independent (different endpoint, token, identity), and
+  // allSettled isolates per-partner failures so one slow or down partner
+  // does not hold up the rest.
+  await Promise.allSettled(
+    partnerIds.map(async (partnerId) => {
+      try {
+        const [url, token, partnerRows] = await Promise.all([
+          getPartnerEndpoint(partnerId, 'locations', 'RECEIVER'),
+          getPartnerToken(partnerId),
+          db
+            .select({ countryCode: ocpiPartners.countryCode, partyId: ocpiPartners.partyId })
+            .from(ocpiPartners)
+            .where(eq(ocpiPartners.id, partnerId))
+            .limit(1),
+        ]);
+        if (url == null) return;
+        if (token == null) {
+          logger.debug({ partnerId }, 'No outbound token for partner, skipping push');
+          return;
+        }
+        const partner = partnerRows[0];
+        if (partner == null) return;
 
-      const client = createOcpiClient(token, partner.countryCode, partner.partyId);
-      await client.put(`${url}/${countryCode}/${partyId}/${locationId}`, location);
-      await logSync(partnerId, 'locations', 'push_update', 'completed', 1);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Push failed';
-      logger.error({ partnerId, err }, 'Failed to push location update');
-      await logSync(partnerId, 'locations', 'push_update', 'failed', 0, message);
-    }
-  }
+        const client = createOcpiClient(token, partner.countryCode, partner.partyId);
+        await client.put(`${url}/${countryCode}/${partyId}/${locationId}`, location);
+        await logSync(partnerId, 'locations', 'push_update', 'completed', 1);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Push failed';
+        logger.error({ partnerId, err }, 'Failed to push location update');
+        await logSync(partnerId, 'locations', 'push_update', 'failed', 0, message);
+      }
+    }),
+  );
 }
 
 async function pushSessionUpdate(sessionId: string): Promise<void> {

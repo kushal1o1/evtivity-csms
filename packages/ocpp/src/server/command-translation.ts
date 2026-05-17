@@ -42,9 +42,15 @@ function mapStartTransaction16(payload: Record<string, unknown>): Record<string,
 }
 
 function mapStopTransaction16(payload: Record<string, unknown>): Record<string, unknown> {
-  return {
-    transactionId: Number(payload.transactionId),
-  };
+  const raw = payload.transactionId;
+  const txId = Number(raw);
+  // OCPP 1.6 spec: transactionId must be a positive integer assigned by the
+  // station. Silently passing NaN downstream produces a malformed CALL the
+  // station rejects with CALLERROR; surface it as a clear error here instead.
+  if (!Number.isFinite(txId) || !Number.isInteger(txId) || txId <= 0) {
+    throw new Error(`Invalid transactionId for OCPP 1.6 stop: ${String(raw)}`);
+  }
+  return { transactionId: txId };
 }
 
 function mapUnlockConnector16(payload: Record<string, unknown>): Record<string, unknown> {

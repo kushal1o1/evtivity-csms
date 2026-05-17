@@ -3,7 +3,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, desc, count, notInArray, ilike, or, isNull, inArray } from 'drizzle-orm';
+import { eq, and, desc, count, notInArray, ilike, or, isNull, inArray, sql } from 'drizzle-orm';
 import { db, writeAudit, localAuthListAuditLog } from '@evtivity/database';
 import {
   chargingStations,
@@ -425,8 +425,26 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         .from(stationLocalAuthEntries)
         .where(eq(stationLocalAuthEntries.stationId, stationId));
 
-      const versionRow = await getOrCreateVersionRow(stationId);
-      const newVersion = versionRow.localVersion + 1;
+      // Atomic version reservation: read-modify-write was racy when two
+      // operators clicked Push simultaneously (both computed newVersion = N+1,
+      // station treated the second push as a duplicate version and ignored
+      // its entries). UPDATE ... SET localVersion = localVersion + 1 RETURNING
+      // claims a unique version per request, guaranteed by PostgreSQL row
+      // locking. We also stamp lastSyncAt + updatedAt up front so the
+      // unpushed-changes banner clears even if the OCPP send hangs; if the
+      // station rejects below we revert by leaving lastModifiedAt unchanged
+      // (the banner will reappear on the next bump).
+      await getOrCreateVersionRow(stationId);
+      const [reserved] = await db
+        .update(stationLocalAuthVersions)
+        .set({
+          localVersion: sql`${stationLocalAuthVersions.localVersion} + 1`,
+          lastSyncAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(stationLocalAuthVersions.stationId, stationId))
+        .returning({ localVersion: stationLocalAuthVersions.localVersion });
+      const newVersion = reserved?.localVersion ?? 1;
 
       // Build OCPP SendLocalList payload (2.1 format; command-translation handles 1.6)
       const payload: Record<string, unknown> = {
@@ -467,15 +485,8 @@ export function localAuthListRoutes(app: FastifyInstance): void {
         return;
       }
 
-      // Update version and last sync time
-      await db
-        .update(stationLocalAuthVersions)
-        .set({
-          localVersion: newVersion,
-          lastSyncAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(stationLocalAuthVersions.stationId, stationId));
+      // Version + lastSyncAt already stamped above as part of the atomic
+      // reservation; nothing to do here on success.
 
       // Mark all entries as pushed
       await db

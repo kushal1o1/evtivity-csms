@@ -70,6 +70,36 @@ export function clearOcppEventSettingsCache(): void {
   settingsCacheAt = 0;
 }
 
+// Subscribe to cross-process cache-invalidation events so an operator
+// updating OCPP event settings via the API immediately clears this pod's
+// in-memory cache instead of waiting up to 60s for natural TTL expiry. The
+// API publishes on `cache_invalidate` after PUT/DELETE on
+// /v1/ocpp-event-settings. Returns the subscription so the caller can
+// close it on shutdown.
+export const OCPP_CACHE_INVALIDATE_CHANNEL = 'cache_invalidate';
+
+interface CacheInvalidateMessage {
+  cache?: string;
+}
+
+export async function subscribeOcppEventSettingsInvalidation(
+  pubsub: PubSubClient,
+): Promise<{ unsubscribe: () => Promise<void> }> {
+  const log = createLogger('ocpp-cache-invalidate');
+  const sub = await pubsub.subscribe(OCPP_CACHE_INVALIDATE_CHANNEL, (payload: string) => {
+    try {
+      const msg = JSON.parse(payload) as CacheInvalidateMessage;
+      if (msg.cache === 'ocppEventSettings') {
+        clearOcppEventSettingsCache();
+        log.info('OCPP event settings cache invalidated');
+      }
+    } catch (err: unknown) {
+      log.warn({ err }, 'Bad cache_invalidate payload');
+    }
+  });
+  return sub;
+}
+
 async function loadSettingsCache(sql: postgres.Sql): Promise<Map<string, OcppEventSetting>> {
   const now = Date.now();
   if (settingsCache != null && now - settingsCacheAt < SETTINGS_CACHE_TTL_MS) {

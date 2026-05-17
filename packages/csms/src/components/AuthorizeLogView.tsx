@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select } from '@/components/ui/select';
 import { SearchInput } from '@/components/search-input';
@@ -110,31 +110,38 @@ export function AuthorizeLogView({
 
   return (
     <Card>
-      <CardContent className="space-y-4 pt-6">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {!hideIdTokenFilter && (
-            <SearchInput
-              value={idToken}
-              onDebouncedChange={setIdToken}
-              placeholder={t('tokens.filterIdToken')}
-            />
-          )}
-          <Select
-            className="h-9 w-auto"
-            aria-label={t('tokens.filterOutcome')}
-            value={outcome}
-            onChange={(e) => {
-              setOutcome(e.target.value);
-            }}
-          >
-            {OUTCOMES.map((o) => (
-              <option key={o} value={o}>
-                {o === '' ? t('tokens.filterOutcome') : o}
-              </option>
-            ))}
-          </Select>
+      <CardHeader>
+        {/* Title on the left, filters on the right, on the same row. The
+            shared layout keeps this component consistent across the four
+            pages that embed it (Driver / Token / Station / Authorize Log). */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>{t('tokens.authorizeLog')}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {!hideIdTokenFilter && (
+              <SearchInput
+                value={idToken}
+                onDebouncedChange={setIdToken}
+                placeholder={t('tokens.filterIdToken')}
+              />
+            )}
+            <Select
+              className="h-9 w-auto"
+              aria-label={t('tokens.filterOutcome')}
+              value={outcome}
+              onChange={(e) => {
+                setOutcome(e.target.value);
+              }}
+            >
+              {OUTCOMES.map((o) => (
+                <option key={o} value={o}>
+                  {o === '' ? t('tokens.filterOutcome') : o}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
-
+      </CardHeader>
+      <CardContent className="space-y-4">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>

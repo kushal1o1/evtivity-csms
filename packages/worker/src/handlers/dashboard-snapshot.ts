@@ -13,12 +13,24 @@ export async function dashboardSnapshotHandler(log: Logger): Promise<void> {
     return;
   }
 
-  for (const site of allSites) {
-    try {
-      await snapshotSite(site.id, site.timezone, log);
-    } catch (err) {
-      log.error({ siteId: site.id, error: err }, 'Failed to snapshot site');
-    }
+  // Batch the per-site work so the snapshot run finishes in a fraction of
+  // the previous wall time while staying under the shared DB pool limit.
+  // Each site's snapshot already does its 4 independent reads in parallel
+  // (station counts, uptime CTE, sessions, revenue, ping). 5 sites in
+  // flight at a time means up to ~25 in-flight queries -- comfortably under
+  // the postgres-js default of 10 + room left for other workers.
+  const CONCURRENCY = 5;
+  for (let i = 0; i < allSites.length; i += CONCURRENCY) {
+    const batch = allSites.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((site) => snapshotSite(site.id, site.timezone, log)),
+    );
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected') {
+        const failed = batch[idx];
+        log.error({ siteId: failed?.id, error: result.reason }, 'Failed to snapshot site');
+      }
+    });
   }
 
   log.info({ siteCount: allSites.length }, 'Dashboard snapshot complete');
@@ -42,20 +54,7 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
     day_end: string;
   };
 
-  // 1. Station counts
-  const stationRows = await db.execute(sql`
-    SELECT
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE is_online = true) AS online
-    FROM charging_stations
-    WHERE site_id = ${siteId}
-  `);
-  const stationData = stationRows[0] as { total: string; online: string };
-  const totalStations = Number(stationData.total);
-  const onlineStations = Number(stationData.online);
-  const onlinePercent = totalStations > 0 ? (onlineStations / totalStations) * 100 : 0;
-
-  // 2. Uptime (midnight to midnight in site timezone)
+  // Day boundaries used by every block below; compute once.
   const dayStartIso = new Date(dayStartUtc).toISOString();
   const dayEndIso = new Date(dayEndUtc).toISOString();
   const periodMinutes = Math.floor(
@@ -63,7 +62,23 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
   );
   const periodMinutesStr = String(periodMinutes);
 
-  const uptimeRows = await db.execute(sql`
+  // The four read blocks (station counts, uptime, sessions+energy, revenue,
+  // ping) are all independent of each other. The only cross-block dependency
+  // is the upsert at the end, which combines all results. Fire them in
+  // parallel to collapse 4-5 sequential RTTs into one. At 100 sites this
+  // saves ~400 sequential roundtrips per cron run.
+  const [stationRows, uptimeRows, sessionRows, revenueRows, pingRows] = await Promise.all([
+    // 1. Station counts
+    db.execute(sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_online = true) AS online
+      FROM charging_stations
+      WHERE site_id = ${siteId}
+    `),
+
+    // 2. Uptime CTE (midnight to midnight in site timezone)
+    db.execute(sql`
     WITH all_ports AS (
       SELECT DISTINCT e.station_id, e.evse_id
       FROM evses e
@@ -127,7 +142,54 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
       (SELECT COUNT(*) FROM all_ports) AS total_ports,
       COUNT(*) FILTER (WHERE station_uptime_pct < 97) AS stations_below_threshold
     FROM station_uptime
-  `);
+  `),
+
+    // 3. Sessions, energy
+    db.execute(sql`
+      SELECT
+        COUNT(*) AS total_sessions,
+        COUNT(*) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz) AS day_sessions,
+        COALESCE(SUM(cs2.energy_delivered_wh), 0) AS total_energy_wh,
+        COALESCE(SUM(cs2.energy_delivered_wh) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz), 0) AS day_energy_wh,
+        COUNT(*) FILTER (WHERE cs2.status = 'active') AS active_sessions
+      FROM charging_sessions cs2
+      INNER JOIN charging_stations cs ON cs.id = cs2.station_id
+      WHERE cs.site_id = ${siteId}
+    `),
+
+    // 4. Revenue
+    db.execute(sql`
+      SELECT
+        COALESCE(SUM(pr.captured_amount_cents), 0) AS total_revenue_cents,
+        COALESCE(SUM(pr.captured_amount_cents) FILTER (WHERE pr.created_at >= ${dayStartIso}::timestamptz AND pr.created_at < ${dayEndIso}::timestamptz), 0) AS day_revenue_cents,
+        COUNT(*) AS total_transactions,
+        COUNT(*) FILTER (WHERE pr.created_at >= ${dayStartIso}::timestamptz AND pr.created_at < ${dayEndIso}::timestamptz) AS day_transactions
+      FROM payment_records pr
+      INNER JOIN charging_sessions cs2 ON cs2.id = pr.session_id
+      INNER JOIN charging_stations cs ON cs.id = cs2.station_id
+      WHERE cs.site_id = ${siteId}
+        AND pr.status IN ('captured', 'partially_refunded')
+    `),
+
+    // 5. Ping health
+    db.execute(sql`
+      SELECT
+        COALESCE(AVG(oh.avg_ping_latency_ms), 0) AS avg_ping_latency_ms,
+        CASE WHEN COALESCE(SUM(oh.total_pings_sent), 0) > 0
+          THEN ROUND(SUM(oh.total_pongs_received)::numeric / SUM(oh.total_pings_sent) * 100, 1)
+          ELSE 100
+        END AS ping_success_rate
+      FROM ocpp_health oh
+      INNER JOIN charging_stations cs ON cs.ocpp_identity = oh.station_id
+      WHERE cs.site_id = ${siteId}
+    `),
+  ]);
+
+  const stationData = stationRows[0] as { total: string; online: string };
+  const totalStations = Number(stationData.total);
+  const onlineStations = Number(stationData.online);
+  const onlinePercent = totalStations > 0 ? (onlineStations / totalStations) * 100 : 0;
+
   const uptimeData = uptimeRows[0] as
     | {
         uptime_percent: string;
@@ -139,18 +201,6 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
   const totalPorts = Number(uptimeData?.total_ports ?? 0);
   const stationsBelowThreshold = Number(uptimeData?.stations_below_threshold ?? 0);
 
-  // 3. Sessions, energy, revenue
-  const sessionRows = await db.execute(sql`
-    SELECT
-      COUNT(*) AS total_sessions,
-      COUNT(*) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz) AS day_sessions,
-      COALESCE(SUM(cs2.energy_delivered_wh), 0) AS total_energy_wh,
-      COALESCE(SUM(cs2.energy_delivered_wh) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz), 0) AS day_energy_wh,
-      COUNT(*) FILTER (WHERE cs2.status = 'active') AS active_sessions
-    FROM charging_sessions cs2
-    INNER JOIN charging_stations cs ON cs.id = cs2.station_id
-    WHERE cs.site_id = ${siteId}
-  `);
   const sessData = sessionRows[0] as {
     total_sessions: string;
     day_sessions: string;
@@ -158,42 +208,16 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
     day_energy_wh: string;
     active_sessions: string;
   };
-
-  const revenueRows = await db.execute(sql`
-    SELECT
-      COALESCE(SUM(pr.captured_amount_cents), 0) AS total_revenue_cents,
-      COALESCE(SUM(pr.captured_amount_cents) FILTER (WHERE pr.created_at >= ${dayStartIso}::timestamptz AND pr.created_at < ${dayEndIso}::timestamptz), 0) AS day_revenue_cents,
-      COUNT(*) AS total_transactions,
-      COUNT(*) FILTER (WHERE pr.created_at >= ${dayStartIso}::timestamptz AND pr.created_at < ${dayEndIso}::timestamptz) AS day_transactions
-    FROM payment_records pr
-    INNER JOIN charging_sessions cs2 ON cs2.id = pr.session_id
-    INNER JOIN charging_stations cs ON cs.id = cs2.station_id
-    WHERE cs.site_id = ${siteId}
-      AND pr.status IN ('captured', 'partially_refunded')
-  `);
   const revData = revenueRows[0] as {
     total_revenue_cents: string;
     day_revenue_cents: string;
     total_transactions: string;
     day_transactions: string;
   };
-
   const totalSessionsNum = Number(sessData.total_sessions);
   const totalRevCents = Number(revData.total_revenue_cents);
   const avgRevPerSession = totalSessionsNum > 0 ? Math.round(totalRevCents / totalSessionsNum) : 0;
 
-  // 4. Ping health
-  const pingRows = await db.execute(sql`
-    SELECT
-      COALESCE(AVG(oh.avg_ping_latency_ms), 0) AS avg_ping_latency_ms,
-      CASE WHEN COALESCE(SUM(oh.total_pings_sent), 0) > 0
-        THEN ROUND(SUM(oh.total_pongs_received)::numeric / SUM(oh.total_pings_sent) * 100, 1)
-        ELSE 100
-      END AS ping_success_rate
-    FROM ocpp_health oh
-    INNER JOIN charging_stations cs ON cs.ocpp_identity = oh.station_id
-    WHERE cs.site_id = ${siteId}
-  `);
   const pingData = pingRows[0] as {
     avg_ping_latency_ms: string;
     ping_success_rate: string;
@@ -201,7 +225,7 @@ async function snapshotSite(siteId: string, timezone: string, log: Logger): Prom
   const avgPingLatencyMs = Math.round(Number(pingData.avg_ping_latency_ms) * 100) / 100;
   const pingSuccessRate = Number(pingData.ping_success_rate);
 
-  // 5. Upsert
+  // 6. Upsert
   await db.execute(sql`
     INSERT INTO dashboard_snapshots (
       site_id, snapshot_date, total_stations, online_stations, online_percent,

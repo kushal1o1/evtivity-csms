@@ -434,20 +434,40 @@ export function dashboardRoutes(app: FastifyInstance): void {
         stationConditions.push(inArray(chargingStations.siteId, siteIds));
       }
 
-      const stationRows = await db
+      // Station counts and session stats are independent; fire them in
+      // parallel so the dashboard stats endpoint costs max(query) instead of
+      // sum(query). With both queries hitting separate tables, no contention.
+      const sessionQueryBuilder = db
         .select({
-          status: chargingStations.availability,
-          onboardingStatus: chargingStations.onboardingStatus,
-          isOnline: chargingStations.isOnline,
-          count: count(),
+          activeSessions: sql<number>`count(*) filter (where ${chargingSessions.status} = 'active')`,
+          totalSessions: count(),
+          totalEnergyWh: sql<number>`coalesce(sum(${chargingSessions.energyDeliveredWh}::numeric), 0)`,
         })
-        .from(chargingStations)
-        .where(stationConditions.length > 0 ? and(...stationConditions) : undefined)
-        .groupBy(
-          chargingStations.availability,
-          chargingStations.onboardingStatus,
-          chargingStations.isOnline,
-        );
+        .from(chargingSessions);
+
+      if (siteIds != null) {
+        sessionQueryBuilder
+          .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
+          .where(inArray(chargingStations.siteId, siteIds));
+      }
+
+      const [stationRows, sessionStatsRows] = await Promise.all([
+        db
+          .select({
+            status: chargingStations.availability,
+            onboardingStatus: chargingStations.onboardingStatus,
+            isOnline: chargingStations.isOnline,
+            count: count(),
+          })
+          .from(chargingStations)
+          .where(stationConditions.length > 0 ? and(...stationConditions) : undefined)
+          .groupBy(
+            chargingStations.availability,
+            chargingStations.onboardingStatus,
+            chargingStations.isOnline,
+          ),
+        sessionQueryBuilder,
+      ]);
 
       let totalStations = 0;
       let onlineStations = 0;
@@ -462,21 +482,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
           (onboardingStatusCounts[row.onboardingStatus] ?? 0) + row.count;
       }
 
-      const sessionQuery = db
-        .select({
-          activeSessions: sql<number>`count(*) filter (where ${chargingSessions.status} = 'active')`,
-          totalSessions: count(),
-          totalEnergyWh: sql<number>`coalesce(sum(${chargingSessions.energyDeliveredWh}::numeric), 0)`,
-        })
-        .from(chargingSessions);
-
-      if (siteIds != null) {
-        sessionQuery
-          .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
-          .where(inArray(chargingStations.siteId, siteIds));
-      }
-
-      const [sessionStats] = await sessionQuery;
+      const sessionStats = sessionStatsRows[0];
 
       return {
         totalStations,

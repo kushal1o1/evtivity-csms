@@ -175,12 +175,19 @@ export class OcpiCommandCallbackService {
       };
 
       const token = await getOutboundToken(partnerId);
-      if (token != null) {
-        const tokenBase64 = Buffer.from(token).toString('base64');
-        headers['Authorization'] = `Token ${tokenBase64}`;
-      } else {
-        logger.warn({ partnerId }, 'No outbound token for partner callback');
+      if (token == null) {
+        // Sending the callback unauthenticated guarantees a 401 at the
+        // partner, dropping the command result on the floor with no signal.
+        // Refuse to dispatch and surface a clear error so the entry is
+        // timed out / retried upstream rather than silently lost.
+        logger.error(
+          { partnerId, responseUrl },
+          'Cannot dispatch OCPI command callback: no outbound token for partner',
+        );
+        return;
       }
+      const tokenBase64 = Buffer.from(token).toString('base64');
+      headers['Authorization'] = `Token ${tokenBase64}`;
 
       // Cap the partner callback at 30s. Without a timeout the catch never
       // fires, the entry stays held in this.pending forever, and the worker

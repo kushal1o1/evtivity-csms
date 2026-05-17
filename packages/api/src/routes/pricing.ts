@@ -498,6 +498,29 @@ export function pricingRoutes(app: FastifyInstance): void {
     },
   );
 
+  // Flat tariff list across all pricing groups. Used by the OCPI tariff
+  // mapping UI (which needs a single dropdown of every internal tariff)
+  // and any other consumer that does not care which pricing group a tariff
+  // belongs to. Returns the page envelope ({ data, total }) so the frontend
+  // can switch to a paginated helper later without an API change.
+  app.get(
+    '/pricing/tariffs',
+    {
+      onRequest: [authorize('pricing:read')],
+      schema: {
+        tags: ['Pricing'],
+        summary: 'List all tariffs across every pricing group',
+        operationId: 'listAllTariffs',
+        security: [{ bearerAuth: [] }],
+        response: { 200: paginatedResponse(tariffItem) },
+      },
+    },
+    async () => {
+      const rows = await db.select().from(tariffs);
+      return { data: rows, total: rows.length };
+    },
+  );
+
   // Tariff CRUD
   app.get(
     '/pricing-groups/:id/tariffs',

@@ -783,7 +783,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-start gap-2">
                   <SaveButton
                     isPending={pncSaveMutation.isPending}
                     type="button"

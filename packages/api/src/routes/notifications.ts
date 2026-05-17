@@ -18,6 +18,19 @@ import {
 } from '@evtivity/database';
 import Handlebars from 'handlebars';
 import { decryptString, wrapEmailHtml } from '@evtivity/lib';
+import { getPubSub } from '../lib/pubsub.js';
+
+const OCPP_CACHE_INVALIDATE_CHANNEL = 'cache_invalidate';
+async function invalidateOcppEventSettingsCache(): Promise<void> {
+  try {
+    await getPubSub().publish(
+      OCPP_CACHE_INVALIDATE_CHANNEL,
+      JSON.stringify({ cache: 'ocppEventSettings' }),
+    );
+  } catch {
+    // Non-critical: stale OCPP server cache will refresh within 60s anyway.
+  }
+}
 
 /**
  * Compile a user-provided Handlebars template safely.
@@ -589,6 +602,7 @@ export function notificationRoutes(app: FastifyInstance): void {
           set: updates,
         })
         .returning();
+      await invalidateOcppEventSettingsCache();
       return saved;
     },
   );
@@ -629,6 +643,7 @@ export function notificationRoutes(app: FastifyInstance): void {
         await reply.status(404).send({ error: 'Setting not found', code: 'SETTING_NOT_FOUND' });
         return;
       }
+      await invalidateOcppEventSettingsCache();
       return { success: true };
     },
   );

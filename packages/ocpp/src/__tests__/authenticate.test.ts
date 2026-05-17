@@ -49,10 +49,15 @@ function createMockTlsRequest(
     authorizationError?: string;
     cn?: string;
     authHeader?: string;
+    serialNumber?: string;
   },
 ): IncomingMessage {
   const peerCert = options.hasCert
-    ? { subject: { CN: options.cn ?? 'Test Client' }, issuer: { CN: 'Test CA' } }
+    ? {
+        subject: { CN: options.cn ?? 'Test Client' },
+        issuer: { CN: 'Test CA' },
+        serialNumber: options.serialNumber ?? 'ABCDEF0123456789',
+      }
     : {};
 
   const socket = {

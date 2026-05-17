@@ -16,7 +16,11 @@ const schema = z.object({
   AUTH_RATE_LIMIT_WINDOW: z.string().default('1 minute'),
   METRICS_PORT: z.coerce.number().int().positive().default(9091),
   REDIS_URL: z.string().default('redis://localhost:6379'),
-  SETTINGS_ENCRYPTION_KEY: z.string().default(''),
+  // Required: encryption key for settings storing secrets (Stripe, S3,
+  // SSO, reCAPTCHA, PnC). Defaulting to empty meant the API started fine
+  // and only failed at runtime when a route tried to decrypt; per the
+  // fail-loud-at-critical-edges rule, refuse to start when missing.
+  SETTINGS_ENCRYPTION_KEY: z.string().min(1),
   CSMS_URL: z.string().default('http://localhost:7100'),
   PORTAL_URL: z.string().default('http://localhost:7101'),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),

@@ -176,9 +176,19 @@ export function registerProjections(
 
   const stationIdCache = createTtlCache<string>();
   const siteIdCache = createTtlCache<string | null>();
-  const txBuffer = new TransactionBuffer();
+  const txBuffer = new TransactionBuffer({ logger });
 
   const SESSION_UPDATE_THROTTLE_MS = 15 * 60 * 1000;
+
+  // CostUpdated dispatch throttle per session. Every MeterValues whose cost
+  // changes (even by 1 cent) would otherwise publish a CostUpdated command,
+  // producing ~6/min per active session. At 2000 sessions that is 12k
+  // commands/min, drowning the pub/sub layer and the station&#39;s OCPP queue.
+  // Cap to one dispatch per session per 30 seconds; the prior "no-change"
+  // guard still skips when cost is identical, so we only throttle the
+  // chatter, not real updates.
+  const COST_UPDATED_THROTTLE_MS = 30_000;
+  const lastCostUpdatedAt = new Map<string, number>();
 
   // The EventBus fires handlers with `void Promise.allSettled(...)`, so in-flight
   // promises accumulate without backpressure. With 2000+ stations sending MeterValues
@@ -763,6 +773,12 @@ export function registerProjections(
         WHERE station_id = ${stationOcppId} AND status = 'pending' AND expires_at > now()
         ORDER BY created_at ASC
       `;
+      // Publish all queued commands first, then batch-update their status in
+      // one query. The previous loop issued (publish + update) per command
+      // sequentially: at 50 commands queued for a station, that was 100
+      // serial awaits on reconnect; the batched update collapses N writes
+      // into one.
+      const sentIds: number[] = [];
       for (const cmd of pendingCommands) {
         const queuedPayload = JSON.stringify({
           commandId: cmd.command_id as string,
@@ -772,9 +788,13 @@ export function registerProjections(
           version: (cmd.version as string | undefined) ?? undefined,
         });
         await pubsub.publish('ocpp_commands', queuedPayload);
+        sentIds.push(cmd.id as number);
+      }
+      if (sentIds.length > 0) {
         await sql`
-          UPDATE offline_command_queue SET status = 'sent', sent_at = now()
-          WHERE id = ${cmd.id as number}
+          UPDATE offline_command_queue
+          SET status = 'sent', sent_at = now()
+          WHERE id IN ${sql(sentIds)}
         `;
       }
     } catch {
@@ -817,18 +837,20 @@ export function registerProjections(
       return;
     }
 
-    const connectorRows = await sql`
-      SELECT e.evse_id, c.connector_id, c.status
+    // Batch the port_status_log inserts for all connectors transitioning to
+    // unavailable. A multi-connector station previously triggered N serial
+    // inserts per disconnect; one INSERT ... SELECT covers them all. The
+    // WHERE filter also skips connectors that were already unavailable so
+    // we do not emit no-op transitions (mirrors the dedup logic in the
+    // StatusNotification path).
+    await sql`
+      INSERT INTO port_status_log (station_id, evse_id, connector_id, previous_status, new_status, timestamp)
+      SELECT ${stationUuid}, e.evse_id, c.connector_id, c.status, 'unavailable', now()
       FROM connectors c
       INNER JOIN evses e ON c.evse_id = e.id
       WHERE e.station_id = ${stationUuid}
+        AND c.status != 'unavailable'
     `;
-    for (const row of connectorRows) {
-      await sql`
-        INSERT INTO port_status_log (station_id, evse_id, connector_id, previous_status, new_status, timestamp)
-        VALUES (${stationUuid}, ${row.evse_id as number}, ${row.connector_id as number}, ${row.status as string}, 'unavailable', now())
-      `;
-    }
 
     const siteId = await resolveSiteId(stationUuid);
     await notifyChange('station.status', stationUuid, siteId);
@@ -878,12 +900,19 @@ export function registerProjections(
     const serialNumber = getString(payload, 'serialNumber');
     const iccid = getString(payload, 'iccid');
     const imsi = getString(payload, 'imsi');
+    const vendorName = getString(payload, 'vendorName');
 
     // Check if station is pending onboarding
     const [current] = await sql`
       SELECT onboarding_status FROM charging_stations WHERE id = ${stationUuid}
     `;
 
+    // Persist the booted vendor string in metadata.bootVendor for diagnostic
+    // visibility. The authoritative vendor is `vendor_id` (operator-managed
+    // FK to the vendors table); a free-text column would create a divergent
+    // second source of truth. Stashing in metadata preserves the
+    // self-reported value for "did this station ship under a different
+    // vendor than expected" investigations without schema churn.
     if (current?.onboarding_status === 'accepted') {
       await sql`
         UPDATE charging_stations
@@ -893,6 +922,10 @@ export function registerProjections(
           serial_number = ${serialNumber},
           iccid = COALESCE(${iccid}, iccid),
           imsi = COALESCE(${imsi}, imsi),
+          metadata = CASE
+            WHEN ${vendorName}::text IS NULL THEN metadata
+            ELSE COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('bootVendor', ${vendorName}::text)
+          END,
           availability = 'available',
           is_online = true,
           updated_at = now()
@@ -908,6 +941,10 @@ export function registerProjections(
           serial_number = ${serialNumber},
           iccid = COALESCE(${iccid}, iccid),
           imsi = COALESCE(${imsi}, imsi),
+          metadata = CASE
+            WHEN ${vendorName}::text IS NULL THEN metadata
+            ELSE COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('bootVendor', ${vendorName}::text)
+          END,
           is_online = true,
           updated_at = now()
         WHERE id = ${stationUuid}
@@ -1068,6 +1105,64 @@ export function registerProjections(
         }
       }
 
+      // Re-apply free-vend OCPP variables on every boot when the site has
+      // free-vend enabled. Free-vend depends on station-side config
+      // (AuthCtrlr.Enabled=false, TxCtrlr.TxStartPoint=EVConnected for 2.1;
+      // analogous keys for 1.6) that some firmware does not persist across
+      // reboots. Without this re-push, a station that reboots after free-vend
+      // was enabled forces drivers to tap-to-start until the operator
+      // manually re-pushes the config template.
+      const freeVendRows = await sql`
+        SELECT s.free_vend_enabled FROM sites s
+        JOIN charging_stations cs ON cs.site_id = s.id
+        WHERE cs.id = ${stationUuid}
+      `;
+      const siteFreeVendEnabled = freeVendRows[0]?.free_vend_enabled === true;
+      if (siteFreeVendEnabled) {
+        if (protocol === 'ocpp2.1') {
+          await publishCmd(
+            'SetVariables',
+            {
+              setVariableData: [
+                {
+                  component: { name: 'AuthCtrlr' },
+                  variable: { name: 'Enabled' },
+                  attributeValue: 'false',
+                },
+                {
+                  component: { name: 'TxCtrlr' },
+                  variable: { name: 'TxStartPoint' },
+                  attributeValue: 'EVConnected',
+                },
+              ],
+            },
+            'ocpp2.1',
+          );
+        } else if (protocol === 'ocpp1.6') {
+          // OCPP 1.6 has no standard "disable auth" key. The closest
+          // standard keys that ease offline/autostart behavior:
+          await publishCmd(
+            'ChangeConfiguration',
+            { key: 'AllowOfflineTxForUnknownId', value: 'true' },
+            'ocpp1.6',
+          );
+          await publishCmd(
+            'ChangeConfiguration',
+            { key: 'LocalPreAuthorize', value: 'true' },
+            'ocpp1.6',
+          );
+          await publishCmd(
+            'ChangeConfiguration',
+            { key: 'LocalAuthorizeOffline', value: 'true' },
+            'ocpp1.6',
+          );
+        }
+        logger.info(
+          { stationId: stationOcppId, protocol },
+          'Re-pushed free-vend OCPP variables on boot',
+        );
+      }
+
       logger.info(
         {
           stationId: stationOcppId,
@@ -1180,10 +1275,16 @@ export function registerProjections(
       const previousStatus = prevRows[0]?.status as string | undefined;
       previousDbStatus = previousStatus;
 
-      await sql`
-        INSERT INTO port_status_log (station_id, evse_id, connector_id, previous_status, new_status, timestamp)
-        VALUES (${stationUuid}, ${evseIdNum}, ${connectorIdNum}, ${previousStatus ?? null}, ${dbStatus}, now())
-      `;
+      // Skip the audit row when the status did not actually change. Stations
+      // retransmit StatusNotification on flaky links and some firmware sends
+      // periodic redundant ones; logging no-op transitions clutters the
+      // operator timeline and inflates transition-count metrics.
+      if (previousStatus !== dbStatus) {
+        await sql`
+          INSERT INTO port_status_log (station_id, evse_id, connector_id, previous_status, new_status, timestamp)
+          VALUES (${stationUuid}, ${evseIdNum}, ${connectorIdNum}, ${previousStatus ?? null}, ${dbStatus}, now())
+        `;
+      }
 
       // Check if connector exists; create if missing
       if (prevRows.length === 0) {
@@ -1366,15 +1467,39 @@ export function registerProjections(
         // reading as meter_start. Inserting 0 here would defeat that guard and cause
         // energy_delivered_wh to be computed against the station's lifetime register.
         const meterStartVal = payload.meterStart != null ? Number(payload.meterStart) : null;
-        await sql`
-          INSERT INTO charging_sessions (id, station_id, evse_id, transaction_id, status, started_at, meter_start)
-          VALUES (${newSessionId}, ${stationUuid}, ${txEvseUuid}, ${transactionId}, 'active', ${timestamp}, ${meterStartVal})
-          ON CONFLICT (transaction_id) DO NOTHING
+        // Resolve the roaming-token state BEFORE the INSERT so is_roaming is
+        // set atomically with row creation. Any consumer that reads the
+        // session row between INSERT and a downstream UPDATE will see the
+        // correct value. Driver/free-vend resolution still happens after
+        // the insert because it has more side effects (token linkage,
+        // payment gate).
+        const earlyIdToken = payload.idToken as string | null;
+        let initialIsRoaming = false;
+        if (earlyIdToken != null) {
+          try {
+            const roamCheck = await sql`
+              SELECT 1 FROM ocpi_external_tokens
+              WHERE uid = ${earlyIdToken} AND is_valid = true
+              LIMIT 1
+            `;
+            initialIsRoaming = roamCheck.length > 0;
+          } catch {
+            // ocpi tables may not exist in test/dev environments; safe default
+            initialIsRoaming = false;
+          }
+        }
+        // Atomic insert + capture: ON CONFLICT DO UPDATE with a no-op (touches
+        // updated_at) lets RETURNING fire on both the insert and the conflict
+        // path, eliminating the race window where a separate SELECT could
+        // miss the row if a concurrent process (stale-session cleanup,
+        // operator delete) removed it between INSERT and SELECT.
+        const inserted = await sql`
+          INSERT INTO charging_sessions (id, station_id, evse_id, transaction_id, status, started_at, meter_start, is_roaming)
+          VALUES (${newSessionId}, ${stationUuid}, ${txEvseUuid}, ${transactionId}, 'active', ${timestamp}, ${meterStartVal}, ${initialIsRoaming})
+          ON CONFLICT (transaction_id) DO UPDATE SET updated_at = now()
+          RETURNING id
         `;
-
-        sessionId = getSessionId(
-          await sql`SELECT id FROM charging_sessions WHERE transaction_id = ${transactionId}`,
-        );
+        sessionId = getSessionId(inserted);
       }
       if (sessionId != null) {
         // Close stale active sessions on the same EVSE (if any).
@@ -1407,8 +1532,17 @@ export function registerProjections(
           `;
           const startEvseUuid = startEvseRows[0]?.evse_id as string | null;
           if (startEvseUuid != null) {
+            // Preserve operator-set terminal/disabled states. A faulted or
+            // unavailable connector should not be reset to ev_connected just
+            // because a session started on it; the operator wants the bad
+            // state visible until they explicitly clear it.
             await sql`
-              UPDATE connectors SET status = 'ev_connected', updated_at = now()
+              UPDATE connectors
+              SET status = CASE
+                    WHEN status IN ('faulted', 'unavailable') THEN status
+                    ELSE 'ev_connected'
+                  END,
+                  updated_at = now()
               WHERE evse_id = ${startEvseUuid}
             `;
             // Notify portal SSE: chargingState enrichment changes
@@ -1455,7 +1589,15 @@ export function registerProjections(
         const isFreeVend = freeVendRows[0]?.free_vend_enabled === true;
 
         let driverUuid: string | null = null;
-        let isRoamingSession = false;
+        // Seed from the DB so a remote-start session (created by the API with
+        // is_roaming already set) and a station-initiated session (where the
+        // INSERT path resolved the OCPI token eagerly) both produce the
+        // correct gate input. Without this, the in-memory flag could diverge
+        // from the row a downstream consumer reads.
+        const initialRoamRows = await sql`
+          SELECT is_roaming FROM charging_sessions WHERE id = ${sessionId}
+        `;
+        const isRoamingSession = initialRoamRows[0]?.is_roaming === true;
         let guestStatus: string | null = null;
         let guestEmail: string | null = null;
 
@@ -1500,31 +1642,16 @@ export function registerProjections(
           }
 
           if (driverUuid == null) {
-            // Token resolution chain: driver_tokens -> ocpi_external_tokens -> guest_sessions
+            // Token resolution chain: driver_tokens -> ocpi_external_tokens -> guest_sessions.
+            // The OCPI branch is already resolved eagerly during the session
+            // INSERT path and reflected on isRoamingSession; no need to
+            // re-query ocpi_external_tokens here.
             if (tokenLookup?.driverId != null) {
               driverUuid = tokenLookup.driverId;
               await sql`
                 UPDATE charging_sessions SET driver_id = ${driverUuid}, updated_at = now()
                 WHERE id = ${sessionId}
               `;
-            } else if (idTokenValue != null) {
-              // Token not in driver_tokens. Check if it is a roaming token.
-              try {
-                const externalRows = await sql`
-                  SELECT 1 FROM ocpi_external_tokens
-                  WHERE uid = ${idTokenValue} AND is_valid = true
-                  LIMIT 1
-                `;
-                if (externalRows.length > 0) {
-                  isRoamingSession = true;
-                  await sql`
-                    UPDATE charging_sessions SET is_roaming = true, updated_at = now()
-                    WHERE id = ${sessionId}
-                  `;
-                }
-              } catch {
-                // OCPI tables may not exist in test/dev environments
-              }
             }
 
             // If still unresolved and idToken present, check guest sessions
@@ -1798,7 +1925,12 @@ export function registerProjections(
             const evseUuid = sessionEvse[0]?.evse_id as string | null;
             if (evseUuid != null) {
               await sql`
-                UPDATE connectors SET status = ${connectorStatus}, updated_at = now()
+                UPDATE connectors
+                SET status = CASE
+                      WHEN status IN ('faulted', 'unavailable') THEN status
+                      ELSE ${connectorStatus}
+                    END,
+                    updated_at = now()
                 WHERE evse_id = ${evseUuid}
               `;
               // Notify portal SSE: chargingState enrichment changes
@@ -1919,7 +2051,12 @@ export function registerProjections(
             const endedEvseUuid = sessionEvse[0]?.evse_id as string | null;
             if (endedEvseUuid != null) {
               await sql`
-                UPDATE connectors SET status = ${endedConnectorStatus}, updated_at = now()
+                UPDATE connectors
+                SET status = CASE
+                      WHEN status IN ('faulted', 'unavailable') THEN status
+                      ELSE ${endedConnectorStatus}
+                    END,
+                    updated_at = now()
                 WHERE evse_id = ${endedEvseUuid}
               `;
               const endedSiteId = await resolveSiteId(stationUuid);
@@ -1933,7 +2070,16 @@ export function registerProjections(
         const isTimeoutEnd =
           (triggerReason === 'EVConnectTimeout' || stoppedReason === 'Timeout') && energyWh === 0;
 
-        if (isTimeoutEnd && endStatus !== 'faulted') {
+        // Read the FRESH status from the row we just queried (post-CASE),
+        // not the locally-computed `endStatus` which can be stale. If the
+        // session is already faulted/failed (preserved by the CASE guard
+        // above), do not overwrite it with a different terminal state.
+        const currentSessionStatus = sessionRow.status as string | undefined;
+        if (
+          isTimeoutEnd &&
+          currentSessionStatus !== 'faulted' &&
+          currentSessionStatus !== 'failed'
+        ) {
           await sql`
             UPDATE charging_sessions SET status = 'failed', updated_at = now()
             WHERE id = ${sessionId}
@@ -2247,6 +2393,11 @@ export function registerProjections(
         }
 
         await publishStationMessageTransaction(sessionRow.id as string, 'ended', null);
+
+        // Free the per-session CostUpdated throttle entry now that the
+        // session is over. Without this the Map grows unbounded over the
+        // process lifetime.
+        lastCostUpdatedAt.delete(sessionRow.id as string);
       } else {
         txBuffer.add(transactionId, event);
       }
@@ -2324,6 +2475,7 @@ export function registerProjections(
             ${signedMeterValue != null ? sql.json(asJson(signedMeterValue)) : null},
             ${source}
           WHERE EXISTS (SELECT 1 FROM charging_stations WHERE id = ${stationUuid})
+          ON CONFLICT (session_id, evse_id, timestamp, measurand, phase, location) DO NOTHING
         `;
         if (mvInserted.count === 0) {
           invalidateStationCache(stationId);
@@ -2348,6 +2500,7 @@ export function registerProjections(
               ${signedMeterValue != null ? sql.json(asJson(signedMeterValue)) : null},
               ${source}
             )
+            ON CONFLICT (session_id, evse_id, timestamp, measurand, phase, location) DO NOTHING
           `;
         }
 
@@ -2598,31 +2751,38 @@ export function registerProjections(
         WHERE id = ${sessionId}
       `;
 
-      // Send CostUpdated to station when cost changes (OCPP 2.1 only)
+      // Send CostUpdated to station when cost changes (OCPP 2.1 only).
+      // Throttled per session via lastCostUpdatedAt to keep dispatch volume
+      // bounded under high MeterValues cadence.
       if (previousCostCents !== totalCents) {
-        const txAndProtocol = await sql`
-          SELECT cs.transaction_id, st.ocpp_protocol
-          FROM charging_sessions cs
-          JOIN charging_stations st ON st.id = cs.station_id
-          WHERE cs.id = ${sessionId}
-        `;
-        const txId = txAndProtocol[0]?.transaction_id as string | null;
-        const protocol = txAndProtocol[0]?.ocpp_protocol as string | null;
-        if (txId != null && protocol === 'ocpp2.1') {
-          const commandId = crypto.randomUUID();
-          const costUpdatePayload = JSON.stringify({
-            commandId,
-            stationId,
-            action: 'CostUpdated',
-            payload: {
-              totalCost: totalCents / 100,
-              transactionId: txId,
-            },
-          });
-          try {
-            await pubsub.publish('ocpp_commands', costUpdatePayload);
-          } catch {
-            // Non-critical: CostUpdated failure should not block meter value processing
+        const now = Date.now();
+        const lastSentAt = lastCostUpdatedAt.get(sessionId) ?? 0;
+        if (now - lastSentAt >= COST_UPDATED_THROTTLE_MS) {
+          const txAndProtocol = await sql`
+            SELECT cs.transaction_id, st.ocpp_protocol
+            FROM charging_sessions cs
+            JOIN charging_stations st ON st.id = cs.station_id
+            WHERE cs.id = ${sessionId}
+          `;
+          const txId = txAndProtocol[0]?.transaction_id as string | null;
+          const protocol = txAndProtocol[0]?.ocpp_protocol as string | null;
+          if (txId != null && protocol === 'ocpp2.1') {
+            const commandId = crypto.randomUUID();
+            const costUpdatePayload = JSON.stringify({
+              commandId,
+              stationId,
+              action: 'CostUpdated',
+              payload: {
+                totalCost: totalCents / 100,
+                transactionId: txId,
+              },
+            });
+            try {
+              await pubsub.publish('ocpp_commands', costUpdatePayload);
+              lastCostUpdatedAt.set(sessionId, now);
+            } catch {
+              // Non-critical: CostUpdated failure should not block meter value processing
+            }
           }
         }
       }
