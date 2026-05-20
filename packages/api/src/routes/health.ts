@@ -19,7 +19,7 @@ const healthResponse = z
 
 export function healthRoutes(app: FastifyInstance): void {
   app.get(
-    '/health',
+    '/v1/health',
     {
       schema: {
         tags: ['Health'],

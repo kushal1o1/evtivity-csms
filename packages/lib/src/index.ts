@@ -89,6 +89,7 @@ export {
   dispatchSystemNotification,
   DATE_VARIABLE_NAMES,
   formatDateVariables,
+  redactSensitiveNotificationContent,
 } from './notification-dispatch.js';
 export type {
   SmtpConfig,

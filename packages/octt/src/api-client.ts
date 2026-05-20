@@ -35,7 +35,7 @@ export async function createApiClient(
   logger?: Logger,
 ): Promise<OcttApiClient> {
   // Verify the API is reachable
-  const healthRes = await fetch(`${apiUrl}/health`);
+  const healthRes = await fetch(`${apiUrl}/v1/health`);
   if (!healthRes.ok) {
     throw new Error(`API health check failed (${String(healthRes.status)})`);
   }

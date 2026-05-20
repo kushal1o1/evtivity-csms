@@ -500,6 +500,19 @@ async function seed(): Promise<void> {
     'security.mfa.totpEnabled': true,
     'security.mfa.smsEnabled': false,
     'audit.retentionDays': 1095,
+    // Per-log retention. Worker prunes each table on the daily cron; set 0 to
+    // disable an individual table. Defaults are tuned for fleet size of 200+
+    // stations: high-volume tables (access, ocpp message, port status, worker
+    // job) at 30 days; medium-volume (connection, notifications) at 90;
+    // security events at 365 because they're operator/security-relevant and
+    // low volume.
+    'logs.access.retentionDays': 30,
+    'logs.ocppMessage.retentionDays': 30,
+    'logs.connection.retentionDays': 90,
+    'logs.notifications.retentionDays': 90,
+    'logs.securityEvents.retentionDays': 365,
+    'logs.portStatus.retentionDays': 30,
+    'logs.workerJob.retentionDays': 30,
     'reservation.enabled': true,
     'reservation.bufferMinutes': 0,
     'reservation.cancellationWindowMinutes': 0,

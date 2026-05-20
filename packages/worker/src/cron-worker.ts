@@ -22,6 +22,7 @@ import { certificateExpirationCheckHandler } from './handlers/certificate-expira
 import { stationMessageChargingRefreshHandler } from './handlers/station-message-charging-refresh.js';
 import { paymentCaptureRetryHandler } from './handlers/payment-capture-retry.js';
 import { auditRetentionPruneHandler } from './handlers/audit-retention-prune.js';
+import { logRetentionPruneHandler } from './handlers/log-retention-prune.js';
 
 const log = createLogger('cron-worker');
 
@@ -44,6 +45,7 @@ const JOB_HANDLERS = new Map<string, JobHandlerFn>([
   ['station-message-charging-refresh', stationMessageChargingRefreshHandler],
   ['payment-capture-retry', paymentCaptureRetryHandler],
   ['audit-retention-prune', auditRetentionPruneHandler],
+  ['log-retention-prune', logRetentionPruneHandler],
 ]);
 
 export function createCronWorker(connection: ConnectionOptions): Worker {
@@ -101,7 +103,7 @@ export function createCronWorker(connection: ConnectionOptions): Worker {
   worker.on('failed', (job, err) => {
     if (job == null) return;
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    log.error({ jobName: job.name, error: err }, 'Cron job failed');
+    log.error({ jobName: job.name, err }, 'Cron job failed');
 
     db.update(cronjobs)
       .set({

@@ -26,7 +26,7 @@ describe('Health route', () => {
   it('returns status ok', async () => {
     const response = await app.inject({
       method: 'GET',
-      url: '/health',
+      url: '/v1/health',
     });
 
     expect(response.statusCode).toBe(200);

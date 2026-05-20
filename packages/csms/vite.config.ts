@@ -41,10 +41,6 @@ export default defineConfig({
         target: `http://localhost:${process.env['API_PORT'] || '7102'}`,
         changeOrigin: true,
       },
-      '/health': {
-        target: `http://localhost:${process.env['API_PORT'] || '7102'}`,
-        changeOrigin: true,
-      },
     },
   },
 });

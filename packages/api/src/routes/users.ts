@@ -42,6 +42,7 @@ import {
   verifyTotpCode,
   createMfaChallenge,
   verifyMfaChallenge,
+  redactSensitiveNotificationContent,
 } from '@evtivity/lib';
 import QRCode from 'qrcode';
 import { setAuthCookies, clearAuthCookies } from '../lib/csms-cookies.js';
@@ -649,10 +650,17 @@ export function userRoutes(app: FastifyInstance): void {
               rendered.body,
               wrappedHtml,
             );
-            const storedBody = wrappedHtml ?? rendered.body;
+            const storedBody = redactSensitiveNotificationContent(
+              wrappedHtml ?? rendered.body,
+              'operator.ForgotPassword',
+            );
+            const storedSubject = redactSensitiveNotificationContent(
+              rendered.subject,
+              'operator.ForgotPassword',
+            );
             await client`
               INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at)
-              VALUES ('email', ${email}, ${rendered.subject}, ${storedBody}, ${ok ? 'sent' : 'failed'}, 'operator.ForgotPassword', NOW())
+              VALUES ('email', ${email}, ${storedSubject}, ${storedBody}, ${ok ? 'sent' : 'failed'}, 'operator.ForgotPassword', NOW())
             `;
           }
         } catch {

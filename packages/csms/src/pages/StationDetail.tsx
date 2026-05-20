@@ -174,9 +174,9 @@ export function StationDetail(): React.JSX.Element {
 
       {station.onboardingStatus === 'pending' && (
         <Card className="border-warning">
-          <CardContent className="flex items-center justify-between p-4">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm">{t('stations.pendingApproval')}</p>
-            <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2 sm:flex">
+            <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2 sm:flex sm:shrink-0">
               <Button
                 variant="outline"
                 size="sm"

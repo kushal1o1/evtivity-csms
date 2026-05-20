@@ -46,6 +46,42 @@ export interface RenderedTemplate {
   html?: string;
 }
 
+// --- Sensitive content redaction for notification history rows ---
+
+// Notification bodies and subjects sometimes contain secrets that should
+// not survive in the `notifications` table: MFA verification codes, reset
+// password tokens, magic-link tokens, account verification links. The
+// recipient still receives the real value via email/SMS/push -- we just
+// don't keep a queryable copy in the DB after delivery.
+//
+// Event-type-scoped so a normal session receipt or station alert keeps its
+// full body (the operator needs the rendered text for debugging). Add new
+// event types here when their templates include credentials or tokens.
+const SENSITIVE_EVENT_TYPES = new Set([
+  'mfa.VerificationCode',
+  'driver.ForgotPassword',
+  'driver.AccountVerification',
+  'driver.Welcome',
+  'driver.PasswordChanged',
+  'operator.ForgotPassword',
+  'operator.AccountVerification',
+  'operator.Welcome',
+]);
+
+// Replace 6-digit codes (OTP/MFA) and known token-bearing URL parameters
+// with a fixed marker. Best-effort regex pass over an arbitrary HTML/text
+// body; over-redaction in a sensitive event is preferable to leaking the
+// real value into the audit-visible history table.
+export function redactSensitiveNotificationContent(text: string, eventType: string): string {
+  if (!SENSITIVE_EVENT_TYPES.has(eventType)) return text;
+  return text
+    .replace(
+      /([?&](?:token|code|verifyToken|verificationToken|magicToken|resetToken|otp)=)[^&\s"'<>]+/gi,
+      '$1<redacted>',
+    )
+    .replace(/\b\d{6}\b/g, '<redacted>');
+}
+
 // --- Date formatting for notifications ---
 
 export const DATE_VARIABLE_NAMES = ['startedAt', 'endedAt', 'expiresAt', 'occurredAt'];
@@ -637,10 +673,14 @@ export async function dispatchDriverNotification(
         wrappedHtml,
       );
       const status = ok ? 'sent' : 'failed';
-      const storedBody = wrappedHtml ?? rendered.body;
+      const storedBody = redactSensitiveNotificationContent(
+        wrappedHtml ?? rendered.body,
+        eventType,
+      );
+      const storedSubject = redactSensitiveNotificationContent(rendered.subject, eventType);
       await sql`
         INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at, metadata)
-        VALUES ('email', ${email}, ${rendered.subject}, ${storedBody}, ${status}, ${eventType}, NOW(), ${sql.json({ driverId })})
+        VALUES ('email', ${email}, ${storedSubject}, ${storedBody}, ${status}, ${eventType}, NOW(), ${sql.json({ driverId })})
       `;
     }
 
@@ -658,9 +698,11 @@ export async function dispatchDriverNotification(
 
       const ok = await sendSms(notificationSettings.twilio, phone, rendered.body);
       const status = ok ? 'sent' : 'failed';
+      const storedSmsBody = redactSensitiveNotificationContent(rendered.body, eventType);
+      const storedSmsSubject = redactSensitiveNotificationContent(rendered.subject, eventType);
       await sql`
         INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at, metadata)
-        VALUES ('sms', ${phone}, ${rendered.subject}, ${rendered.body}, ${status}, ${eventType}, NOW(), ${sql.json({ driverId })})
+        VALUES ('sms', ${phone}, ${storedSmsSubject}, ${storedSmsBody}, ${status}, ${eventType}, NOW(), ${sql.json({ driverId })})
       `;
     }
 
@@ -678,11 +720,12 @@ export async function dispatchDriverNotification(
     );
     const pushBody = JSON.stringify({
       title: pushRendered.subject,
-      message: pushRendered.body,
+      message: redactSensitiveNotificationContent(pushRendered.body, eventType),
     });
+    const pushSubject = redactSensitiveNotificationContent(pushRendered.subject, eventType);
     await sql`
       INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at, metadata)
-      VALUES ('push', ${driverId}, ${pushRendered.subject}, ${pushBody}, 'sent', ${eventType}, NOW(), ${sql.json({ driverId })})
+      VALUES ('push', ${driverId}, ${pushSubject}, ${pushBody}, 'sent', ${eventType}, NOW(), ${sql.json({ driverId })})
     `;
 
     // Notify the portal SSE channel so the bell icon updates in real time
@@ -784,10 +827,14 @@ export async function dispatchSystemNotification(
         wrappedHtml,
       );
       const status = ok ? 'sent' : 'failed';
-      const storedBody = wrappedHtml ?? rendered.body;
+      const storedBody = redactSensitiveNotificationContent(
+        wrappedHtml ?? rendered.body,
+        eventType,
+      );
+      const storedSubject = redactSensitiveNotificationContent(rendered.subject, eventType);
       await sql`
         INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at, metadata)
-        VALUES ('email', ${email}, ${rendered.subject}, ${storedBody}, ${status}, ${eventType}, NOW(), ${sql.json({})})
+        VALUES ('email', ${email}, ${storedSubject}, ${storedBody}, ${status}, ${eventType}, NOW(), ${sql.json({})})
       `;
     }
 
@@ -818,9 +865,11 @@ export async function dispatchSystemNotification(
 
       const ok = await sendSms(notificationSettings.twilio, phone, rendered.body);
       const status = ok ? 'sent' : 'failed';
+      const storedSmsBody = redactSensitiveNotificationContent(rendered.body, eventType);
+      const storedSmsSubject = redactSensitiveNotificationContent(rendered.subject, eventType);
       await sql`
         INSERT INTO notifications (channel, recipient, subject, body, status, event_type, sent_at, metadata)
-        VALUES ('sms', ${phone}, ${rendered.subject}, ${rendered.body}, ${status}, ${eventType}, NOW(), ${sql.json({})})
+        VALUES ('sms', ${phone}, ${storedSmsSubject}, ${storedSmsBody}, ${status}, ${eventType}, NOW(), ${sql.json({})})
       `;
     }
   } catch (err) {

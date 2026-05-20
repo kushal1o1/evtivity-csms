@@ -139,8 +139,12 @@ export function accessLogRoutes(app: FastifyInstance): void {
       if (category === 'browser' || category === 'csms') {
         conditions.push(or(eq(accessLogs.category, 'auth'), eq(accessLogs.category, 'action')));
       } else if (category === 'api') {
+        // The API tab shows all /v1/* requests, regardless of whether the
+        // caller authenticated via cookie session or API key. The previous
+        // `authType = 'api_key'` constraint hid every operator UI request
+        // from this tab even though the auto-log middleware writes every
+        // one of them with category='api'.
         conditions.push(eq(accessLogs.category, 'api'));
-        conditions.push(eq(accessLogs.authType, 'api_key'));
       } else if (category === 'portal') {
         conditions.push(eq(accessLogs.category, 'portal'));
       }

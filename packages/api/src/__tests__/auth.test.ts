@@ -31,7 +31,7 @@ describe('Auth plugin', () => {
   it('allows access to unprotected routes', async () => {
     const response = await app.inject({
       method: 'GET',
-      url: '/health',
+      url: '/v1/health',
     });
     expect(response.statusCode).toBe(200);
   });

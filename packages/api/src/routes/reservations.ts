@@ -3,7 +3,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, or, ilike, desc, sql, count, inArray, gt, isNull } from 'drizzle-orm';
+import { eq, and, or, ilike, desc, sql, count, inArray, gt } from 'drizzle-orm';
 import { db, client } from '@evtivity/database';
 import {
   reservations,
@@ -925,36 +925,41 @@ export function reservationRoutes(app: FastifyInstance): void {
       const newEnd = new Date(body.expiresAt);
 
       // If the reservation starts within `reservation.activeSessionCheckHours`
-      // of "now", reject when an active charging session is in progress on the
-      // targeted EVSE (or any EVSE on the station for station-wide
-      // reservations). The OCPP ReserveNow command requires the EVSE to be
-      // Available, so a near-future reservation against a busy EVSE will fail
-      // when the worker dispatches it -- catch it up-front so the operator
-      // gets a friendly 409 instead of a confusing async failure. Reservations
-      // scheduled far enough in the future are allowed; the worker
-      // re-validates at activation time, and the command.ReserveNow projection
-      // rolls back the reservation if the station rejects with `Occupied`.
-      // Setting reservation.activeSessionCheckHours = 0 disables the check.
+      // of "now", reject when the targeted EVSE (or any EVSE on the station
+      // for station-wide reservations) has a connector in any non-Available
+      // state. OCPP ReserveNow requires the connector to be Available; a
+      // cable plugged in with no active transaction (status `occupied` /
+      // `ev_connected` / `finishing`) still trips the station's Occupied
+      // reply, so checking only the active session table misses that case
+      // and the worker's blind dispatch then triggers a confusing
+      // "cancelled" notification at activation time. Reservations scheduled
+      // far enough in the future are allowed; the worker re-validates the
+      // connector state at activation and decides whether to send
+      // ReserveNow, link to a same-driver session, or cancel up front with
+      // a clearer reason. Setting reservation.activeSessionCheckHours = 0
+      // disables the check.
       const activeSessionCheckMs = reservationCfgForLimit.activeSessionCheckHours * 60 * 60 * 1000;
       const startsAtTimeMs = newStart.getTime();
       if (activeSessionCheckMs > 0 && startsAtTimeMs - Date.now() < activeSessionCheckMs) {
-        const sessionConditions = [
-          eq(chargingSessions.stationId, station.id),
-          isNull(chargingSessions.endedAt),
+        const connectorConditions = [
+          eq(evses.stationId, station.id),
+          sql`${connectors.status} <> 'available'`,
         ];
         if (resolvedEvseId != null) {
-          sessionConditions.push(eq(chargingSessions.evseId, resolvedEvseId));
+          connectorConditions.push(eq(evses.id, resolvedEvseId));
         }
-        const [activeSession] = await db
-          .select({ id: chargingSessions.id })
-          .from(chargingSessions)
-          .where(and(...sessionConditions));
-        if (activeSession != null) {
+        const [busyConnector] = await db
+          .select({ status: connectors.status })
+          .from(connectors)
+          .innerJoin(evses, eq(connectors.evseId, evses.id))
+          .where(and(...connectorConditions))
+          .limit(1);
+        if (busyConnector != null) {
           await reply.status(409).send({
             error:
               resolvedEvseId != null
-                ? 'EVSE has an active charging session that conflicts with this reservation'
-                : 'Station has an active charging session that conflicts with this reservation',
+                ? `EVSE is not available (connector status: ${busyConnector.status})`
+                : `Station has no available connector (status: ${busyConnector.status})`,
             code: 'EVSE_IN_USE',
           });
           return;

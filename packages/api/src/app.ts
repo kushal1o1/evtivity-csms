@@ -397,8 +397,13 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
 
   // Access log: record all API requests
   const SKIP_LOG_PATHS = new Set([
-    '/health',
+    '/v1/health',
     '/v1/events',
+    // Long-lived SSE. Without this skip, every operator dashboard tab logs
+    // an access-log row each time the EventSource closes (network blip,
+    // navigation, reload), with a multi-hour `durationMs` that's
+    // meaningless. Path comes from packages/api/src/routes/events.ts.
+    '/v1/events/stream',
     '/v1/access-logs',
     '/v1/portal/access-logs',
   ]);
@@ -451,20 +456,29 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
         metadata = sanitized;
       }
 
-      await db.insert(accessLogs).values({
-        userId,
-        action: `${request.method} ${pathOnly}`,
-        category: 'api',
-        authType,
-        apiKeyName,
-        method: request.method,
-        path: pathOnly,
-        statusCode: reply.statusCode,
-        durationMs: Math.round(reply.elapsedTime),
-        remoteAddress: request.ip,
-        userAgent: request.headers['user-agent'] ?? null,
-        metadata,
-      });
+      // Fire-and-forget so the onResponse hook doesn't keep the request
+      // alive waiting on an INSERT. Best-effort logging: failures are
+      // swallowed (.catch ignored), but the connection pool isn't held
+      // hostage by access-log writes under load.
+      void db
+        .insert(accessLogs)
+        .values({
+          userId,
+          action: `${request.method} ${pathOnly}`,
+          category: 'api',
+          authType,
+          apiKeyName,
+          method: request.method,
+          path: pathOnly,
+          statusCode: reply.statusCode,
+          durationMs: Math.round(reply.elapsedTime),
+          remoteAddress: request.ip,
+          userAgent: request.headers['user-agent'] ?? null,
+          metadata,
+        })
+        .catch(() => {
+          /* best-effort */
+        });
     } catch {
       // Best-effort logging: do not break responses
     }

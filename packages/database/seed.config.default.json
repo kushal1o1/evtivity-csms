@@ -92,6 +92,14 @@
 
     "audit.retentionDays": 1095,
 
+    "logs.access.retentionDays": 30,
+    "logs.ocppMessage.retentionDays": 30,
+    "logs.connection.retentionDays": 90,
+    "logs.notifications.retentionDays": 90,
+    "logs.securityEvents.retentionDays": 365,
+    "logs.portStatus.retentionDays": 30,
+    "logs.workerJob.retentionDays": 30,
+
     "reservation.enabled": true,
     "reservation.bufferMinutes": 0,
     "reservation.cancellationWindowMinutes": 0,

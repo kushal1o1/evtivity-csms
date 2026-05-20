@@ -344,6 +344,20 @@
       "when": 1778700000030,
       "tag": "0048_backfill_audit_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1778700000031,
+      "tag": "0049_reservation_activation_cancel_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1778700000032,
+      "tag": "0050_seed_log_retention_settings",
+      "breakpoints": true
     }
   ]
 }

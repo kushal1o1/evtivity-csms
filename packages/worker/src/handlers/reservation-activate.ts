@@ -5,12 +5,14 @@ import crypto from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Job } from 'bullmq';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import {
   client,
   db,
   reservations,
   chargingStations,
+  chargingSessions,
+  connectors,
   evses,
   writeReservationAudit,
 } from '@evtivity/database';
@@ -139,6 +141,156 @@ export async function handleReservationActivate(job: Job, pubsub: PubSubClient):
         log.warn(
           { err, driverId, reservationDbId },
           'Failed to dispatch offline-station cancel notification',
+        );
+      }
+    }
+    return;
+  }
+
+  // Re-validate connector state at activation time. The create-time guard in
+  // packages/api/src/routes/reservations.ts only fires when the start is
+  // within `reservation.activeSessionCheckHours` of "now"; far-future
+  // reservations skip that check on the assumption the EVSE will free up by
+  // activation. If the assumption breaks (in-flight session ran long, driver
+  // showed up early and plugged in, station fault), the worker must catch it
+  // here -- otherwise ReserveNow lands on a busy/faulted connector, the
+  // station rejects, the projection cancels, and the driver gets a
+  // "cancelled" notification at exactly the moment they expected to charge.
+  const targetConditions = [eq(evses.stationId, reservation.stationDbId)];
+  if (reservation.evseDbId != null) {
+    targetConditions.push(eq(evses.id, reservation.evseDbId));
+  }
+  const connectorRows = await db
+    .select({
+      status: connectors.status,
+    })
+    .from(connectors)
+    .innerJoin(evses, eq(connectors.evseId, evses.id))
+    .where(and(...targetConditions));
+
+  const hasAvailable = connectorRows.some((c) => c.status === 'available');
+
+  if (!hasAvailable && connectorRows.length > 0) {
+    // Before cancelling, check whether the reservation's own driver is
+    // already charging on the reserved EVSE. They showed up early, plugged
+    // in, and their session is in progress -- treat that as the reservation
+    // being fulfilled rather than blocked. Link the session so the
+    // TransactionEvent.Ended projection can later transition in_use -> used
+    // when they unplug.
+    if (reservation.driverId != null) {
+      const sessionConditions = [
+        eq(chargingSessions.stationId, reservation.stationDbId),
+        eq(chargingSessions.driverId, reservation.driverId),
+        isNull(chargingSessions.endedAt),
+      ];
+      if (reservation.evseDbId != null) {
+        sessionConditions.push(eq(chargingSessions.evseId, reservation.evseDbId));
+      }
+      const [activeSession] = await db
+        .select({ id: chargingSessions.id })
+        .from(chargingSessions)
+        .where(and(...sessionConditions))
+        .orderBy(desc(chargingSessions.startedAt))
+        .limit(1);
+      if (activeSession != null) {
+        const flipped = await db
+          .update(reservations)
+          .set({ status: 'in_use', updatedAt: new Date() })
+          .where(and(eq(reservations.id, reservationDbId), eq(reservations.status, 'scheduled')))
+          .returning({ id: reservations.id });
+        if (flipped.length > 0) {
+          await db
+            .update(chargingSessions)
+            .set({ reservationId: reservationDbId, updatedAt: new Date() })
+            .where(eq(chargingSessions.id, activeSession.id));
+          await writeReservationAudit({
+            reservationId: reservationDbId,
+            action: 'used',
+            actor: 'system',
+            driverIdBefore: reservation.driverId,
+            driverIdAfter: reservation.driverId,
+            statusBefore: 'scheduled',
+            statusAfter: 'in_use',
+            notes: `same-driver session ${activeSession.id} present at activation`,
+          });
+          log.info(
+            {
+              reservationDbId,
+              sessionId: activeSession.id,
+              stationId: reservation.stationOcppId,
+            },
+            'Same-driver session active on reserved EVSE; transitioning reservation to in_use without ReserveNow',
+          );
+        }
+        return;
+      }
+    }
+
+    // No same-driver session: cancel up front with a reason that matches
+    // the connector state. `station_faulted_at_activation` if every
+    // connector is non-operational, otherwise `evse_in_use_at_activation`
+    // (covers cable-plugged-in-idle and different-driver-charging cases).
+    const allFaultedOrUnavailable = connectorRows.every(
+      (c) => c.status === 'faulted' || c.status === 'unavailable',
+    );
+    const cancelReason = allFaultedOrUnavailable
+      ? ('station_faulted_at_activation' as const)
+      : ('evse_in_use_at_activation' as const);
+
+    const cancelled = await db
+      .update(reservations)
+      .set({
+        status: 'cancelled',
+        cancelledBy: 'system',
+        cancelReason,
+        cancellationFeeCents: 0,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(reservations.id, reservationDbId), eq(reservations.status, 'scheduled')))
+      .returning({ driverId: reservations.driverId });
+
+    if (cancelled.length > 0) {
+      await writeReservationAudit({
+        reservationId: reservationDbId,
+        action: 'cancelled',
+        actor: 'system',
+        driverIdBefore: reservation.driverId,
+        driverIdAfter: reservation.driverId,
+        statusBefore: 'scheduled',
+        statusAfter: 'cancelled',
+        notes: cancelReason,
+      });
+    }
+
+    log.warn(
+      {
+        reservationDbId,
+        stationId: reservation.stationOcppId,
+        cancelReason,
+        connectorStatuses: connectorRows.map((c) => c.status),
+      },
+      'Reserved EVSE not available at activation, cancelling',
+    );
+
+    const driverId = cancelled[0]?.driverId ?? null;
+    if (driverId != null) {
+      try {
+        await dispatchDriverNotification(
+          client,
+          'reservation.Cancelled',
+          driverId,
+          {
+            reservationId: reservation.reservationId,
+            stationId: reservation.stationOcppId,
+            cancellationFeeFormatted: '',
+          },
+          ALL_TEMPLATES_DIRS,
+          pubsub,
+        );
+      } catch (err) {
+        log.warn(
+          { err, driverId, reservationDbId },
+          'Failed to dispatch evse-unavailable cancel notification',
         );
       }
     }

@@ -14,13 +14,13 @@ vi.mock('../lib/pubsub.js', () => ({
 }));
 
 describe('Health route', () => {
-  it('GET /health returns 200 with status ok', async () => {
+  it('GET /v1/health returns 200 with status ok', async () => {
     const app = Fastify();
     await app.register(healthRoutes);
 
     const response = await app.inject({
       method: 'GET',
-      url: '/health',
+      url: '/v1/health',
     });
 
     expect(response.statusCode).toBe(200);
