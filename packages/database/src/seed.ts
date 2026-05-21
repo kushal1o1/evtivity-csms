@@ -499,6 +499,10 @@ async function seed(): Promise<void> {
     'security.mfa.emailEnabled': true,
     'security.mfa.totpEnabled': true,
     'security.mfa.smsEnabled': false,
+    // Driver self-registration via /v1/portal/auth/register. Operators of
+    // closed/managed deployments (drivers admin-provisioned) can flip this
+    // off so the portal Register page returns 403 PORTAL_REGISTRATION_DISABLED.
+    'portal.registrationEnabled': true,
     'audit.retentionDays': 1095,
     // Per-log retention. Worker prunes each table on the daily cron; set 0 to
     // disable an individual table. Defaults are tuned for fleet size of 200+

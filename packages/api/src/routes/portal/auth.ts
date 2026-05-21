@@ -6,23 +6,24 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { eq, and, isNull, ilike } from 'drizzle-orm';
 import argon2 from 'argon2';
-import { db, client, getRecaptchaConfig } from '@evtivity/database';
+import { db, client, isPortalRegistrationEnabled } from '@evtivity/database';
 import { drivers, userTokens } from '@evtivity/database';
 import {
   dispatchDriverNotification,
   dispatchSystemNotification,
-  verifyRecaptcha,
   decryptString,
   createMfaChallenge,
   verifyMfaChallenge,
   verifyTotpCode,
 } from '@evtivity/lib';
 import { zodSchema } from '../../lib/zod-schema.js';
+import { generateUserToken, hashUserToken } from '../../lib/user-token.js';
 import { validatePasswordComplexity } from '../../lib/password-validation.js';
 import { ALL_TEMPLATES_DIRS } from '../../lib/template-dirs.js';
 import { getPubSub } from '../../lib/pubsub.js';
 import { itemResponse, successResponse, errorWith } from '../../lib/response-schemas.js';
 import { ERROR_CODES } from '../../lib/error-codes.generated.js';
+import { checkRecaptcha } from '../../lib/recaptcha-check.js';
 import type { DriverJwtPayload } from '../../plugins/auth.js';
 import {
   createRefreshToken,
@@ -174,27 +175,6 @@ function clearAuthCookies(reply: FastifyReply, secure: boolean): void {
   });
 }
 
-async function checkRecaptcha(token: string | undefined, reply: FastifyReply): Promise<boolean> {
-  const config = await getRecaptchaConfig();
-  if (config == null) return true;
-  if (token == null || token === '') {
-    await reply
-      .status(400)
-      .send({ error: 'reCAPTCHA token is required', code: 'RECAPTCHA_REQUIRED' });
-    return false;
-  }
-  const encryptionKey = apiConfig.SETTINGS_ENCRYPTION_KEY;
-  const secretKey = decryptString(config.secretKeyEnc, encryptionKey);
-  const result = await verifyRecaptcha(token, secretKey, config.threshold);
-  if (!result.success) {
-    await reply
-      .status(403)
-      .send({ error: 'reCAPTCHA verification failed', code: 'RECAPTCHA_FAILED' });
-    return false;
-  }
-  return true;
-}
-
 export function portalAuthRoutes(app: FastifyInstance): void {
   app.post(
     '/portal/auth/register',
@@ -210,7 +190,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         response: {
           201: itemResponse(portalAuthRegisterResponse),
           400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
-          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          403: errorWith('Forbidden', [ERROR_CODES.PORTAL_REGISTRATION_DISABLED]),
           409: errorWith('Email exists', [ERROR_CODES.EMAIL_EXISTS]),
           500: errorWith('Internal server error', [ERROR_CODES.INTERNAL_ERROR]),
         },
@@ -224,6 +204,16 @@ export function portalAuthRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       const body = request.body as z.infer<typeof registerBody>;
+
+      // Operator-toggleable kill switch for the portal Register page.
+      // Defaults true; closed/admin-provisioned deployments flip it off.
+      if (!(await isPortalRegistrationEnabled())) {
+        await reply.status(403).send({
+          error: 'Driver self-registration is disabled',
+          code: 'PORTAL_REGISTRATION_DISABLED',
+        });
+        return;
+      }
 
       const complexityError = validatePasswordComplexity(body.password);
       if (complexityError != null) {
@@ -276,8 +266,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
       await reply.status(201).send({ driver });
 
       // Generate email verification token
-      const rawVerifyToken = crypto.randomBytes(32).toString('hex');
-      const verifyTokenHash = crypto.createHash('sha256').update(rawVerifyToken).digest('hex');
+      const { raw: rawVerifyToken, hash: verifyTokenHash } = generateUserToken();
 
       await db.insert(userTokens).values({
         driverId: driver.id,
@@ -320,9 +309,12 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         body: zodSchema(loginBody),
         response: {
           200: itemResponse(portalAuthLoginResponse),
-          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          400: errorWith('Bad request', [
+            ERROR_CODES.VALIDATION_ERROR,
+            ERROR_CODES.RECAPTCHA_REQUIRED,
+          ]),
           401: errorWith('Invalid credentials', [ERROR_CODES.INVALID_CREDENTIALS]),
-          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
+          403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN, ERROR_CODES.RECAPTCHA_FAILED]),
         },
       },
       config: {
@@ -464,6 +456,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           401: errorWith('Unauthorized', [
             ERROR_CODES.ACCOUNT_DISABLED,
             ERROR_CODES.NO_REFRESH_TOKEN,
+            ERROR_CODES.INVALID_REFRESH_TOKEN,
           ]),
         },
       },
@@ -565,11 +558,13 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           200: itemResponse(portalMfaLoginResponse),
           400: errorWith('Bad request', [
             ERROR_CODES.MFA_CHALLENGE_EXHAUSTED,
+            ERROR_CODES.MFA_CODE_INVALID,
             ERROR_CODES.MFA_NOT_CONFIGURED,
             ERROR_CODES.MFA_TOKEN_INVALID,
             ERROR_CODES.TOTP_NOT_CONFIGURED,
           ]),
-          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED, ERROR_CODES.MFA_TOKEN_EXPIRED]),
+          403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -606,6 +601,14 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         await reply.status(400).send({ error: 'MFA not configured', code: 'MFA_NOT_CONFIGURED' });
         return;
       }
+      // Mirror operator MFA verify: reject MFA completion for drivers
+      // deactivated between login and code submission. Otherwise a stale
+      // mfaToken JWT could complete and yield a real session for an
+      // already-disabled account.
+      if (!driver.isActive) {
+        await reply.status(403).send({ error: 'Account disabled', code: 'ACCOUNT_DISABLED' });
+        return;
+      }
 
       let verified = false;
       if (driver.mfaMethod === 'totp') {
@@ -626,7 +629,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           return;
         }
       } else if (challengeId != null) {
-        verified = await verifyMfaChallenge(client, challengeId, code);
+        verified = await verifyMfaChallenge(client, challengeId, code, { driverId: driver.id });
       }
 
       if (!verified) {
@@ -690,8 +693,9 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           400: errorWith('Bad request', [
             ERROR_CODES.MFA_NOT_CONFIGURED,
             ERROR_CODES.MFA_TOKEN_INVALID,
+            ERROR_CODES.MFA_TOTP_NO_RESEND,
           ]),
-          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED, ERROR_CODES.MFA_TOKEN_EXPIRED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -809,8 +813,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           );
 
         // Generate token
-        const rawToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const { raw: rawToken, hash: tokenHash } = generateUserToken();
 
         await db.insert(userTokens).values({
           driverId: driver.id,
@@ -881,7 +884,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         return;
       }
 
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const tokenHash = hashUserToken(token);
 
       const [tokenRow] = await db
         .select({
@@ -951,7 +954,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
     async (request, reply) => {
       const { token } = request.body as z.infer<typeof verifyEmailBody>;
 
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const tokenHash = hashUserToken(token);
 
       const [tokenRow] = await db
         .select({
@@ -1079,8 +1082,7 @@ export function portalAuthRoutes(app: FastifyInstance): void {
         );
 
       // Generate new token
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const { raw: rawToken, hash: tokenHash } = generateUserToken();
 
       await db.insert(userTokens).values({
         driverId,

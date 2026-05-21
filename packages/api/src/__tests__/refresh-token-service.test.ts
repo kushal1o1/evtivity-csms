@@ -128,8 +128,10 @@ describe('validateAndRotateRefreshToken', () => {
       revokedAt: null,
       createdAt: new Date(),
     };
-    // First call: select returns the row. Second call: update (revoke).
-    setupDbResults([row], []);
+    // SELECT returns the row, then the atomic CAS UPDATE returns
+    // [{ id: 42 }] to signal the rotation won the race (only proceeds when
+    // revoked_at WAS NULL at update time).
+    setupDbResults([row], [{ id: 42 }]);
 
     const result = await validateAndRotateRefreshToken('raw-token-value');
 
@@ -179,6 +181,30 @@ describe('validateAndRotateRefreshToken', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when the atomic rotation loses the race (returning() empty)', async () => {
+    // Two concurrent callers race on the same valid token. The SELECT
+    // succeeds for both because the row was unrevoked when read. The
+    // CAS UPDATE (WHERE id = X AND revoked_at IS NULL) only the first
+    // caller succeeds; the second sees zero rows in returning() and must
+    // be rejected as if the token were already revoked.
+    const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24);
+    const row = {
+      id: 7,
+      userId: 'usr_abc123',
+      driverId: null,
+      tokenHash: 'somehash',
+      type: 'session',
+      expiresAt: futureDate,
+      revokedAt: null,
+      createdAt: new Date(),
+    };
+    setupDbResults([row], []);
+
+    const result = await validateAndRotateRefreshToken('replayed-token');
+
+    expect(result).toBeNull();
+  });
+
   it('accepts a token with null expiresAt (non-expiring)', async () => {
     const row = {
       id: 99,
@@ -190,7 +216,9 @@ describe('validateAndRotateRefreshToken', () => {
       revokedAt: null,
       createdAt: new Date(),
     };
-    setupDbResults([row], []);
+    // Same as the valid-token case: SELECT then atomic CAS returning the
+    // revoked row id signals the rotation won.
+    setupDbResults([row], [{ id: 99 }]);
 
     const result = await validateAndRotateRefreshToken('non-expiring-token');
 

@@ -90,6 +90,8 @@
     "security.mfa.totpEnabled": true,
     "security.mfa.smsEnabled": false,
 
+    "portal.registrationEnabled": true,
+
     "audit.retentionDays": 1095,
 
     "logs.access.retentionDays": 30,

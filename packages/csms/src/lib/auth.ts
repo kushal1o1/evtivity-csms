@@ -65,8 +65,9 @@ interface AuthState {
   mfaPending: MfaPendingState | null;
   login: (email: string, password: string, recaptchaToken?: string) => Promise<void>;
   completeMfaLogin: (user: User, role: string | null) => Promise<void>;
+  setMfaPending: (state: MfaPendingState) => void;
   clearMfaPending: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   hydrate: () => void;
   retryConnection: () => void;
   setLanguage: (language: string) => Promise<void>;
@@ -201,13 +202,26 @@ export const useAuth = create<AuthState>((set, get) => ({
     api.post('/v1/access-logs', { action: 'login' }).catch(() => {});
   },
 
+  setMfaPending: (state: MfaPendingState) => {
+    set({ mfaPending: state });
+  },
+
   clearMfaPending: () => {
     set({ mfaPending: null });
   },
 
-  logout: () => {
+  logout: async () => {
     api.post('/v1/access-logs', { action: 'logout' }).catch(() => {});
-    api.post('/v1/auth/logout', {}).catch(() => {});
+    try {
+      // Wait for the server-side refresh-token revocation to land before
+      // clearing local state. Fire-and-forget would race the unload event:
+      // if the tab closes before the request flushes, csms_refresh stays
+      // usable on the server until natural expiry. Mirrors the portal
+      // logout pattern.
+      await api.post('/v1/auth/logout', {});
+    } catch {
+      // Clear state even if the server call fails.
+    }
     localStorage.removeItem('role');
     sessionStorage.setItem('noAutoLogin', 'true');
     set({ user: null, role: null, permissions: [], isAuthenticated: false });

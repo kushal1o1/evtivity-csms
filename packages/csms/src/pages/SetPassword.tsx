@@ -12,7 +12,7 @@ import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBran
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
-interface ForceChangePasswordResponse {
+interface ForceChangePasswordUserResponse {
   token: string;
   user: {
     id: string;
@@ -26,11 +26,21 @@ interface ForceChangePasswordResponse {
   role: { id: string; name: string } | null;
 }
 
+interface ForceChangePasswordMfaResponse {
+  mfaRequired: true;
+  mfaMethod: string;
+  mfaToken: string;
+  challengeId?: number;
+}
+
+type ForceChangePasswordResponse = ForceChangePasswordUserResponse | ForceChangePasswordMfaResponse;
+
 export function SetPassword(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const completeMfaLogin = useAuth((s) => s.completeMfaLogin);
+  const setMfaPending = useAuth((s) => s.setMfaPending);
 
   const email = (location.state as { email?: string } | null)?.email;
 
@@ -71,6 +81,22 @@ export function SetPassword(): React.JSX.Element {
         currentPassword,
         newPassword,
       });
+
+      // If the user has MFA enabled, the server returns an mfaToken instead
+      // of issuing a session JWT. Hand off to the existing MfaChallenge page
+      // (rendered by Login when mfaPending is set) so the user completes
+      // /auth/mfa/verify before getting a real session.
+      if ('mfaRequired' in data) {
+        setMfaPending({
+          mfaRequired: true,
+          mfaMethod: data.mfaMethod,
+          mfaToken: data.mfaToken,
+          ...(data.challengeId != null ? { challengeId: String(data.challengeId) } : {}),
+        });
+        void navigate('/login');
+        return;
+      }
+
       setSuccess(true);
       await completeMfaLogin(data.user, data.role?.name ?? null);
       void navigate('/');

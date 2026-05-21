@@ -65,8 +65,20 @@ export async function validateAndRotateRefreshToken(
     return null;
   }
 
-  // Revoke old token (rotation)
-  await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, row.id));
+  // Atomic rotation: only one of two concurrent callers can win the CAS
+  // transition from revoked_at=NULL to revoked_at=NOW(). If two refresh
+  // requests arrive with the same token, the loser sees an empty
+  // returning() array and gets null back, which the route turns into 401.
+  // Without this guard both callers could succeed and we'd mint two new
+  // refresh-token pairs from one revoked source -- a stolen-token replay
+  // would silently produce parallel sessions instead of surfacing as 401.
+  const updated = await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt)))
+    .returning({ id: refreshTokens.id });
+
+  if (updated.length === 0) return null;
 
   return {
     userId: row.userId,

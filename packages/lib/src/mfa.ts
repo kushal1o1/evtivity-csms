@@ -35,11 +35,12 @@ export async function verifyMfaChallenge(
   client: Sql,
   challengeId: number,
   code: string,
+  expected: { userId?: string; driverId?: string },
 ): Promise<boolean> {
   const codeHash = crypto.createHash('sha256').update(code).digest('hex');
 
   const rows = await client`
-    SELECT id, code_hash, expires_at, used_at
+    SELECT id, code_hash, expires_at, used_at, user_id, driver_id
     FROM mfa_challenges
     WHERE id = ${challengeId}
   `;
@@ -50,12 +51,23 @@ export async function verifyMfaChallenge(
         code_hash: string;
         expires_at: Date;
         used_at: Date | null;
+        user_id: string | null;
+        driver_id: string | null;
       }
     | undefined;
 
   if (row == null) return false;
   if (row.used_at != null) return false;
   if (new Date() > row.expires_at) return false;
+  // Bind the challenge to the principal in the mfaToken JWT. Without this
+  // an attacker who knows victim A's password can complete login as A by
+  // submitting their own MFA code from a challenge owned by attacker B:
+  // verifyMfaChallenge would return true for any unused/unexpired row that
+  // matches the supplied code, and the handler then issues a session JWT
+  // for the userId carried in the mfaToken.
+  if (expected.userId != null && row.user_id !== expected.userId) return false;
+  if (expected.driverId != null && row.driver_id !== expected.driverId) return false;
+  if (expected.userId == null && expected.driverId == null) return false;
   // Constant-time compare so a remote attacker can't infer the SHA-256
   // hex prefix from response timing. Both inputs are guaranteed to be
   // 64-char hex strings (server-generated hash on insert; we just

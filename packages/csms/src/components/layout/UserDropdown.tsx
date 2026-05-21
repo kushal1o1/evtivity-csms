@@ -78,7 +78,9 @@ export function UserDropdown({ collapsed, onNavClick }: UserDropdownProps): Reac
             key: 'logout',
             icon: <LogOut className="h-4 w-4" />,
             label: t('nav.logOut'),
-            onClick: logout,
+            onClick: () => {
+              void logout();
+            },
           },
         ]}
         subMenu={{

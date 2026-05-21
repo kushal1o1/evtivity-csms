@@ -22,6 +22,7 @@ export type {
 export { writeAudit, redactAuditPayload } from './lib/audit.js';
 export type { AuditActor, WriteAuditArgs } from './lib/audit.js';
 export { isFleetEnabled } from './lib/fleet-setting.js';
+export { isPortalRegistrationEnabled } from './lib/portal-registration-setting.js';
 export { isGuestChargingEnabled } from './lib/guest-setting.js';
 export { getIdlingGracePeriodMinutes } from './lib/idling-setting.js';
 export { getStaleSessionTimeoutHours } from './lib/session-settings.js';

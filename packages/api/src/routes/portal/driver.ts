@@ -471,7 +471,7 @@ export function portalDriverRoutes(app: FastifyInstance): void {
         const secret = decryptString(driver.totpSecretEnc, encKey);
         verified = verifyTotpCode(secret, code);
       } else if (challengeId != null) {
-        verified = await verifyMfaChallenge(client, challengeId, code);
+        verified = await verifyMfaChallenge(client, challengeId, code, { driverId });
       }
 
       if (!verified) {

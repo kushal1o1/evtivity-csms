@@ -89,19 +89,26 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
       await request.jwtVerify();
       // Check if operator user is still active (catches deactivated users with valid JWTs)
       const jwtUser = request.user as unknown as Record<string, unknown>;
+      // Reject driver JWTs presented to operator routes. The two realms share
+      // a signing key, so jwtVerify() validates a driver token here. Cookie
+      // path scoping (portal_token is /v1/portal) prevents the normal browser
+      // from sending it cross-realm, but an attacker with the raw JWT can
+      // submit it as Authorization: Bearer to any operator route. Without
+      // this guard such a request would reach a handler that calls
+      // request.user.userId (undefined) and fail in surprising ways.
+      if (jwtUser['type'] === 'driver' || typeof jwtUser['userId'] !== 'string') {
+        await reply.status(401).send({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
+        return;
+      }
       // Reject MFA-pending tokens on regular routes. The mfaPending JWT issued
       // during the login flow is only valid for /auth/mfa/verify and /auth/mfa/resend.
       if (jwtUser['mfaPending'] === true) {
         await reply.status(401).send({ error: 'MFA verification required', code: 'MFA_REQUIRED' });
         return;
       }
-      if ('userId' in jwtUser && typeof jwtUser['userId'] === 'string') {
-        if (!(await isUserActive(jwtUser['userId']))) {
-          await reply
-            .status(401)
-            .send({ error: 'Account deactivated', code: 'ACCOUNT_DEACTIVATED' });
-          return;
-        }
+      if (!(await isUserActive(jwtUser['userId']))) {
+        await reply.status(401).send({ error: 'Account deactivated', code: 'ACCOUNT_DEACTIVATED' });
+        return;
       }
       return;
     } catch {
@@ -115,15 +122,23 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           const csmsToken = unsigned.valid ? unsigned.value : rawCsmsToken;
           const payload = app.jwt.verify<JwtPayload>(csmsToken);
           (request as unknown as Record<string, unknown>)['user'] = payload;
+          const payloadRecord = payload as unknown as Record<string, unknown>;
+          // Reject driver JWTs in the csms_token cookie slot too. The cookie
+          // is normally only set by operator login, but rejecting on payload
+          // shape rather than cookie name keeps the defense at the JWT layer.
+          if (payloadRecord['type'] === 'driver' || typeof payloadRecord['userId'] !== 'string') {
+            await reply.status(401).send({ error: 'Unauthorized', code: 'UNAUTHORIZED' });
+            return;
+          }
           // Reject MFA-pending tokens on regular routes.
-          if ((payload as unknown as Record<string, unknown>)['mfaPending'] === true) {
+          if (payloadRecord['mfaPending'] === true) {
             await reply
               .status(401)
               .send({ error: 'MFA verification required', code: 'MFA_REQUIRED' });
             return;
           }
           // Check if user is still active (catches deactivated users with valid JWTs)
-          if ('userId' in payload && !(await isUserActive(payload.userId))) {
+          if (!(await isUserActive(payload.userId))) {
             await reply
               .status(401)
               .send({ error: 'Account deactivated', code: 'ACCOUNT_DEACTIVATED' });

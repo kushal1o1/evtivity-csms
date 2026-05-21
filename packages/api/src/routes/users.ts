@@ -9,14 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { eq, and, or, isNull, ilike, sql, inArray } from 'drizzle-orm';
 import argon2 from 'argon2';
-import {
-  db,
-  client,
-  getRecaptchaConfig,
-  getMfaConfig,
-  writeAudit,
-  userAuditLog,
-} from '@evtivity/database';
+import { db, client, getMfaConfig, writeAudit, userAuditLog } from '@evtivity/database';
 import {
   users,
   roles,
@@ -34,7 +27,6 @@ import {
   wrapEmailHtml,
   renderTemplate,
   dispatchSystemNotification,
-  verifyRecaptcha,
   decryptString,
   encryptString,
   generateTotpSecret,
@@ -46,6 +38,7 @@ import {
 } from '@evtivity/lib';
 import QRCode from 'qrcode';
 import { setAuthCookies, clearAuthCookies } from '../lib/csms-cookies.js';
+import { checkRecaptcha } from '../lib/recaptcha-check.js';
 import {
   createRefreshToken,
   validateAndRotateRefreshToken,
@@ -54,6 +47,7 @@ import {
   revokeAllUserSessions,
 } from '../services/refresh-token.service.js';
 import { zodSchema } from '../lib/zod-schema.js';
+import { generateUserToken, hashUserToken } from '../lib/user-token.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
@@ -347,9 +341,12 @@ export function userRoutes(app: FastifyInstance): void {
         body: zodSchema(loginBody),
         response: {
           200: zodSchema(loginResponse),
-          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          400: errorWith('Bad request', [
+            ERROR_CODES.VALIDATION_ERROR,
+            ERROR_CODES.RECAPTCHA_REQUIRED,
+          ]),
           401: errorWith('Invalid credentials', [ERROR_CODES.INVALID_CREDENTIALS]),
-          403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
+          403: errorWith('Forbidden', [ERROR_CODES.ACCOUNT_DISABLED, ERROR_CODES.RECAPTCHA_FAILED]),
         },
       },
       config: {
@@ -362,25 +359,8 @@ export function userRoutes(app: FastifyInstance): void {
     async (request, reply) => {
       const { email, password, recaptchaToken } = request.body as z.infer<typeof loginBody>;
 
-      // reCAPTCHA check
-      const recaptchaConfig = await getRecaptchaConfig();
-      if (recaptchaConfig != null) {
-        if (recaptchaToken == null || recaptchaToken === '') {
-          await reply
-            .status(400)
-            .send({ error: 'reCAPTCHA token is required', code: 'RECAPTCHA_REQUIRED' });
-          return;
-        }
-        const encryptionKey = apiConfig.SETTINGS_ENCRYPTION_KEY;
-        const secretKey = decryptString(recaptchaConfig.secretKeyEnc, encryptionKey);
-        const result = await verifyRecaptcha(recaptchaToken, secretKey, recaptchaConfig.threshold);
-        if (!result.success) {
-          await reply
-            .status(403)
-            .send({ error: 'reCAPTCHA verification failed', code: 'RECAPTCHA_FAILED' });
-          return;
-        }
-      }
+      const recaptchaOk = await checkRecaptcha(recaptchaToken, reply);
+      if (!recaptchaOk) return;
 
       const [user] = await db.select().from(users).where(ilike(users.email, email));
 
@@ -470,7 +450,7 @@ export function userRoutes(app: FastifyInstance): void {
   app.post(
     '/auth/logout',
     {
-      onRequest: [authorize('users:write')],
+      onRequest: [app.authenticate],
       schema: {
         tags: ['Users'],
         summary: 'Logout and clear auth cookies',
@@ -507,6 +487,7 @@ export function userRoutes(app: FastifyInstance): void {
           401: errorWith('Unauthorized', [
             ERROR_CODES.ACCOUNT_DISABLED,
             ERROR_CODES.NO_REFRESH_TOKEN,
+            ERROR_CODES.INVALID_REFRESH_TOKEN,
           ]),
         },
       },
@@ -604,8 +585,7 @@ export function userRoutes(app: FastifyInstance): void {
           );
 
         // Generate token
-        const rawToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const { raw: rawToken, hash: tokenHash } = generateUserToken();
 
         await db.insert(userTokens).values({
           userId: user.id,
@@ -718,7 +698,7 @@ export function userRoutes(app: FastifyInstance): void {
         return;
       }
 
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const tokenHash = hashUserToken(token);
 
       const [tokenRow] = await db
         .select({
@@ -753,6 +733,14 @@ export function userRoutes(app: FastifyInstance): void {
         .update(userTokens)
         .set({ revokedAt: new Date() })
         .where(eq(userTokens.id, tokenRow.id));
+
+      // Forgot-password is the recovery path after credential compromise:
+      // revoke every outstanding refresh token so an attacker holding a
+      // stolen csms_refresh cookie cannot keep using the account after the
+      // legitimate user completes the reset. Mirrors the driver path at
+      // packages/api/src/routes/portal/auth.ts and the operator
+      // force-change-password / admin reset-password paths.
+      await revokeAllUserSessions(tokenRow.userId);
 
       const [updatedUser] = await db
         .select({
@@ -874,6 +862,41 @@ export function userRoutes(app: FastifyInstance): void {
         db,
         request.log,
       );
+
+      // If MFA is enabled, an admin-initiated forced reset must not be a
+      // bypass: hand back an mfaToken and require the user to complete the
+      // existing /auth/mfa/verify flow before getting a real session. The
+      // login handler does the same thing for normal logins; we route the
+      // forced-reset path through the same gate.
+      if (user.mfaEnabled && user.mfaMethod != null) {
+        const mfaToken = app.jwt.sign(
+          { userId: user.id, roleId: user.roleId, mfaPending: true },
+          { expiresIn: '3m' },
+        );
+
+        let challengeId: number | undefined;
+        if (user.mfaMethod === 'email' || user.mfaMethod === 'sms') {
+          const challenge = await createMfaChallenge(client, {
+            userId: user.id,
+            method: user.mfaMethod,
+          });
+          challengeId = challenge.challengeId;
+          await dispatchSystemNotification(
+            client,
+            'mfa.VerificationCode',
+            { email: user.email, firstName: user.firstName ?? undefined, language: user.language },
+            { code: challenge.code },
+            TEMPLATES_DIR,
+          );
+        }
+
+        return {
+          mfaRequired: true,
+          mfaMethod: user.mfaMethod,
+          mfaToken,
+          challengeId,
+        };
+      }
 
       const [role] = await db
         .select({ id: roles.id, name: roles.name })
@@ -1218,8 +1241,7 @@ export function userRoutes(app: FastifyInstance): void {
       }
 
       // Generate 24-hour password setup token
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const { raw: rawToken, hash: tokenHash } = generateUserToken();
 
       await db.insert(userTokens).values({
         userId: user.id,
@@ -1731,6 +1753,7 @@ export function userRoutes(app: FastifyInstance): void {
           firstName: users.firstName,
           lastName: users.lastName,
           isActive: users.isActive,
+          language: users.language,
         })
         .from(users)
         .where(eq(users.id, id));
@@ -1758,8 +1781,7 @@ export function userRoutes(app: FastifyInstance): void {
         );
 
       // Generate new 24-hour token
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const { raw: rawToken, hash: tokenHash } = generateUserToken();
 
       await db.insert(userTokens).values({
         userId: user.id,
@@ -1774,7 +1796,12 @@ export function userRoutes(app: FastifyInstance): void {
       void dispatchSystemNotification(
         client,
         'operator.UserCreated',
-        { email: user.email, phone: user.phone ?? undefined, userId: user.id, language: 'en' },
+        {
+          email: user.email,
+          phone: user.phone ?? undefined,
+          userId: user.id,
+          language: user.language,
+        },
         {
           firstName: user.firstName ?? '',
           lastName: user.lastName ?? '',
@@ -1832,11 +1859,12 @@ export function userRoutes(app: FastifyInstance): void {
           200: zodSchema(loginResponse),
           400: errorWith('Bad request', [
             ERROR_CODES.MFA_CHALLENGE_EXHAUSTED,
+            ERROR_CODES.MFA_CODE_INVALID,
             ERROR_CODES.MFA_NOT_CONFIGURED,
             ERROR_CODES.MFA_TOKEN_INVALID,
             ERROR_CODES.TOTP_NOT_CONFIGURED,
           ]),
-          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED, ERROR_CODES.MFA_TOKEN_EXPIRED]),
           403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
         },
       },
@@ -1897,7 +1925,7 @@ export function userRoutes(app: FastifyInstance): void {
           verified = false;
         }
       } else if (challengeId != null) {
-        verified = await verifyMfaChallenge(client, challengeId, code);
+        verified = await verifyMfaChallenge(client, challengeId, code, { userId: user.id });
       }
 
       if (!verified) {
@@ -1972,8 +2000,9 @@ export function userRoutes(app: FastifyInstance): void {
           400: errorWith('Bad request', [
             ERROR_CODES.MFA_NOT_CONFIGURED,
             ERROR_CODES.MFA_TOKEN_INVALID,
+            ERROR_CODES.MFA_TOTP_NO_RESEND,
           ]),
-          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED]),
+          401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED, ERROR_CODES.MFA_TOKEN_EXPIRED]),
         },
       },
       config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
@@ -2245,7 +2274,7 @@ export function userRoutes(app: FastifyInstance): void {
           verified = false;
         }
       } else if (challengeId != null) {
-        verified = await verifyMfaChallenge(client, challengeId, code);
+        verified = await verifyMfaChallenge(client, challengeId, code, { userId });
       }
 
       if (!verified) {

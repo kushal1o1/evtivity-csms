@@ -99,6 +99,7 @@ export const ERROR_CODES = {
   MESSAGE_REFRESH_FAILED: 'MESSAGE_REFRESH_FAILED',
   MESSAGE_SEND_FAILED: 'MESSAGE_SEND_FAILED',
   MESSAGE_TIMEOUT: 'MESSAGE_TIMEOUT',
+  MFA_ALREADY_ENABLED: 'MFA_ALREADY_ENABLED',
   MFA_CHALLENGE_EXHAUSTED: 'MFA_CHALLENGE_EXHAUSTED',
   MFA_CODE_INVALID: 'MFA_CODE_INVALID',
   MFA_METHOD_DISABLED: 'MFA_METHOD_DISABLED',
@@ -148,6 +149,7 @@ export const ERROR_CODES = {
   PAYMENT_TOP_UP_FAILED: 'PAYMENT_TOP_UP_FAILED',
   PERMISSIONS_EXCEED_OWN: 'PERMISSIONS_EXCEED_OWN',
   PNC_DISABLED: 'PNC_DISABLED',
+  PORTAL_REGISTRATION_DISABLED: 'PORTAL_REGISTRATION_DISABLED',
   PRE_AUTH_FAILED: 'PRE_AUTH_FAILED',
   PRICING_GROUP_NOT_FOUND: 'PRICING_GROUP_NOT_FOUND',
   PRICING_GROUP_TARIFFS_IN_USE: 'PRICING_GROUP_TARIFFS_IN_USE',
@@ -319,6 +321,7 @@ export type ErrorCode =
   | 'MESSAGE_REFRESH_FAILED'
   | 'MESSAGE_SEND_FAILED'
   | 'MESSAGE_TIMEOUT'
+  | 'MFA_ALREADY_ENABLED'
   | 'MFA_CHALLENGE_EXHAUSTED'
   | 'MFA_CODE_INVALID'
   | 'MFA_METHOD_DISABLED'
@@ -368,6 +371,7 @@ export type ErrorCode =
   | 'PAYMENT_TOP_UP_FAILED'
   | 'PERMISSIONS_EXCEED_OWN'
   | 'PNC_DISABLED'
+  | 'PORTAL_REGISTRATION_DISABLED'
   | 'PRE_AUTH_FAILED'
   | 'PRICING_GROUP_NOT_FOUND'
   | 'PRICING_GROUP_TARIFFS_IN_USE'
@@ -546,6 +550,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   MESSAGE_REFRESH_FAILED: 'Failed to refresh display messages',
   MESSAGE_SEND_FAILED: 'Failed to send display message',
   MESSAGE_TIMEOUT: 'Display message command timed out',
+  MFA_ALREADY_ENABLED: 'MFA is already enabled. Disable it first before setting up a new method.',
   MFA_CHALLENGE_EXHAUSTED: 'Too many failed attempts. Request a new code.',
   MFA_CODE_INVALID: 'Invalid verification code',
   MFA_METHOD_DISABLED: 'MFA method is disabled',
@@ -596,6 +601,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   PAYMENT_TOP_UP_FAILED: 'Payment top-up rejected',
   PERMISSIONS_EXCEED_OWN: 'API key permissions must be a subset of your own permissions',
   PNC_DISABLED: 'Plug & Charge is disabled',
+  PORTAL_REGISTRATION_DISABLED:
+    'Driver self-registration is disabled. Contact your operator to be invited.',
   PRE_AUTH_FAILED: 'Payment pre-authorization failed',
   PRICING_GROUP_NOT_FOUND: 'Pricing group not found',
   PRICING_GROUP_TARIFFS_IN_USE: 'Pricing group has tariffs referenced by charging sessions',

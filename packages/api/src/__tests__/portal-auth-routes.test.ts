@@ -71,6 +71,7 @@ vi.mock('@evtivity/database', () => ({
   drivers: {},
   userTokens: {},
   getRecaptchaConfig: vi.fn().mockResolvedValue(null),
+  isPortalRegistrationEnabled: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('drizzle-orm', () => ({
