@@ -38,6 +38,11 @@ interface DashboardStats {
 }
 
 interface SnapshotData {
+  // False when no dashboard_snapshots row matched the requested date filter.
+  // Drives suppression of the day-over-day delta arrows on early days of a
+  // deployment so the StatCards don't show a misleading +/-100% vs an
+  // empty/never-populated baseline.
+  hasData: boolean;
   totalStations: number;
   onlineStations: number;
   onlinePercent: number;
@@ -573,6 +578,13 @@ function AdminDashboard({
   const yd = yesterdaySnapshot.data;
   const db = dayBeforeSnapshot.data;
 
+  // Only show the day-over-day delta when both reference days actually had
+  // snapshot data. The snapshot endpoint returns zeros + uptime=100 when
+  // no rows match, which used to make StatCards show a misleading +100%
+  // vs the prior day during the first 1-2 days after deployment.
+  const dayDelta = (current: number | undefined, baseline: number | undefined): number | null =>
+    yd?.hasData === true && db?.hasData === true ? computeDelta(current, baseline) : null;
+
   const deltaLabel = (() => {
     const y = new Date();
     y.setDate(y.getDate() - 1);
@@ -623,12 +635,12 @@ function AdminDashboard({
   function renderLiveStatCards(): React.JSX.Element {
     return (
       <>
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
           <StatCard
             title={t('dashboard.totalStations')}
             value={stats.totalStations}
             info={t('dashboard.info.totalStations')}
-            dayDelta={computeDelta(yd?.totalStations, db?.totalStations)}
+            dayDelta={dayDelta(yd?.totalStations, db?.totalStations)}
             deltaLabel={deltaLabel}
             extra={<OnboardingStatusBadges counts={stats.onboardingStatusCounts} />}
           />
@@ -636,21 +648,21 @@ function AdminDashboard({
             title={t('dashboard.online')}
             value={`${String(stats.onlinePercent)}%`}
             info={t('dashboard.info.online')}
-            dayDelta={computeDelta(yd?.onlinePercent, db?.onlinePercent)}
+            dayDelta={dayDelta(yd?.onlinePercent, db?.onlinePercent)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.uptime')}
             value={`${String(uptimeQuery.data?.uptimePercent ?? 100)}%`}
             info={t('dashboard.info.uptime')}
-            dayDelta={computeDelta(yd?.uptimePercent, db?.uptimePercent)}
+            dayDelta={dayDelta(yd?.uptimePercent, db?.uptimePercent)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.activeSessions')}
             value={stats.activeSessions}
             info={t('dashboard.info.activeSessions')}
-            dayDelta={computeDelta(yd?.activeSessions, db?.activeSessions)}
+            dayDelta={dayDelta(yd?.activeSessions, db?.activeSessions)}
             deltaLabel={deltaLabel}
           />
           <Card>
@@ -670,26 +682,26 @@ function AdminDashboard({
           </Card>
         </div>
 
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
           <StatCard
             title={t('dashboard.energyDelivered')}
             value={formatEnergy(stats.totalEnergyWh)}
             info={t('dashboard.info.energyDelivered')}
-            dayDelta={computeDelta(yd?.totalEnergyWh, db?.totalEnergyWh)}
+            dayDelta={dayDelta(yd?.totalEnergyWh, db?.totalEnergyWh)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.totalSessions')}
             value={stats.totalSessions}
             info={t('dashboard.info.totalSessions')}
-            dayDelta={computeDelta(yd?.totalSessions, db?.totalSessions)}
+            dayDelta={dayDelta(yd?.totalSessions, db?.totalSessions)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.ocppConnections')}
             value={ocppHealth.data?.connectedStations ?? 0}
             info={t('dashboard.info.ocppConnections')}
-            dayDelta={computeDelta(yd?.connectedStations, db?.connectedStations)}
+            dayDelta={dayDelta(yd?.connectedStations, db?.connectedStations)}
             deltaLabel={deltaLabel}
           />
           <StatCard
@@ -697,45 +709,45 @@ function AdminDashboard({
             value={`${String(ocppHealth.data?.avgPingLatencyMs ?? 0)}\u00a0ms`}
             info={t('dashboard.info.pingLatency')}
             positiveIsGood={false}
-            dayDelta={computeDelta(yd?.avgPingLatencyMs, db?.avgPingLatencyMs)}
+            dayDelta={dayDelta(yd?.avgPingLatencyMs, db?.avgPingLatencyMs)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.pingSuccessRate')}
             value={`${String(ocppHealth.data?.pingSuccessRate ?? 100)}%`}
             info={t('dashboard.info.pingSuccessRate')}
-            dayDelta={computeDelta(yd?.pingSuccessRate, db?.pingSuccessRate)}
+            dayDelta={dayDelta(yd?.pingSuccessRate, db?.pingSuccessRate)}
             deltaLabel={deltaLabel}
           />
         </div>
 
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t('dashboard.totalRevenue')}
             value={formatCurrency(financialStats.data?.totalRevenueCents ?? 0)}
             info={t('dashboard.info.totalRevenue')}
-            dayDelta={computeDelta(yd?.totalRevenueCents, db?.totalRevenueCents)}
+            dayDelta={dayDelta(yd?.totalRevenueCents, db?.totalRevenueCents)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.todayRevenue')}
             value={formatCurrency(financialStats.data?.todayRevenueCents ?? 0)}
             info={t('dashboard.info.todayRevenue')}
-            dayDelta={computeDelta(yd?.dayRevenueCents, db?.dayRevenueCents)}
+            dayDelta={dayDelta(yd?.dayRevenueCents, db?.dayRevenueCents)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.revenuePerSession')}
             value={formatCurrency(financialStats.data?.avgRevenueCentsPerSession ?? 0)}
             info={t('dashboard.info.revenuePerSession')}
-            dayDelta={computeDelta(yd?.avgRevenueCentsPerSession, db?.avgRevenueCentsPerSession)}
+            dayDelta={dayDelta(yd?.avgRevenueCentsPerSession, db?.avgRevenueCentsPerSession)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.totalTransactions')}
             value={financialStats.data?.totalTransactions ?? 0}
             info={t('dashboard.info.totalTransactions')}
-            dayDelta={computeDelta(yd?.totalTransactions, db?.totalTransactions)}
+            dayDelta={dayDelta(yd?.totalTransactions, db?.totalTransactions)}
             deltaLabel={deltaLabel}
           />
         </div>
@@ -765,7 +777,7 @@ function AdminDashboard({
 
     return (
       <>
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t('dashboard.totalStations')}
             value={s.totalStations}
@@ -788,7 +800,7 @@ function AdminDashboard({
           />
         </div>
 
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t('dashboard.dayEnergy')}
             value={formatEnergy(s.dayEnergyWh)}
@@ -811,7 +823,7 @@ function AdminDashboard({
           />
         </div>
 
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t('dashboard.totalRevenue')}
             value={formatCurrency(s.totalRevenueCents)}
@@ -846,8 +858,9 @@ function AdminDashboard({
       return <NoDataOverlay message={msg}>{renderLiveStatCards()}</NoDataOverlay>;
     }
 
-    const pluck = (key: keyof SnapshotData): number[] => days.map((d) => d[key]);
-    const avg = (key: keyof SnapshotData): number => {
+    type NumericSnapshotKey = Exclude<keyof SnapshotData, 'hasData'>;
+    const pluck = (key: NumericSnapshotKey): number[] => days.map((d) => d[key]);
+    const avg = (key: NumericSnapshotKey): number => {
       const vals = pluck(key);
       return vals.reduce((a, b) => a + b, 0) / vals.length;
     };
@@ -856,7 +869,7 @@ function AdminDashboard({
     const tr = { from: oldest?.date ?? '', to: newest?.date ?? '' };
 
     return (
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <TrendStatCard
           title={t('dashboard.totalStations')}
           value={Math.round(avg('totalStations'))}
@@ -1048,6 +1061,13 @@ function OperatorDashboard({
   const yd = yesterdaySnapshot.data;
   const db = dayBeforeSnapshot.data;
 
+  // Only show the day-over-day delta when both reference days actually had
+  // snapshot data. The snapshot endpoint returns zeros + uptime=100 when
+  // no rows match, which used to make StatCards show a misleading +100%
+  // vs the prior day during the first 1-2 days after deployment.
+  const dayDelta = (current: number | undefined, baseline: number | undefined): number | null =>
+    yd?.hasData === true && db?.hasData === true ? computeDelta(current, baseline) : null;
+
   const deltaLabel = (() => {
     const y = new Date();
     y.setDate(y.getDate() - 1);
@@ -1059,12 +1079,12 @@ function OperatorDashboard({
   function renderLiveStatCards(): React.JSX.Element {
     return (
       <>
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <StatCard
             title={t('dashboard.stations')}
             value={stats.totalStations}
             info={t('dashboard.info.totalStations')}
-            dayDelta={computeDelta(yd?.totalStations, db?.totalStations)}
+            dayDelta={dayDelta(yd?.totalStations, db?.totalStations)}
             deltaLabel={deltaLabel}
             extra={<OnboardingStatusBadges counts={stats.onboardingStatusCounts} />}
           />
@@ -1072,14 +1092,14 @@ function OperatorDashboard({
             title={t('dashboard.online')}
             value={stats.onlineStations}
             info={t('dashboard.info.onlineCount')}
-            dayDelta={computeDelta(yd?.onlineStations, db?.onlineStations)}
+            dayDelta={dayDelta(yd?.onlineStations, db?.onlineStations)}
             deltaLabel={deltaLabel}
           />
           <StatCard
             title={t('dashboard.activeSessions')}
             value={stats.activeSessions}
             info={t('dashboard.info.activeSessions')}
-            dayDelta={computeDelta(yd?.activeSessions, db?.activeSessions)}
+            dayDelta={dayDelta(yd?.activeSessions, db?.activeSessions)}
             deltaLabel={deltaLabel}
           />
           <StatCard
@@ -1114,7 +1134,7 @@ function OperatorDashboard({
     const d = isRange ? { date: `${fromDate} to ${toDate}` } : { date: fromDate };
 
     return (
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <StatCard
           title={t('dashboard.totalStations')}
           value={s.totalStations}
@@ -1148,8 +1168,9 @@ function OperatorDashboard({
       return <NoDataOverlay message={msg}>{renderLiveStatCards()}</NoDataOverlay>;
     }
 
-    const pluck = (key: keyof SnapshotData): number[] => days.map((d) => d[key]);
-    const avg = (key: keyof SnapshotData): number => {
+    type NumericSnapshotKey = Exclude<keyof SnapshotData, 'hasData'>;
+    const pluck = (key: NumericSnapshotKey): number[] => days.map((d) => d[key]);
+    const avg = (key: NumericSnapshotKey): number => {
       const vals = pluck(key);
       return vals.reduce((a, b) => a + b, 0) / vals.length;
     };
@@ -1158,7 +1179,7 @@ function OperatorDashboard({
     const tr = { from: oldest?.date ?? '', to: newest?.date ?? '' };
 
     return (
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <TrendStatCard
           title={t('dashboard.totalStations')}
           value={Math.round(avg('totalStations'))}

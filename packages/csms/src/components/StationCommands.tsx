@@ -19,6 +19,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
 import { useOcppSchema } from '@/hooks/use-ocpp-schema';
 import { resolveFields, formValuesToPayload, generateJsonStub } from '@/lib/ocpp-schema';
@@ -28,6 +30,16 @@ import { OCPP_21_VARIABLES, OCPP_16_KEYS } from '@/lib/ocpp-variables';
 const RESET_TYPES = ['Immediate', 'OnIdle'] as const;
 
 const RESET_TYPES_16 = ['Hard', 'Soft'] as const;
+
+// Quick actions that materially affect station state and need an explicit
+// operator confirmation before dispatch. Reset wipes runtime state and
+// drops active sessions; ChangeAvailability can disable a revenue-
+// generating EVSE; ClearCache forces every cached idToken to re-authorize.
+const DESTRUCTIVE_QUICK_ACTIONS: ReadonlySet<string> = new Set([
+  'Reset',
+  'ChangeAvailability',
+  'ClearCache',
+]);
 
 const ID_TOKEN_TYPES = [
   'Central',
@@ -1062,6 +1074,10 @@ export function StationCommands({
   const [activeAction, setActiveAction] = useState<QuickAction | QuickAction16 | null>(null);
   const [form, setForm] = useState<FormState>(is16 ? INITIAL_FORM_16 : INITIAL_FORM);
   const [result, setResult] = useState<CommandResponse | null>(null);
+  // Destructive commands prompt for confirmation before firing the mutation
+  // so an accidental click cannot wipe station state or disable a revenue-
+  // generating EVSE. See DESTRUCTIVE_QUICK_ACTIONS below.
+  const [confirmPending, setConfirmPending] = useState(false);
 
   const [advancedAction, setAdvancedAction] = useState<string>('');
   const [advancedPayload, setAdvancedPayload] = useState('{}');
@@ -1164,7 +1180,7 @@ export function StationCommands({
     mutation.reset();
   }
 
-  function handleQuickSubmit(): void {
+  function performQuickSubmit(): void {
     if (activeAction == null) return;
     setResult(null);
     if (is16) {
@@ -1178,6 +1194,15 @@ export function StationCommands({
         payload: buildPayload(activeAction as QuickAction, form),
       });
     }
+  }
+
+  function handleQuickSubmit(): void {
+    if (activeAction == null) return;
+    if (DESTRUCTIVE_QUICK_ACTIONS.has(activeAction)) {
+      setConfirmPending(true);
+      return;
+    }
+    performQuickSubmit();
   }
 
   function handleAdvancedSubmit(): void {
@@ -1343,7 +1368,12 @@ export function StationCommands({
                 ))}
               {result != null && (
                 <div className="mt-4">
-                  <Label>{t('commands.response')}</Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="m-0">{t('commands.response')}</Label>
+                    {result.status === 'queued' && (
+                      <Badge variant="warning">{t('commands.queued')}</Badge>
+                    )}
+                  </div>
                   <pre className="mt-1 rounded-md bg-muted p-3 text-xs overflow-auto max-h-60">
                     {JSON.stringify(result, null, 2)}
                   </pre>
@@ -1362,6 +1392,26 @@ export function StationCommands({
           </DialogContent>
         </Dialog>
 
+        <ConfirmDialog
+          open={confirmPending}
+          onOpenChange={setConfirmPending}
+          title={
+            activeAction != null
+              ? t('commands.confirmTitle', { action: activeAction })
+              : t('common.confirm')
+          }
+          description={
+            activeAction != null
+              ? t('commands.confirmDescription', { action: activeAction, stationId })
+              : ''
+          }
+          confirmLabel={t('common.send')}
+          variant="destructive"
+          onConfirm={() => {
+            performQuickSubmit();
+          }}
+        />
+
         <Dialog open={advancedOpen} onOpenChange={setAdvancedOpen}>
           <DialogContent>
             <DialogHeader>
@@ -1376,7 +1426,12 @@ export function StationCommands({
               )}
               {advancedResult != null && (
                 <div>
-                  <Label>{t('commands.response')}</Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="m-0">{t('commands.response')}</Label>
+                    {advancedResult.status === 'queued' && (
+                      <Badge variant="warning">{t('commands.queued')}</Badge>
+                    )}
+                  </div>
                   <pre className="mt-1 rounded-md bg-muted p-3 text-xs overflow-auto max-h-60">
                     {JSON.stringify(advancedResult, null, 2)}
                   </pre>

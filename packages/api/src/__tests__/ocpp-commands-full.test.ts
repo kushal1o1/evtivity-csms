@@ -73,6 +73,40 @@ vi.mock('../lib/site-access.js', () => ({
   invalidateSiteAccessCache: vi.fn(),
 }));
 
+// dispatchCommandRaw now always resolves the station's internal id so it
+// can write a station_audit_log row on every dispatch. Mock the chargingStations
+// select chain to return one fake station row, and stub the rest of the
+// surface used by writeAudit so it can fail silently.
+vi.mock('@evtivity/database', () => {
+  function makeChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    const methods = ['select', 'from', 'where', 'limit', 'orderBy', 'innerJoin', 'leftJoin'];
+    for (const m of methods) chain[m] = vi.fn(() => chain);
+    chain['then'] = (onFulfilled?: (v: unknown) => unknown) =>
+      Promise.resolve([{ id: 'sta_test', siteId: null }]).then(onFulfilled);
+    return chain;
+  }
+  return {
+    db: {
+      select: vi.fn(() => makeChain()),
+      insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue([{ id: 1 }]) })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })),
+      })),
+    },
+    chargingStations: { id: 'id', siteId: 'siteId', stationId: 'stationId' },
+    stationConfigurations: {
+      stationId: 'stationId',
+      component: 'component',
+      variable: 'variable',
+      value: 'value',
+      variableInstance: 'variableInstance',
+    },
+    stationAuditLog: {},
+    writeAudit: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 import { registerAuth } from '../plugins/auth.js';
 import { ocppCommandRoutes } from '../routes/ocpp-commands.js';
 

@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Pagination } from '@/components/ui/pagination';
 import { Select } from '@/components/ui/select';
 import { SearchInput } from '@/components/search-input';
+import { FilterPopover } from '@/components/FilterBar';
 import { usePaginatedQuery } from '@/hooks/use-paginated-query';
 import { httpMethodVariant, httpStatusVariant, workerStatusVariant } from '@/lib/status-variants';
 
@@ -285,54 +286,81 @@ function ApiLogTab(): React.JSX.Element {
     });
   }, [logs, filterStatus]);
 
+  const searchInput = (
+    <SearchInput
+      value={search}
+      onDebouncedChange={setSearch}
+      placeholder={t('logs.searchPlaceholder')}
+      className="h-10 w-full"
+    />
+  );
+
+  const filters = (
+    <>
+      <div className="space-y-2">
+        <Label>{t('logs.method')}</Label>
+        <Select
+          aria-label={t('logs.method')}
+          className="h-10"
+          value={filterMethod}
+          onChange={(e) => {
+            setFilterMethod(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">{t('logs.allMethods')}</option>
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+          <option value="PATCH">PATCH</option>
+          <option value="PUT">PUT</option>
+          <option value="DELETE">DELETE</option>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>{t('logs.status')}</Label>
+        <Select
+          aria-label={t('logs.status')}
+          className="h-10"
+          value={filterStatus}
+          onChange={(e) => {
+            setFilterStatus(e.target.value);
+          }}
+        >
+          <option value="">{t('logs.allStatuses')}</option>
+          <option value="2xx">2xx</option>
+          <option value="4xx">4xx</option>
+          <option value="5xx">5xx</option>
+        </Select>
+      </div>
+    </>
+  );
+
+  const activeFilterCount = (filterMethod !== '' ? 1 : 0) + (filterStatus !== '' ? 1 : 0);
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardContent className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="api-logs-search">{t('logs.search')}</Label>
-            <SearchInput
-              id="api-logs-search"
-              value={search}
-              onDebouncedChange={setSearch}
-              placeholder={t('logs.searchPlaceholder')}
-              className="h-9 max-w-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="api-logs-method">{t('logs.method')}</Label>
-            <Select
-              id="api-logs-method"
-              className="h-9"
-              value={filterMethod}
-              onChange={(e) => {
-                setFilterMethod(e.target.value);
-                setPage(1);
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 md:hidden">
+            <div className="flex-1">{searchInput}</div>
+            <FilterPopover
+              activeCount={activeFilterCount}
+              onClearAll={() => {
+                setFilterMethod('');
+                setFilterStatus('');
               }}
             >
-              <option value="">{t('logs.allMethods')}</option>
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PATCH">PATCH</option>
-              <option value="PUT">PUT</option>
-              <option value="DELETE">DELETE</option>
-            </Select>
+              {filters}
+            </FilterPopover>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="api-logs-status">{t('logs.status')}</Label>
-            <Select
-              id="api-logs-status"
-              className="h-9"
-              value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value);
-              }}
-            >
-              <option value="">{t('logs.allStatuses')}</option>
-              <option value="2xx">2xx</option>
-              <option value="4xx">4xx</option>
-              <option value="5xx">5xx</option>
-            </Select>
+          <div className="hidden items-end gap-4 md:flex">
+            <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>{t('logs.search')}</Label>
+                {searchInput}
+              </div>
+              {filters}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -444,53 +472,81 @@ function WorkerLogTab(): React.JSX.Element {
     setSearch,
   } = usePaginatedQuery<WorkerJobLog>('worker-logs', '/v1/worker-logs', extraParams);
 
+  const searchInput = (
+    <SearchInput
+      value={search}
+      onDebouncedChange={setSearch}
+      placeholder={t('logs.searchPlaceholder')}
+      className="h-10 w-full"
+    />
+  );
+
+  const filters = (
+    <>
+      <div className="space-y-2">
+        <Label>{t('logs.queue')}</Label>
+        <Select
+          aria-label={t('logs.queue')}
+          className="h-10"
+          value={filterQueue}
+          onChange={(e) => {
+            setFilterQueue(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">{t('logs.allQueues')}</option>
+          <option value="cron-jobs">cron-jobs</option>
+          <option value="load-management">load-management</option>
+          <option value="guest-session-events">guest-session-events</option>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>{t('logs.status')}</Label>
+        <Select
+          aria-label={t('logs.status')}
+          className="h-10"
+          value={filterStatus}
+          onChange={(e) => {
+            setFilterStatus(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">{t('logs.allStatuses')}</option>
+          <option value="started">started</option>
+          <option value="completed">completed</option>
+          <option value="failed">failed</option>
+        </Select>
+      </div>
+    </>
+  );
+
+  const activeFilterCount = (filterQueue !== '' ? 1 : 0) + (filterStatus !== '' ? 1 : 0);
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardContent className="grid grid-cols-1 gap-4 p-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="worker-logs-search">{t('logs.search')}</Label>
-            <SearchInput
-              id="worker-logs-search"
-              value={search}
-              onDebouncedChange={setSearch}
-              placeholder={t('logs.searchPlaceholder')}
-              className="h-9 max-w-none"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="worker-logs-queue">{t('logs.queue')}</Label>
-            <Select
-              id="worker-logs-queue"
-              className="h-9"
-              value={filterQueue}
-              onChange={(e) => {
-                setFilterQueue(e.target.value);
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 md:hidden">
+            <div className="flex-1">{searchInput}</div>
+            <FilterPopover
+              activeCount={activeFilterCount}
+              onClearAll={() => {
+                setFilterQueue('');
+                setFilterStatus('');
                 setPage(1);
               }}
             >
-              <option value="">{t('logs.allQueues')}</option>
-              <option value="cron-jobs">cron-jobs</option>
-              <option value="load-management">load-management</option>
-              <option value="guest-session-events">guest-session-events</option>
-            </Select>
+              {filters}
+            </FilterPopover>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="worker-logs-status">{t('logs.status')}</Label>
-            <Select
-              id="worker-logs-status"
-              className="h-9"
-              value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">{t('logs.allStatuses')}</option>
-              <option value="started">started</option>
-              <option value="completed">completed</option>
-              <option value="failed">failed</option>
-            </Select>
+          <div className="hidden items-end gap-4 md:flex">
+            <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>{t('logs.search')}</Label>
+                {searchInput}
+              </div>
+              {filters}
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -174,11 +174,26 @@ export function carbonRoutes(app: FastifyInstance): void {
         operationId: 'getCarbonReport',
         security: [{ bearerAuth: [] }],
         querystring: zodSchema(reportQuery),
-        response: { 200: itemResponse(reportResponse) },
+        response: {
+          200: itemResponse(reportResponse),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const { from, to, siteId } = request.query as z.infer<typeof reportQuery>;
+      // from > to silently returns empty rows from the SQL aggregation,
+      // which looks identical to "no carbon data exists" in the UI. Surface
+      // the swapped input as a 400 so the operator sees the cause. (Cannot
+      // use Zod .refine() here because zod-to-json-schema strips refines
+      // when converting to the JSON Schema Fastify actually validates.)
+      if (from != null && to != null && from > to) {
+        await reply.status(400).send({
+          error: '"from" date must be on or before "to" date',
+          code: 'VALIDATION_ERROR',
+        });
+        return;
+      }
       const user = request.user as { userId: string };
       const userSiteIds = await getUserSiteIds(user.userId);
 

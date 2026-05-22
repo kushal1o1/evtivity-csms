@@ -285,4 +285,24 @@ describe('Carbon routes', () => {
     expect(body).toHaveProperty('sessionCount');
     expect(body).toHaveProperty('avgCo2AvoidedKgPerSession');
   });
+
+  // --- Date range validation (Zod refine) ---
+
+  it('GET /carbon/report rejects from > to with 400', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/carbon/report?from=2026-03-01&to=2026-01-01',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('GET /dashboard/carbon-stats rejects from > to with 400', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/dashboard/carbon-stats?from=2026-03-01&to=2026-01-01',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(400);
+  });
 });

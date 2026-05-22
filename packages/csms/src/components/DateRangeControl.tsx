@@ -54,6 +54,12 @@ export function DateRangeControl({
           type="date"
           aria-label="Start date"
           value={from ?? ''}
+          // max={to} stops the user from picking a start that comes after
+          // the end. Without it the chart endpoints (energy-history,
+          // session-history, revenue-history, peak-usage, utilization) saw
+          // diffDays < 1 in parseDateRange and silently fell back to a
+          // 7-day window, so the picker and the rendered data disagreed.
+          max={to ?? undefined}
           onChange={(e) => {
             if (e.target.value && to) {
               onCustomChange(e.target.value, to);
@@ -69,6 +75,7 @@ export function DateRangeControl({
           type="date"
           aria-label="End date"
           value={to ?? ''}
+          min={from ?? undefined}
           onChange={(e) => {
             if (from && e.target.value) {
               onCustomChange(from, e.target.value);

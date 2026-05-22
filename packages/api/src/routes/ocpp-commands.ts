@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import crypto from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   ActionRegistry,
@@ -12,11 +12,18 @@ import {
 } from '@evtivity/ocpp';
 import type { Subscription } from '@evtivity/lib';
 import { eq, and } from 'drizzle-orm';
-import { db, chargingStations, stationConfigurations } from '@evtivity/database';
+import {
+  db,
+  chargingStations,
+  stationConfigurations,
+  stationAuditLog,
+  writeAudit,
+} from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { itemResponse, errorResponse } from '../lib/response-schemas.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { getUserSiteIds } from '../lib/site-access.js';
+import { getAuditActor } from '../lib/audit-actor.js';
 
 // --- v21 type imports ---
 import {
@@ -106,14 +113,30 @@ const ocppCommandError = z
   })
   .passthrough();
 
+const ocppCommandQueued = z
+  .object({
+    status: z
+      .literal('queued')
+      .describe('Indicates the command was queued because the station is offline'),
+    code: z.literal('COMMAND_QUEUED').describe('Stable code for offline-queued commands'),
+    stationId: z.string().describe('Target station OCPP ID'),
+    action: z.string().describe('OCPP action that was dispatched'),
+    message: z
+      .string()
+      .describe('Human-readable note explaining the command will be delivered on reconnect'),
+  })
+  .passthrough();
+
 interface CommandResult {
   commandId: string;
   response?: Record<string, unknown>;
   error?: string;
+  queued?: boolean;
 }
 
 const commandResponses = {
   200: itemResponse(ocppCommandSuccess),
+  202: itemResponse(ocppCommandQueued),
   400: errorResponse,
   404: errorResponse,
   500: itemResponse(ocppCommandError),
@@ -130,9 +153,62 @@ interface DispatchResult {
   body: Record<string, unknown>;
 }
 
+// Cap on the JSON-serialized payload size we store in the audit row.
+// Big OCPP payloads (SendLocalList with thousands of tokens,
+// SetChargingProfile with full schedules) can easily exceed 100KB; storing
+// them verbatim in every audit row bloats station_audit_log and slows
+// snapshot backups. The action + outcome are what compliance actually
+// needs; the full payload remains in the OCPP message log if forensics
+// need it.
+const MAX_AUDIT_PAYLOAD_BYTES = 16 * 1024;
+
+function truncatedAuditPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const serialized = JSON.stringify(payload);
+  if (serialized.length <= MAX_AUDIT_PAYLOAD_BYTES) return payload;
+  return {
+    _truncated: true,
+    _originalBytes: serialized.length,
+    _maxBytes: MAX_AUDIT_PAYLOAD_BYTES,
+  };
+}
+
+async function recordCommandAudit(
+  app: FastifyInstance,
+  actor: ReturnType<typeof getAuditActor>,
+  stationInternalId: string | null,
+  action: string,
+  payload: Record<string, unknown>,
+  outcome: string,
+): Promise<void> {
+  // Skip when we never resolved the station's internal id -- this happens
+  // on chunked dispatch continuations (subsequent chunks skip site access)
+  // and we don't want a flood of audit rows for one logical operation.
+  if (stationInternalId == null) return;
+  try {
+    await writeAudit(
+      { table: stationAuditLog, idColumn: 'station_id' },
+      {
+        entityId: stationInternalId,
+        entityIdSnapshot: stationInternalId,
+        action: 'command_dispatched',
+        ...actor,
+        notes: `${action} (${outcome})`,
+        after: { action, payload: truncatedAuditPayload(payload), outcome },
+      },
+      db,
+      app.log,
+    );
+  } catch (err: unknown) {
+    // Audit failures must not break the command response. Log at warn so
+    // it surfaces in ops monitoring without affecting the operator.
+    app.log.warn({ err, stationInternalId, action }, 'Failed to write command audit log');
+  }
+}
+
 async function dispatchCommandRaw(
   app: FastifyInstance,
   userId: string,
+  actor: ReturnType<typeof getAuditActor>,
   stationId: string,
   action: string,
   payload: Record<string, unknown>,
@@ -170,20 +246,32 @@ async function dispatchCommandRaw(
     }
   }
 
+  // Resolve the station's internal (nanoid) id so we can audit-log the
+  // dispatch below. Also serves the site-access check for users who have
+  // restricted site visibility.
+  let stationInternalId: string | null = null;
   if (options?.skipSiteAccess !== true) {
-    const siteAccessIds = await getUserSiteIds(userId);
-    if (siteAccessIds != null) {
-      const [station] = await db
-        .select({ siteId: chargingStations.siteId })
-        .from(chargingStations)
-        .where(eq(chargingStations.stationId, stationId));
-      if (station == null || station.siteId == null || !siteAccessIds.includes(station.siteId)) {
-        return {
-          code: 404,
-          body: { error: 'Station not found', code: 'STATION_NOT_FOUND' },
-        };
-      }
+    const [station] = await db
+      .select({ id: chargingStations.id, siteId: chargingStations.siteId })
+      .from(chargingStations)
+      .where(eq(chargingStations.stationId, stationId));
+    if (station == null) {
+      return {
+        code: 404,
+        body: { error: 'Station not found', code: 'STATION_NOT_FOUND' },
+      };
     }
+    const siteAccessIds = await getUserSiteIds(userId);
+    if (
+      siteAccessIds != null &&
+      (station.siteId == null || !siteAccessIds.includes(station.siteId))
+    ) {
+      return {
+        code: 404,
+        body: { error: 'Station not found', code: 'STATION_NOT_FOUND' },
+      };
+    }
+    stationInternalId = station.id;
   }
 
   const commandId = crypto.randomUUID();
@@ -237,8 +325,42 @@ async function dispatchCommandRaw(
         });
     });
 
+    // The CommandListener publishes { queued: true } when the station is
+    // not connected to any OCPP pod -- the command is held in
+    // offline_command_queue and dispatched on next reconnect. Surface that
+    // explicitly with 202 Accepted so the operator UI can render a
+    // "queued" badge instead of a generic command-failed state.
+    if (result.queued === true) {
+      void recordCommandAudit(
+        app,
+        actor,
+        stationInternalId,
+        action,
+        payload,
+        'queued (station offline)',
+      );
+      return {
+        code: 202,
+        body: {
+          status: 'queued',
+          code: 'COMMAND_QUEUED',
+          stationId,
+          action,
+          message: result.error ?? 'Station offline, command queued',
+        },
+      };
+    }
+
     if (result.error != null) {
       const isTimeout = result.error.includes('No response within');
+      void recordCommandAudit(
+        app,
+        actor,
+        stationInternalId,
+        action,
+        payload,
+        isTimeout ? 'timeout' : `error: ${result.error}`,
+      );
       return {
         code: isTimeout ? 504 : 502,
         body: {
@@ -251,6 +373,7 @@ async function dispatchCommandRaw(
       };
     }
 
+    void recordCommandAudit(app, actor, stationInternalId, action, payload, 'accepted');
     return {
       code: 200,
       body: { status: 'accepted', stationId, action, response: result.response },
@@ -280,7 +403,7 @@ async function dispatchCommandRaw(
 
 async function dispatchCommand(
   app: FastifyInstance,
-  request: { user: unknown },
+  request: FastifyRequest,
   reply: {
     status: (code: number) => { send: (body: unknown) => Promise<unknown> };
   },
@@ -290,7 +413,16 @@ async function dispatchCommand(
   ocppVersion?: 'ocpp1.6' | 'ocpp2.1',
 ): Promise<unknown> {
   const { userId } = request.user as { userId: string };
-  const result = await dispatchCommandRaw(app, userId, stationId, action, payload, ocppVersion);
+  const actor = getAuditActor(request);
+  const result = await dispatchCommandRaw(
+    app,
+    userId,
+    actor,
+    stationId,
+    action,
+    payload,
+    ocppVersion,
+  );
   return reply.status(result.code).send(result.body);
 }
 
@@ -1137,6 +1269,7 @@ export function ocppCommandRoutes(app: FastifyInstance): void {
       const body = request.body as { stationId: string; getVariableData: unknown[] };
       const { stationId, ...payload } = body;
       const { userId } = request.user as { userId: string };
+      const actor = getAuditActor(request);
       const getVariableData = payload.getVariableData;
 
       // Look up station DB ID for ItemsPerMessage config query
@@ -1178,6 +1311,7 @@ export function ocppCommandRoutes(app: FastifyInstance): void {
         const result = await dispatchCommandRaw(
           app,
           userId,
+          actor,
           stationId,
           'GetVariables',
           payload,
@@ -1198,6 +1332,7 @@ export function ocppCommandRoutes(app: FastifyInstance): void {
         const result = await dispatchCommandRaw(
           app,
           userId,
+          actor,
           stationId,
           'GetVariables',
           chunkPayload,

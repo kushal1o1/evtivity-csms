@@ -14,7 +14,9 @@ import {
   paymentRecords,
   ocppServerHealth,
 } from '@evtivity/database';
-import { itemResponse, arrayResponse } from '../lib/response-schemas.js';
+import { ValidationError } from '@evtivity/lib';
+import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.js';
+import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { zodSchema } from '../lib/zod-schema.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import type { JwtPayload } from '../plugins/auth.js';
@@ -212,6 +214,11 @@ const ocppHealthResponse = z
 
 const snapshotItem = z
   .object({
+    hasData: z
+      .boolean()
+      .describe(
+        'True when at least one dashboard_snapshots row matched the requested date filter. False on early days after deployment before the nightly snapshot worker has populated the table -- the StatCards on the dashboard suppress their day-over-day delta arrows when this is false to avoid showing a misleading +/-100%.',
+      ),
     totalStations: z.number().int().min(0).describe('Total number of stations on this date'),
     onlineStations: z.number().int().min(0).describe('Number of stations online on this date'),
     onlinePercent: z
@@ -266,6 +273,11 @@ const trendResponse = z
         z
           .object({
             date: z.string().describe('Date in YYYY-MM-DD format (local timezone)'),
+            hasData: z
+              .boolean()
+              .describe(
+                'Always true for trend rows -- the query GROUP BYs snapshot_date so each row represents a day that actually had a snapshot. Mirrors the snapshot endpoint shape so TrendDay can extend SnapshotData on the frontend without divergence.',
+              ),
             totalStations: z
               .number()
               .int()
@@ -372,8 +384,16 @@ function parseDateRange(query: { days?: string; from?: string; to?: string }): D
     toDate.setHours(23, 59, 59, 999);
     const diffMs = toDate.getTime() - fromDate.getTime();
     const diffDays = Math.ceil(diffMs / 86400000);
-    if (diffDays > 90 || diffDays < 1) {
-      return { since: new Date(Date.now() - 7 * 86400000), until: null, daysNum: 7 };
+    // Reject inverted ranges (from > to) and oversized ranges with a 400
+    // via ValidationError. Previously diffDays < 1 silently fell back to
+    // a 7-day default, making the chart picker and the rendered data
+    // disagree on the inverted case. The DateRangeControl date inputs
+    // also enforce min/max so the UI path doesn't reach this.
+    if (diffDays < 1) {
+      throw new ValidationError('"from" date must be on or before "to" date');
+    }
+    if (diffDays > 90) {
+      throw new ValidationError('date range cannot exceed 90 days');
     }
     return { since: fromDate, until: toDate, daysNum: diffDays };
   }
@@ -507,7 +527,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         summary: 'Get energy delivery history by day',
         operationId: 'listDashboardEnergyHistory',
         security: [{ bearerAuth: [] }],
-        response: { 200: arrayResponse(dateValueItem) },
+        response: {
+          200: arrayResponse(dateValueItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
@@ -557,7 +580,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         summary: 'Get charging session count history by day',
         operationId: 'listDashboardSessionHistory',
         security: [{ bearerAuth: [] }],
-        response: { 200: arrayResponse(dateCountItem) },
+        response: {
+          200: arrayResponse(dateCountItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
@@ -645,7 +671,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         summary: 'Get site utilization percentages',
         operationId: 'listDashboardUtilization',
         security: [{ bearerAuth: [] }],
-        response: { 200: arrayResponse(utilizationItem) },
+        response: {
+          200: arrayResponse(utilizationItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
@@ -703,7 +732,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         summary: 'Get peak usage heatmap by hour and day of week',
         operationId: 'listDashboardPeakUsage',
         security: [{ bearerAuth: [] }],
-        response: { 200: arrayResponse(peakUsageItem) },
+        response: {
+          200: arrayResponse(peakUsageItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
@@ -813,7 +845,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         summary: 'Get revenue history by day',
         operationId: 'listDashboardRevenueHistory',
         security: [{ bearerAuth: [] }],
-        response: { 200: arrayResponse(revenueHistoryItem) },
+        response: {
+          200: arrayResponse(revenueHistoryItem),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
@@ -1170,6 +1205,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
       const rows = await db.execute(sql`
         SELECT
           snapshot_date::text AS date,
+          true AS has_data,
           COALESCE(SUM(total_stations), 0) AS total_stations,
           CASE WHEN SUM(total_stations) > 0
             THEN SUM(online_percent::numeric * total_stations) / SUM(total_stations)
@@ -1209,8 +1245,13 @@ export function dashboardRoutes(app: FastifyInstance): void {
         ORDER BY snapshot_date DESC
       `);
 
-      const days = (rows as Array<Record<string, string>>).map((row) => ({
-        date: row.date,
+      const days = (rows as Array<Record<string, string | boolean>>).map((row) => ({
+        date: row.date as string,
+        // Each row only exists because a snapshot was recorded for that day,
+        // so has_data is always true here. We surface it explicitly to keep
+        // the TrendDay/SnapshotData type contract consistent with the
+        // single-date and range snapshot endpoints.
+        hasData: row.has_data === true,
         totalStations: Number(row.total_stations),
         onlinePercent: Math.round(Number(row.online_percent) * 10) / 10,
         uptimePercent: Math.round(Number(row.uptime_percent) * 100) / 100,
@@ -1293,6 +1334,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
       const isRange = to != null && to !== date;
 
       const emptySnapshot = {
+        hasData: false,
         totalStations: 0,
         onlineStations: 0,
         onlinePercent: 0,
@@ -1329,9 +1371,15 @@ export function dashboardRoutes(app: FastifyInstance): void {
         : sql`snapshot_date = ${date}::date`;
 
       // For ranges, compute per-day aggregates first, then average across days
+      // has_data distinguishes "no snapshot rows match the filter" from
+      // "stations exist but report all zeros"; without it the empty case
+      // looks identical to a legitimate 0-station read and the frontend
+      // delta arrows show a misleading +/-100% on the first day after
+      // deployment.
       const queryText = isRange
         ? sql`
           SELECT
+            COUNT(DISTINCT snapshot_date) > 0 AS has_data,
             COUNT(DISTINCT snapshot_date) AS day_count,
             COALESCE(AVG(day_total_stations), 0) AS total_stations,
             COALESCE(AVG(day_online_stations), 0) AS online_stations,
@@ -1398,6 +1446,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
         `
         : sql`
           SELECT
+            COUNT(*) > 0 AS has_data,
             COALESCE(SUM(total_stations), 0) AS total_stations,
             COALESCE(SUM(online_stations), 0) AS online_stations,
             CASE WHEN SUM(total_stations) > 0
@@ -1435,10 +1484,11 @@ export function dashboardRoutes(app: FastifyInstance): void {
 
       const rows = await db.execute(queryText);
 
-      const row = rows[0] as Record<string, string> | undefined;
+      const row = rows[0] as Record<string, string | boolean> | undefined;
       if (row == null) return emptySnapshot;
 
       return {
+        hasData: row.has_data === true,
         totalStations: Math.round(Number(row.total_stations)),
         onlineStations: Math.round(Number(row.online_stations)),
         onlinePercent: Math.round(Number(row.online_percent) * 10) / 10,
@@ -1489,14 +1539,27 @@ export function dashboardRoutes(app: FastifyInstance): void {
         operationId: 'getDashboardCarbonStats',
         security: [{ bearerAuth: [] }],
         querystring: zodSchema(carbonStatsQuery),
-        response: { 200: itemResponse(carbonStatsResponse) },
+        response: {
+          200: itemResponse(carbonStatsResponse),
+          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+        },
       },
       config: DASHBOARD_RATE_LIMIT,
     },
-    async (request) => {
+    async (request, reply) => {
       const { userId } = request.user as JwtPayload;
-      const siteIds = await getUserSiteIds(userId);
       const { from: fromDate, to: toDate } = request.query as z.infer<typeof carbonStatsQuery>;
+      // from > to silently returns 0 from the aggregation, indistinguishable
+      // from "no data exists" on the dashboard. (Zod .refine() doesn't help
+      // here -- zod-to-json-schema strips refines before Fastify validates.)
+      if (fromDate != null && toDate != null && fromDate > toDate) {
+        await reply.status(400).send({
+          error: '"from" date must be on or before "to" date',
+          code: 'VALIDATION_ERROR',
+        });
+        return;
+      }
+      const siteIds = await getUserSiteIds(userId);
 
       const empty = { totalCo2AvoidedKg: 0, sessionCount: 0, avgCo2AvoidedKgPerSession: 0 };
       if (siteIds != null && siteIds.length === 0) return empty;

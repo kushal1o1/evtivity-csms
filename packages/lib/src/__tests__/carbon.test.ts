@@ -27,10 +27,13 @@ describe('calculateCo2AvoidedKg', () => {
     expect(result).toBe(22.5);
   });
 
-  it('returns negative value when grid is dirtier than gasoline equivalent', () => {
-    // 10 kWh: 10 * 0.46 - 10 * 0.80 = 4.6 - 8.0 = -3.4
+  it('clamps to zero when the grid is dirtier than gasoline equivalent', () => {
+    // 10 kWh: 10 * 0.46 - 10 * 0.80 = 4.6 - 8.0 = -3.4 -> clamped to 0
+    // "CO2 avoided" cannot semantically be negative; without the clamp the
+    // negative would corrupt dashboard sums and trip the Zod min(0) on the
+    // report response schema's treesEquivalent.
     const result = calculateCo2AvoidedKg(10_000, 0.8);
-    expect(result).toBe(-3.4);
+    expect(result).toBe(0);
   });
 
   it('exports the gasoline constant', () => {

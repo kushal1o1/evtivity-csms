@@ -2266,23 +2266,37 @@ export function registerProjections(
           `;
         }
 
-        // Carbon footprint calculation
+        // Carbon footprint calculation. LEFT JOIN so we can distinguish
+        // "site has no carbon region set" (silent skip, common default
+        // state) from "site references a carbon region with no matching
+        // factor row" (data anomaly worth logging - typo'd region_code
+        // or a factor row deleted out-of-band).
         try {
           const carbonRows = await sql`
             SELECT s.carbon_region_code, cif.carbon_intensity_kg_per_kwh
             FROM charging_stations cs
             JOIN sites s ON s.id = cs.site_id
-            JOIN carbon_intensity_factors cif ON cif.region_code = s.carbon_region_code
+            LEFT JOIN carbon_intensity_factors cif ON cif.region_code = s.carbon_region_code
             WHERE cs.id = ${stationUuid}
           `;
           const carbonRow = carbonRows[0];
-          if (carbonRow != null) {
-            const intensity = Number(carbonRow.carbon_intensity_kg_per_kwh);
+          const regionCode = carbonRow?.['carbon_region_code'] as string | null | undefined;
+          const intensityRaw = carbonRow?.['carbon_intensity_kg_per_kwh'] as
+            | string
+            | number
+            | null
+            | undefined;
+          if (regionCode != null && intensityRaw == null) {
+            logger.warn(
+              { sessionId, stationUuid, regionCode },
+              'Carbon intensity factor missing for region; CO2 calculation skipped',
+            );
+          } else if (intensityRaw != null) {
+            const intensity = Number(intensityRaw);
             const sessionEnergyWh = Number(sessionRow.energy_delivered_wh ?? 0);
-            // Skip the calc on edge cases (zero/negative energy on faulted
-            // sessions, missing intensity factor) - a negative co2_avoided
-            // value would otherwise polute dashboards.
             if (sessionEnergyWh > 0 && Number.isFinite(intensity) && intensity > 0) {
+              // calculateCo2AvoidedKg clamps to >= 0 so dirty grids never
+              // produce a negative "avoided" value.
               const co2Avoided = calculateCo2AvoidedKg(sessionEnergyWh, intensity);
               // Idempotency guard: TransactionEvent Ended can fire more than
               // once for a session (station retry, projection retry); the
