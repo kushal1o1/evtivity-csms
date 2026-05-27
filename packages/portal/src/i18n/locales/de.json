@@ -104,7 +104,7 @@
     "noSessions": "Noch keine Vorgänge.",
     "unknownStation": "Unbekannte Station",
     "pageOf": "{{page}} / {{total}}",
-    "co2Avoided": "CO2 eingespart"
+    "co2Avoided": "CO₂ eingespart"
   },
   "sessionDetail": {
     "title": "Vorgangsdetails",
@@ -676,8 +676,8 @@
     "sessions": "Vorgänge",
     "noSessions": "Keine Vorgänge in diesem Monat.",
     "unknownStation": "Unbekannte Station",
-    "co2Avoided": "CO2 eingespart",
-    "co2AvoidedMessage": "Du hast in diesem Monat {{amount}} kg CO2 eingespart",
+    "co2Avoided": "CO₂ eingespart",
+    "co2AvoidedMessage": "Du hast in diesem Monat {{amount}} kg CO₂ eingespart",
     "miles": "Meilen",
     "km": "km",
     "noChargingThisMonth": "Keine Ladevorgänge in diesem Monat."
@@ -690,8 +690,8 @@
     "duration": "Dauer",
     "miles": "Geschätzte Meilen",
     "total": "Gesamt",
-    "co2Avoided": "CO2 eingespart",
-    "totalCo2Avoided": "Gesamt CO2 eingespart",
+    "co2Avoided": "CO₂ eingespart",
+    "totalCo2Avoided": "Gesamt CO₂ eingespart",
     "noSessions": "Keine Ladevorgänge in diesem Zeitraum."
   },
   "account": {

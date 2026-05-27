@@ -314,7 +314,7 @@ export function carbonRoutes(app: FastifyInstance): void {
           'Content-Disposition',
           'attachment; filename="sustainability-report.csv"',
         );
-        return 'Month,Site,CO2 Avoided (kg),Energy (kWh),Sessions';
+        return 'Month,Site,CO₂ Avoided (kg),Energy (kWh),Sessions';
       }
 
       const conditions = [eq(chargingSessions.status, 'completed')];
@@ -372,7 +372,7 @@ export function carbonRoutes(app: FastifyInstance): void {
       void reply.header('Content-Type', 'text/csv');
       void reply.header('Content-Disposition', 'attachment; filename="sustainability-report.csv"');
       return buildCsv(
-        ['Month', 'Site', 'CO2 Avoided (kg)', 'Energy (kWh)', 'Sessions'],
+        ['Month', 'Site', 'CO₂ Avoided (kg)', 'Energy (kWh)', 'Sessions'],
         rowsForCsv,
       );
     },

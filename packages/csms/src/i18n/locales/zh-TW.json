@@ -382,8 +382,8 @@
       "revenuePerSession": "過去 14 天（{{from}} 至 {{to}}）的平均每次會話收入。",
       "totalSessions": "過去 14 天（{{from}} 至 {{to}}）的平均累計會話數。"
     },
-    "co2Avoided": "減少的 CO2",
-    "co2AvoidedTooltip": "電動汽車充電相比燃油駕駛避免的 CO2 排放總量"
+    "co2Avoided": "減少的 CO₂",
+    "co2AvoidedTooltip": "電動汽車充電相比燃油駕駛避免的 CO₂ 排放總量"
   },
   "sites": {
     "title": "站點",
@@ -834,8 +834,8 @@
     "meterValueFilterMeasurand": "全部測量值",
     "noMeterValues": "無電錶資料",
     "freeVend": "免費充電",
-    "co2Avoided": "減少的 CO2",
-    "co2AvoidedLabel": "減少的 CO2",
+    "co2Avoided": "減少的 CO₂",
+    "co2AvoidedLabel": "減少的 CO₂",
     "guestSession": "訪客工作階段",
     "guestSessionTab": "訪客工作階段",
     "guestSessionToken": "工作階段權杖",
@@ -1498,11 +1498,11 @@
     "roamingDescription": "啟用後，系統透過OCPI協議與漫遊合作伙伴交換資料。禁用後將隱藏漫遊部分並阻止所有OCPI流量。",
     "sustainability": "可持續性",
     "sustainabilityDescription": "配置可持續性報告中溫室氣體排放計算使用的引數。預設值使用美國環保署對美國電網的估算。",
-    "gridEmissionFactor": "電網排放因子 (kg CO2/kWh)",
+    "gridEmissionFactor": "電網排放因子 (kg CO₂/kWh)",
     "gridEmissionFactorHint": "電網每千瓦時的平均二氧化碳排放量。美國平均值：0.386",
     "evEfficiency": "電動汽車效率 (英里/kWh)",
     "evEfficiencyHint": "平均電動汽車效率。預設值：3.3 英里/kWh",
-    "gasolineEmissionFactor": "汽油排放因子 (kg CO2/加侖)",
+    "gasolineEmissionFactor": "汽油排放因子 (kg CO₂/加侖)",
     "gasolineEmissionFactorHint": "每加侖汽油燃燒的二氧化碳排放量。EPA 值：8.887",
     "avgMpg": "平均車輛油耗 (MPG)",
     "avgMpgHint": "傳統車輛的平均燃油經濟性。美國平均值：25.4 MPG",
@@ -2754,9 +2754,9 @@
   },
   "sustainability": {
     "title": "可持續發展報告",
-    "totalCo2Avoided": "減少的 CO2 總量",
+    "totalCo2Avoided": "減少的 CO₂ 總量",
     "treesEquivalent": "等效樹木",
-    "monthlyTrend": "每月 CO2 減排趨勢",
+    "monthlyTrend": "每月 CO₂ 減排趨勢",
     "siteBreakdown": "站點明細",
     "exportCsv": "匯出 CSV"
   },

@@ -104,7 +104,7 @@
     "noSessions": "暂无会话。",
     "unknownStation": "未知站点",
     "pageOf": "{{page}} / {{total}}",
-    "co2Avoided": "减少的CO2"
+    "co2Avoided": "减少的CO₂"
   },
   "sessionDetail": {
     "title": "会话详情",
@@ -680,8 +680,8 @@
     "sessions": "次会话",
     "noSessions": "本月无会话。",
     "unknownStation": "未知站点",
-    "co2Avoided": "减少的CO2",
-    "co2AvoidedMessage": "本月您减少了 {{amount}} 千克CO2排放",
+    "co2Avoided": "减少的CO₂",
+    "co2AvoidedMessage": "本月您减少了 {{amount}} 千克CO₂排放",
     "miles": "英里",
     "km": "公里",
     "noChargingThisMonth": "本月无充电记录。"
@@ -694,8 +694,8 @@
     "duration": "时长",
     "miles": "预估里程",
     "total": "合计",
-    "co2Avoided": "减少的CO2",
-    "totalCo2Avoided": "减少的CO2总量",
+    "co2Avoided": "减少的CO₂",
+    "totalCo2Avoided": "减少的CO₂总量",
     "noSessions": "此期间没有充电记录。"
   },
   "account": {

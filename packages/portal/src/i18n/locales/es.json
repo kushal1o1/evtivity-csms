@@ -104,7 +104,7 @@
     "noSessions": "No hay sesiones aun.",
     "unknownStation": "Estacion desconocida",
     "pageOf": "{{page}} / {{total}}",
-    "co2Avoided": "CO2 evitado"
+    "co2Avoided": "CO₂ evitado"
   },
   "sessionDetail": {
     "title": "Detalles de la sesion",
@@ -680,8 +680,8 @@
     "sessions": "sesiones",
     "noSessions": "Sin sesiones este mes.",
     "unknownStation": "Estacion desconocida",
-    "co2Avoided": "CO2 evitado",
-    "co2AvoidedMessage": "Evitaste {{amount}} kg de CO2 este mes",
+    "co2Avoided": "CO₂ evitado",
+    "co2AvoidedMessage": "Evitaste {{amount}} kg de CO₂ este mes",
     "miles": "Millas",
     "km": "km",
     "noChargingThisMonth": "Sin sesiones de carga este mes."
@@ -694,8 +694,8 @@
     "duration": "Duracion",
     "miles": "Millas Est.",
     "total": "Total",
-    "co2Avoided": "CO2 evitado",
-    "totalCo2Avoided": "CO2 total evitado",
+    "co2Avoided": "CO₂ evitado",
+    "totalCo2Avoided": "CO₂ total evitado",
     "noSessions": "No hay sesiones de carga en este periodo."
   },
   "account": {

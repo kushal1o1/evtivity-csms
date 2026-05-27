@@ -382,8 +382,8 @@
       "revenuePerSession": "Promedio de ingreso por sesion en los ultimos 14 dias ({{from}} a {{to}}).",
       "totalSessions": "Promedio de conteo acumulado de sesiones en los ultimos 14 dias ({{from}} a {{to}})."
     },
-    "co2Avoided": "CO2 Evitado",
-    "co2AvoidedTooltip": "Total de emisiones de CO2 evitadas por la carga de vehiculos electricos en comparacion con la conduccion a gasolina"
+    "co2Avoided": "CO₂ Evitado",
+    "co2AvoidedTooltip": "Total de emisiones de CO₂ evitadas por la carga de vehiculos electricos en comparacion con la conduccion a gasolina"
   },
   "sites": {
     "title": "Sitios",
@@ -839,8 +839,8 @@
     "noPricingGroups": "No hay grupos de precios asignados",
     "noPricingGroupResults": "No se encontraron grupos de precios",
     "freeVend": "Carga Libre",
-    "co2Avoided": "CO2 Evitado",
-    "co2AvoidedLabel": "CO2 Evitado",
+    "co2Avoided": "CO₂ Evitado",
+    "co2AvoidedLabel": "CO₂ Evitado",
     "guestSession": "Sesion de Invitado",
     "guestSessionTab": "Sesion de Invitado",
     "guestSessionToken": "Token de Sesion",
@@ -1503,12 +1503,12 @@
     "roamingDescription": "Cuando esta habilitado, el sistema intercambia datos con socios de roaming a traves del protocolo OCPI. Al deshabilitarlo se oculta la seccion de Roaming y se bloquea todo el trafico OCPI.",
     "sustainability": "Sostenibilidad",
     "sustainabilityDescription": "Configure los parametros utilizados para los calculos de emisiones GEI en los informes de sostenibilidad. Los valores predeterminados usan estimaciones de la EPA para la red de EE.UU.",
-    "gridEmissionFactor": "Factor de emision de la red (kg CO2/kWh)",
-    "gridEmissionFactorHint": "Emisiones promedio de CO2 por kWh de la red electrica. Promedio de EE.UU.: 0.386",
+    "gridEmissionFactor": "Factor de emision de la red (kg CO₂/kWh)",
+    "gridEmissionFactorHint": "Emisiones promedio de CO₂ por kWh de la red electrica. Promedio de EE.UU.: 0.386",
     "evEfficiency": "Eficiencia del VE (millas/kWh)",
     "evEfficiencyHint": "Eficiencia promedio del vehiculo electrico. Predeterminado: 3.3 millas/kWh",
-    "gasolineEmissionFactor": "Factor de emision de gasolina (kg CO2/galon)",
-    "gasolineEmissionFactorHint": "Emisiones de CO2 por galon de gasolina. Valor EPA: 8.887",
+    "gasolineEmissionFactor": "Factor de emision de gasolina (kg CO₂/galon)",
+    "gasolineEmissionFactorHint": "Emisiones de CO₂ por galon de gasolina. Valor EPA: 8.887",
     "avgMpg": "MPG promedio del vehiculo",
     "avgMpgHint": "Economia de combustible promedio de vehiculos convencionales. Promedio de EE.UU.: 25.4 MPG",
     "notification": "Notificacion",
@@ -2770,9 +2770,9 @@
   },
   "sustainability": {
     "title": "Informe de Sostenibilidad",
-    "totalCo2Avoided": "CO2 Total Evitado",
+    "totalCo2Avoided": "CO₂ Total Evitado",
     "treesEquivalent": "Equivalente en Arboles",
-    "monthlyTrend": "Tendencia Mensual de CO2 Evitado",
+    "monthlyTrend": "Tendencia Mensual de CO₂ Evitado",
     "siteBreakdown": "Desglose por Sitio",
     "exportCsv": "Exportar CSV"
   },

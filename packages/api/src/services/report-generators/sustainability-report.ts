@@ -178,20 +178,20 @@ export async function generateSustainabilityReport(
     const headers = ['Metric', 'Value'];
     const rows: unknown[][] = [
       ['Total Energy Delivered (kWh)', totalKwh.toFixed(2)],
-      ['Net GHG Reduction (kg CO2)', parseFloat(String(totals.netGhgReductionKg)).toFixed(2)],
-      ['Grid CO2 Emissions (kg)', parseFloat(String(totals.ghgPreventedKg)).toFixed(2)],
-      ['Gasoline CO2 Avoided (kg)', parseFloat(String(totals.gasolineCo2Kg)).toFixed(2)],
+      ['Net GHG Reduction (kg CO₂)', parseFloat(String(totals.netGhgReductionKg)).toFixed(2)],
+      ['Grid CO₂ Emissions (kg)', parseFloat(String(totals.ghgPreventedKg)).toFixed(2)],
+      ['Gasoline CO₂ Avoided (kg)', parseFloat(String(totals.gasolineCo2Kg)).toFixed(2)],
       ['EV Miles Enabled', parseFloat(String(totals.evMiles)).toFixed(2)],
       ['Gasoline Gallons Displaced', parseFloat(String(totals.gallonsDisplaced)).toFixed(2)],
       [],
       ['Configuration'],
-      ['Grid Emission Factor (kg CO2/kWh)', cfg.gridEmissionFactor],
+      ['Grid Emission Factor (kg CO₂/kWh)', cfg.gridEmissionFactor],
       ['EV Efficiency (miles/kWh)', cfg.evEfficiency],
-      ['Gasoline Emission Factor (kg CO2/gal)', cfg.gasolineEmissionFactor],
+      ['Gasoline Emission Factor (kg CO₂/gal)', cfg.gasolineEmissionFactor],
       ['Average Vehicle MPG', cfg.avgMpg],
       [],
       ['By Site'],
-      ['Site', 'Energy (kWh)', 'Sessions', 'Net GHG Reduction (kg CO2)'],
+      ['Site', 'Energy (kWh)', 'Sessions', 'Net GHG Reduction (kg CO₂)'],
     ];
     for (const r of bySite) {
       const siteStats = computeSustainability(r.energyKwh, cfg);
@@ -204,7 +204,7 @@ export async function generateSustainabilityReport(
     }
     rows.push([]);
     rows.push(['Daily Energy']);
-    rows.push(['Date', 'Energy (kWh)', 'Net GHG Reduction (kg CO2)']);
+    rows.push(['Date', 'Energy (kWh)', 'Net GHG Reduction (kg CO₂)']);
     for (const r of byDay) {
       const dayStats = computeSustainability(r.energyKwh, cfg);
       rows.push([
@@ -226,9 +226,9 @@ export async function generateSustainabilityReport(
         headers: ['Metric', 'Value'],
         rows: [
           ['Total Energy Delivered (kWh)', totalKwh.toFixed(2)],
-          ['Net GHG Reduction (kg CO2)', parseFloat(String(totals.netGhgReductionKg)).toFixed(2)],
-          ['Grid CO2 Emissions (kg)', parseFloat(String(totals.ghgPreventedKg)).toFixed(2)],
-          ['Gasoline CO2 Avoided (kg)', parseFloat(String(totals.gasolineCo2Kg)).toFixed(2)],
+          ['Net GHG Reduction (kg CO₂)', parseFloat(String(totals.netGhgReductionKg)).toFixed(2)],
+          ['Grid CO₂ Emissions (kg)', parseFloat(String(totals.ghgPreventedKg)).toFixed(2)],
+          ['Gasoline CO₂ Avoided (kg)', parseFloat(String(totals.gasolineCo2Kg)).toFixed(2)],
           ['EV Miles Enabled', parseFloat(String(totals.evMiles)).toFixed(2)],
           ['Gasoline Gallons Displaced', parseFloat(String(totals.gallonsDisplaced)).toFixed(2)],
         ],
@@ -237,15 +237,15 @@ export async function generateSustainabilityReport(
         name: 'Configuration',
         headers: ['Parameter', 'Value'],
         rows: [
-          ['Grid Emission Factor (kg CO2/kWh)', cfg.gridEmissionFactor],
+          ['Grid Emission Factor (kg CO₂/kWh)', cfg.gridEmissionFactor],
           ['EV Efficiency (miles/kWh)', cfg.evEfficiency],
-          ['Gasoline Emission Factor (kg CO2/gal)', cfg.gasolineEmissionFactor],
+          ['Gasoline Emission Factor (kg CO₂/gal)', cfg.gasolineEmissionFactor],
           ['Average Vehicle MPG', cfg.avgMpg],
         ],
       },
       {
         name: 'By Site',
-        headers: ['Site', 'Energy (kWh)', 'Sessions', 'Net GHG Reduction (kg CO2)'],
+        headers: ['Site', 'Energy (kWh)', 'Sessions', 'Net GHG Reduction (kg CO₂)'],
         rows: bySite.map((r) => {
           const siteStats = computeSustainability(r.energyKwh, cfg);
           return [
@@ -258,7 +258,7 @@ export async function generateSustainabilityReport(
       },
       {
         name: 'Daily Energy',
-        headers: ['Date', 'Energy (kWh)', 'Net GHG Reduction (kg CO2)'],
+        headers: ['Date', 'Energy (kWh)', 'Net GHG Reduction (kg CO₂)'],
         rows: byDay.map((r) => {
           const dayStats = computeSustainability(r.energyKwh, cfg);
           return [
@@ -278,7 +278,7 @@ export async function generateSustainabilityReport(
   pdf.addSummaryRow('Total Energy Delivered:', `${totalKwh.toFixed(2)} kWh`);
   pdf.addSummaryRow(
     'Net GHG Reduction:',
-    `${parseFloat(String(totals.netGhgReductionKg)).toFixed(2)} kg CO2`,
+    `${parseFloat(String(totals.netGhgReductionKg)).toFixed(2)} kg CO₂`,
   );
   pdf.addSummaryRow('EV Miles Enabled:', parseFloat(String(totals.evMiles)).toFixed(0));
   pdf.addSummaryRow(
@@ -287,7 +287,7 @@ export async function generateSustainabilityReport(
   );
 
   pdf.addTable(
-    ['Site', 'Energy (kWh)', 'Sessions', 'GHG Reduction (kg CO2)'],
+    ['Site', 'Energy (kWh)', 'Sessions', 'GHG Reduction (kg CO₂)'],
     bySite.map((r) => {
       const s = computeSustainability(r.energyKwh, cfg);
       return [
@@ -300,7 +300,7 @@ export async function generateSustainabilityReport(
   );
 
   pdf.addTable(
-    ['Date', 'Energy (kWh)', 'GHG Reduction (kg CO2)'],
+    ['Date', 'Energy (kWh)', 'GHG Reduction (kg CO₂)'],
     byDay.map((r) => {
       const s = computeSustainability(r.energyKwh, cfg);
       return [

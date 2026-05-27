@@ -486,7 +486,7 @@ export function SiteDetailsTab({
                       {factors.map((f) => (
                         <option key={f.regionCode} value={f.regionCode}>
                           {f.regionName} ({Math.round(Number(f.carbonIntensityKgPerKwh) * 1000)} g
-                          CO2/kWh)
+                          CO₂/kWh)
                         </option>
                       ))}
                     </optgroup>
@@ -499,7 +499,7 @@ export function SiteDetailsTab({
                   return factor != null ? (
                     <span className="text-sm text-muted-foreground">
                       {t('sites.carbonIntensity')}:{' '}
-                      {Math.round(Number(factor.carbonIntensityKgPerKwh) * 1000)} g CO2/kWh
+                      {Math.round(Number(factor.carbonIntensityKgPerKwh) * 1000)} g CO₂/kWh
                     </span>
                   ) : null;
                 })()}

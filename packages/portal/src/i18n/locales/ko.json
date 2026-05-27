@@ -104,7 +104,7 @@
     "noSessions": "세션이 없습니다.",
     "unknownStation": "알 수 없는 충전소",
     "pageOf": "{{page}} / {{total}}",
-    "co2Avoided": "CO2 절감량"
+    "co2Avoided": "CO₂ 절감량"
   },
   "sessionDetail": {
     "title": "세션 상세",
@@ -680,8 +680,8 @@
     "sessions": "세션",
     "noSessions": "이번 달 세션이 없습니다.",
     "unknownStation": "알 수 없는 충전소",
-    "co2Avoided": "CO2 절감량",
-    "co2AvoidedMessage": "이번 달 {{amount}} kg CO2를 절감했습니다",
+    "co2Avoided": "CO₂ 절감량",
+    "co2AvoidedMessage": "이번 달 {{amount}} kg CO₂를 절감했습니다",
     "miles": "마일",
     "km": "km",
     "noChargingThisMonth": "이번 달 충전 세션이 없습니다."
@@ -694,8 +694,8 @@
     "duration": "소요 시간",
     "miles": "예상 마일",
     "total": "합계",
-    "co2Avoided": "CO2 절감량",
-    "totalCo2Avoided": "총 CO2 절감량",
+    "co2Avoided": "CO₂ 절감량",
+    "totalCo2Avoided": "총 CO₂ 절감량",
     "noSessions": "이 기간에 충전 세션이 없습니다."
   },
   "account": {

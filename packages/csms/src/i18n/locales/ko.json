@@ -382,8 +382,8 @@
       "revenuePerSession": "최근 14일간 세션당 평균 매출 ({{from}} ~ {{to}}).",
       "totalSessions": "최근 14일간 평균 누적 세션 수 ({{from}} ~ {{to}})."
     },
-    "co2Avoided": "CO2 절감량",
-    "co2AvoidedTooltip": "EV 충전으로 휘발유 주행 대비 절감된 총 CO2 배출량"
+    "co2Avoided": "CO₂ 절감량",
+    "co2AvoidedTooltip": "EV 충전으로 휘발유 주행 대비 절감된 총 CO₂ 배출량"
   },
   "sites": {
     "title": "사이트",
@@ -834,8 +834,8 @@
     "meterValueFilterMeasurand": "전체 측정 항목",
     "noMeterValues": "계량 값 없음",
     "freeVend": "무료 충전",
-    "co2Avoided": "CO2 절감량",
-    "co2AvoidedLabel": "CO2 절감량",
+    "co2Avoided": "CO₂ 절감량",
+    "co2AvoidedLabel": "CO₂ 절감량",
     "guestSession": "게스트 세션",
     "guestSessionTab": "게스트 세션",
     "guestSessionToken": "세션 토큰",
@@ -1498,12 +1498,12 @@
     "roamingDescription": "활성화 시 시스템이 OCPI 프로토콜을 통해 로밍 파트너와 데이터를 교환합니다. 비활성화 시 로밍 섹션이 숨겨지고 모든 OCPI 트래픽이 차단됩니다.",
     "sustainability": "지속가능성",
     "sustainabilityDescription": "지속가능성 보고서의 온실가스 배출 계산에 사용되는 매개변수를 구성합니다. 기본값은 미국 전력망에 대한 EPA 추정치를 사용합니다.",
-    "gridEmissionFactor": "전력망 배출 계수 (kg CO2/kWh)",
-    "gridEmissionFactorHint": "전력망에서 kWh당 평균 CO2 배출량. 미국 평균: 0.386",
+    "gridEmissionFactor": "전력망 배출 계수 (kg CO₂/kWh)",
+    "gridEmissionFactorHint": "전력망에서 kWh당 평균 CO₂ 배출량. 미국 평균: 0.386",
     "evEfficiency": "EV 효율 (마일/kWh)",
     "evEfficiencyHint": "평균 전기차 효율. 기본값: 3.3 마일/kWh",
-    "gasolineEmissionFactor": "휘발유 배출 계수 (kg CO2/갤런)",
-    "gasolineEmissionFactorHint": "휘발유 1갤런 연소 시 CO2 배출량. EPA 값: 8.887",
+    "gasolineEmissionFactor": "휘발유 배출 계수 (kg CO₂/갤런)",
+    "gasolineEmissionFactorHint": "휘발유 1갤런 연소 시 CO₂ 배출량. EPA 값: 8.887",
     "avgMpg": "평균 차량 MPG",
     "avgMpgHint": "일반 차량의 평균 연비. 미국 평균: 25.4 MPG",
     "notification": "알림",
@@ -2754,9 +2754,9 @@
   },
   "sustainability": {
     "title": "지속가능성 보고서",
-    "totalCo2Avoided": "총 CO2 절감량",
+    "totalCo2Avoided": "총 CO₂ 절감량",
     "treesEquivalent": "나무 환산",
-    "monthlyTrend": "월별 CO2 절감 추세",
+    "monthlyTrend": "월별 CO₂ 절감 추세",
     "siteBreakdown": "사이트별 분류",
     "exportCsv": "CSV 내보내기"
   },

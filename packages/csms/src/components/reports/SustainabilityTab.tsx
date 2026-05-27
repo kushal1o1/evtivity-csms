@@ -105,7 +105,7 @@ export function SustainabilityTab(): React.JSX.Element {
         },
       },
       yaxis: {
-        title: { text: 'kg CO2' },
+        title: { text: 'kg CO₂' },
         labels: {
           formatter: (val: number) => val.toFixed(0),
         },

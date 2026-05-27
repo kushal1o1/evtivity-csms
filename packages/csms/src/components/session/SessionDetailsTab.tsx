@@ -191,7 +191,7 @@ export function SessionDetailsTab({
               <Row label={t('sessions.co2AvoidedLabel')}>
                 <span className="inline-flex items-center gap-1 text-success">
                   <Leaf className="h-4 w-4" />
-                  {parseFloat(String(session.co2AvoidedKg)).toFixed(2)} kg CO2 avoided
+                  {parseFloat(String(session.co2AvoidedKg)).toFixed(2)} kg CO₂ avoided
                 </span>
               </Row>
             )}

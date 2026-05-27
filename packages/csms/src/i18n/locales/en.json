@@ -382,8 +382,8 @@
       "revenuePerSession": "Average revenue per session over the last 14 days ({{from}} to {{to}}).",
       "totalSessions": "Average cumulative session count over the last 14 days ({{from}} to {{to}})."
     },
-    "co2Avoided": "CO2 Avoided",
-    "co2AvoidedTooltip": "Total CO2 emissions avoided by EV charging vs gasoline driving"
+    "co2Avoided": "CO₂ Avoided",
+    "co2AvoidedTooltip": "Total CO₂ emissions avoided by EV charging vs gasoline driving"
   },
   "sites": {
     "title": "Sites",
@@ -836,8 +836,8 @@
     "meterValueFilterMeasurand": "All Measurands",
     "noMeterValues": "No meter values",
     "freeVend": "Free Vend",
-    "co2Avoided": "CO2 Avoided",
-    "co2AvoidedLabel": "CO2 Avoided",
+    "co2Avoided": "CO₂ Avoided",
+    "co2AvoidedLabel": "CO₂ Avoided",
     "guestSession": "Guest Session",
     "guestSessionTab": "Guest Session",
     "guestSessionToken": "Session Token",
@@ -1500,12 +1500,12 @@
     "roamingDescription": "When enabled, the system exchanges data with roaming partners via the OCPI protocol. Disabling hides the Roaming section and blocks all OCPI traffic.",
     "sustainability": "Sustainability",
     "sustainabilityDescription": "Configure parameters used for GHG emissions calculations in sustainability reports. Default values use EPA estimates for the US grid.",
-    "gridEmissionFactor": "Grid Emission Factor (kg CO2/kWh)",
-    "gridEmissionFactorHint": "Average CO2 emissions per kWh from the electricity grid. US average: 0.386",
+    "gridEmissionFactor": "Grid Emission Factor (kg CO₂/kWh)",
+    "gridEmissionFactorHint": "Average CO₂ emissions per kWh from the electricity grid. US average: 0.386",
     "evEfficiency": "EV Efficiency (miles/kWh)",
     "evEfficiencyHint": "Average electric vehicle efficiency. Default: 3.3 miles/kWh",
-    "gasolineEmissionFactor": "Gasoline Emission Factor (kg CO2/gallon)",
-    "gasolineEmissionFactorHint": "CO2 emissions per gallon of gasoline burned. EPA value: 8.887",
+    "gasolineEmissionFactor": "Gasoline Emission Factor (kg CO₂/gallon)",
+    "gasolineEmissionFactorHint": "CO₂ emissions per gallon of gasoline burned. EPA value: 8.887",
     "avgMpg": "Average Vehicle MPG",
     "avgMpgHint": "Average fuel economy of conventional vehicles. US average: 25.4 MPG",
     "notification": "Notification",
@@ -2775,9 +2775,9 @@
   },
   "sustainability": {
     "title": "Sustainability Report",
-    "totalCo2Avoided": "Total CO2 Avoided",
+    "totalCo2Avoided": "Total CO₂ Avoided",
     "treesEquivalent": "Trees Equivalent",
-    "monthlyTrend": "Monthly CO2 Avoided Trend",
+    "monthlyTrend": "Monthly CO₂ Avoided Trend",
     "siteBreakdown": "Site Breakdown",
     "exportCsv": "Export CSV"
   },

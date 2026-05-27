@@ -382,8 +382,8 @@
       "revenuePerSession": "Durchschnittlicher Umsatz pro Vorgang über die letzten 14 Tage ({{from}} bis {{to}}).",
       "totalSessions": "Durchschnittliche kumulierte Vorgangsanzahl über die letzten 14 Tage ({{from}} bis {{to}})."
     },
-    "co2Avoided": "Vermiedenes CO2",
-    "co2AvoidedTooltip": "Insgesamt vermiedene CO2-Emissionen durch EV-Laden gegenüber Benzinfahrt"
+    "co2Avoided": "Vermiedenes CO₂",
+    "co2AvoidedTooltip": "Insgesamt vermiedene CO₂-Emissionen durch EV-Laden gegenüber Benzinfahrt"
   },
   "sites": {
     "title": "Standorte",
@@ -470,10 +470,10 @@
     "freeVendOcpp16Note": "OCPP 1.6 definiert keinen standardisierten Mechanismus für freies Laden. Diese Standardschlüssel funktionieren mit den meisten Stationen, einige Hersteller verwenden jedoch herstellerspezifische Schlüssel (z. B. FreeCharging, FreeVendEnabled). Wenn die Übertragungsergebnisse abgelehnte Variablen anzeigen, bearbeiten Sie die Vorlage, um den herstellerspezifischen Schlüssel Ihrer Station hinzuzufügen, und übertragen Sie sie erneut.",
     "freeVendViewTemplate": "Vorlage anzeigen",
     "freeVendLastPush": "Letzte Übertragung",
-    "carbonRegion": "CO2-Region",
-    "carbonRegionDescription": "Wählen Sie die Netzregion für CO2-Intensitätsberechnungen aus.",
-    "carbonIntensity": "CO2-Intensität",
-    "noCarbonRegion": "Keine CO2-Region zugewiesen"
+    "carbonRegion": "CO₂-Region",
+    "carbonRegionDescription": "Wählen Sie die Netzregion für CO₂-Intensitätsberechnungen aus.",
+    "carbonIntensity": "CO₂-Intensität",
+    "noCarbonRegion": "Keine CO₂-Region zugewiesen"
   },
   "stations": {
     "title": "Ladestationen",
@@ -819,8 +819,8 @@
     "meterValueFilterMeasurand": "Alle Messgrößen",
     "noMeterValues": "Keine Zählerstände",
     "freeVend": "Freies Laden",
-    "co2Avoided": "Vermiedenes CO2",
-    "co2AvoidedLabel": "Vermiedenes CO2"
+    "co2Avoided": "Vermiedenes CO₂",
+    "co2AvoidedLabel": "Vermiedenes CO₂"
   },
   "drivers": {
     "title": "Fahrer",
@@ -1464,12 +1464,12 @@
     "roamingDescription": "Wenn aktiviert, tauscht das System Daten mit Roaming-Partnern über das OCPI-Protokoll aus. Beim Deaktivieren wird der Roaming-Bereich ausgeblendet und der gesamte OCPI-Verkehr blockiert.",
     "sustainability": "Nachhaltigkeit",
     "sustainabilityDescription": "Konfigurieren Sie Parameter, die für Berechnungen der Treibhausgasemissionen in Nachhaltigkeitsberichten verwendet werden. Standardwerte basieren auf EPA-Schätzungen für das US-Stromnetz.",
-    "gridEmissionFactor": "Netz-Emissionsfaktor (kg CO2/kWh)",
-    "gridEmissionFactorHint": "Durchschnittliche CO2-Emissionen pro kWh aus dem Stromnetz. US-Durchschnitt: 0,386",
+    "gridEmissionFactor": "Netz-Emissionsfaktor (kg CO₂/kWh)",
+    "gridEmissionFactorHint": "Durchschnittliche CO₂-Emissionen pro kWh aus dem Stromnetz. US-Durchschnitt: 0,386",
     "evEfficiency": "EV-Effizienz (Meilen/kWh)",
     "evEfficiencyHint": "Durchschnittliche Effizienz von Elektrofahrzeugen. Standard: 3,3 Meilen/kWh",
-    "gasolineEmissionFactor": "Benzin-Emissionsfaktor (kg CO2/Gallone)",
-    "gasolineEmissionFactorHint": "CO2-Emissionen pro verbrannter Gallone Benzin. EPA-Wert: 8,887",
+    "gasolineEmissionFactor": "Benzin-Emissionsfaktor (kg CO₂/Gallone)",
+    "gasolineEmissionFactorHint": "CO₂-Emissionen pro verbrannter Gallone Benzin. EPA-Wert: 8,887",
     "avgMpg": "Durchschnittlicher Fahrzeug-MPG",
     "avgMpgHint": "Durchschnittlicher Kraftstoffverbrauch konventioneller Fahrzeuge. US-Durchschnitt: 25,4 MPG",
     "notification": "Benachrichtigung",
@@ -2739,9 +2739,9 @@
   },
   "sustainability": {
     "title": "Nachhaltigkeitsbericht",
-    "totalCo2Avoided": "Insgesamt vermiedenes CO2",
+    "totalCo2Avoided": "Insgesamt vermiedenes CO₂",
     "treesEquivalent": "Baumäquivalent",
-    "monthlyTrend": "Monatlicher Trend des vermiedenen CO2",
+    "monthlyTrend": "Monatlicher Trend des vermiedenen CO₂",
     "siteBreakdown": "Aufschlüsselung nach Standort",
     "exportCsv": "CSV exportieren"
   },
