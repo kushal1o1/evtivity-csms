@@ -1583,10 +1583,16 @@ export function registerProjections(
         let guestEmail: string | null = null;
 
         if (isFreeVend) {
-          // Mark session as free-vend, skip driver resolution and payment gate
+          // Mark session as free-vend and skip driver resolution + payment
+          // gate. driver_id is preserved as-is: if the portal start endpoint
+          // (authenticated or guest) inserted the row with a driverId, that
+          // is a legitimate "who initiated this session" record and the
+          // portal's per-driver session queries depend on it. Truly
+          // anonymous free-vend starts (RFID-less plug-in) already have
+          // driver_id IS NULL from the INSERT path.
           await sql`
             UPDATE charging_sessions
-            SET driver_id = NULL, free_vend = true, updated_at = now()
+            SET free_vend = true, updated_at = now()
             WHERE id = ${sessionId}
           `;
         } else {
@@ -1779,27 +1785,31 @@ export function registerProjections(
         await notifyChange('session.started', stationUuid, siteId, sessionId);
         await notifyOcpiPush('session', { sessionId });
 
-        if (!isFreeVend) {
-          // Notify guest session service for linking
-          const idTokenForGuest = payload.idToken as string | null;
-          if (idTokenForGuest != null) {
-            try {
-              const guestPayload = JSON.stringify({
-                type: 'TransactionStarted',
-                sessionId,
-                stationId,
-                transactionId,
-                idToken: {
-                  idToken: idTokenForGuest,
-                  type: (payload.tokenType as string | undefined) ?? 'ISO14443',
-                },
-              });
-              await pubsub.publish('csms_events', guestPayload);
-            } catch {
-              // Non-critical
-            }
+        // Notify guest session service for linking. Runs for both free-vend
+        // and paid sessions: the guest portal polls /v1/portal/guest/status
+        // and stays on "Starting charging" until guest_sessions.charging_session_id
+        // is set, which only happens when this event fires and is handled
+        // by linkGuestSession() in @evtivity/api.
+        const idTokenForGuest = payload.idToken as string | null;
+        if (idTokenForGuest != null) {
+          try {
+            const guestPayload = JSON.stringify({
+              type: 'TransactionStarted',
+              sessionId,
+              stationId,
+              transactionId,
+              idToken: {
+                idToken: idTokenForGuest,
+                type: (payload.tokenType as string | undefined) ?? 'ISO14443',
+              },
+            });
+            await pubsub.publish('csms_events', guestPayload);
+          } catch {
+            // Non-critical
           }
+        }
 
+        if (!isFreeVend) {
           // Driver notification: transaction started (awaited so it is recorded before the payment gate
           // can fire a PreAuthFailed notification, preserving chronological order in the portal drawer)
           const driverIdForNotify = driverUuid;
