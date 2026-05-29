@@ -940,7 +940,9 @@
     "holidayName": "Feiertagsname",
     "holidayDate": "Datum",
     "deleteHoliday": "Feiertag löschen",
-    "bulkAddPlaceholder": "Ein Feiertag pro Zeile: JJJJ-MM-TT Feiertagsname"
+    "bulkAddPlaceholder": "Ein Feiertag pro Zeile: JJJJ-MM-TT Feiertagsname",
+    "bulkHolidaySummary": "{{created}} Feiertag(e) importiert; {{skipped}} übersprungen, weil das Datum bereits existiert.",
+    "bulkHolidayAllImported": "{{count}} Feiertag(e) importiert."
   },
   "users": {
     "title": "Benutzer",

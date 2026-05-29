@@ -969,7 +969,9 @@
     "holidayName": "Nombre del festivo",
     "holidayDate": "Fecha",
     "deleteHoliday": "Eliminar festivo",
-    "bulkAddPlaceholder": "Un festivo por linea: AAAA-MM-DD Nombre del festivo"
+    "bulkAddPlaceholder": "Un festivo por linea: AAAA-MM-DD Nombre del festivo",
+    "bulkHolidaySummary": "Se importaron {{created}} festivo(s); {{skipped}} omitidos porque la fecha ya existe.",
+    "bulkHolidayAllImported": "Se importaron {{count}} festivo(s)."
   },
   "users": {
     "title": "Usuarios",

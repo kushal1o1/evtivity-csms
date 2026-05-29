@@ -11,8 +11,14 @@ import { itemResponse, arrayResponse, errorWith } from '../lib/response-schemas.
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { getPubSub } from '../lib/pubsub.js';
 import { authorize } from '../middleware/rbac.js';
+import { clearHolidayCache } from '../services/tariff.service.js';
 
 async function publishHolidayChanged(): Promise<void> {
+  // Clear the in-process holiday cache so the next resolveTariff() call on
+  // this pod reads fresh holiday data. Without this the 60s TTL would defer
+  // every operator-added or operator-deleted holiday for up to a minute
+  // before it takes effect.
+  clearHolidayCache();
   try {
     const pubsub = getPubSub();
     await pubsub.publish(
@@ -52,6 +58,28 @@ const bulkCreateBody = z.object({
     .min(1)
     .max(100),
 });
+
+const bulkCreateResponse = z
+  .object({
+    created: z
+      .array(holidayItem)
+      .describe('Holidays inserted in this request, with their assigned IDs'),
+    skipped: z
+      .array(
+        z
+          .object({
+            date: z.string().describe('Holiday date that was not inserted'),
+            reason: z
+              .enum(['duplicate'])
+              .describe('Why the row was skipped (currently always duplicate)'),
+          })
+          .passthrough(),
+      )
+      .describe(
+        'Holidays that collided with an existing date. Operators can use this to verify import coverage instead of refetching the full list.',
+      ),
+  })
+  .passthrough();
 
 const idParams = z.object({
   id: z.coerce.number().int().min(1).describe('Holiday ID'),
@@ -185,7 +213,7 @@ export function holidayRoutes(app: FastifyInstance): void {
         operationId: 'bulkCreatePricingHolidays',
         security: [{ bearerAuth: [] }],
         body: zodSchema(bulkCreateBody),
-        response: { 201: arrayResponse(holidayItem) },
+        response: { 201: itemResponse(bulkCreateResponse) },
       },
     },
     async (request, reply) => {
@@ -195,27 +223,42 @@ export function holidayRoutes(app: FastifyInstance): void {
         .values(body.holidays)
         .onConflictDoNothing()
         .returning();
+      // Diff the request against the returned rows so the response surfaces
+      // which dates were skipped due to existing duplicates. Without this an
+      // operator who re-runs an import has no way to tell whether the missing
+      // rows are intentional gaps or unnoticed collisions.
+      const insertedDates = new Set(result.map((r) => r.date));
+      const skipped = body.holidays
+        .filter((h) => !insertedDates.has(h.date))
+        .map((h) => ({ date: h.date, reason: 'duplicate' as const }));
+
       if (result.length > 0) {
         const { userId } = request.user as { userId: string };
-        for (const h of result) {
-          await writeAudit(
-            { table: holidayAuditLog, idColumn: 'holiday_id' },
-            {
-              entityId: String(h.id),
-              entityIdSnapshot: String(h.id),
-              action: 'created',
-              actor: 'operator',
-              actorUserId: userId,
-              after: h,
-              notes: 'bulk import',
-            },
-            db,
-            request.log,
-          );
-        }
+        // Fire the per-row audit writes in parallel. writeAudit is fail-open
+        // (catches and warn-logs internally, never throws), so a slower row
+        // can't block the rest, and the bulk endpoint's worst-case latency
+        // drops from N x audit_write_ms to roughly one audit_write_ms.
+        await Promise.all(
+          result.map((h) =>
+            writeAudit(
+              { table: holidayAuditLog, idColumn: 'holiday_id' },
+              {
+                entityId: String(h.id),
+                entityIdSnapshot: String(h.id),
+                action: 'created',
+                actor: 'operator',
+                actorUserId: userId,
+                after: h,
+                notes: 'bulk import',
+              },
+              db,
+              request.log,
+            ),
+          ),
+        );
         await publishHolidayChanged();
       }
-      await reply.status(201).send(result);
+      await reply.status(201).send({ created: result, skipped });
     },
   );
 }

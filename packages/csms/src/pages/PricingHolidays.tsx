@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 
 interface Holiday {
@@ -35,9 +36,15 @@ interface Holiday {
   createdAt: string;
 }
 
+interface BulkCreateResult {
+  created: Holiday[];
+  skipped: { date: string; reason: 'duplicate' }[];
+}
+
 export function PricingHolidays(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -64,11 +71,27 @@ export function PricingHolidays(): React.JSX.Element {
 
   const bulkMutation = useMutation({
     mutationFn: (body: { holidays: { name: string; date: string }[] }) =>
-      api.post('/v1/pricing-holidays/bulk', body),
-    onSuccess: () => {
+      api.post<BulkCreateResult>('/v1/pricing-holidays/bulk', body),
+    onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['pricing-holidays'] });
       setBulkOpen(false);
       setBulkText('');
+      const createdCount = data.created.length;
+      const skippedCount = data.skipped.length;
+      if (skippedCount > 0) {
+        toast({
+          title: t('pricing.bulkHolidaySummary', {
+            created: createdCount,
+            skipped: skippedCount,
+          }),
+          variant: createdCount > 0 ? 'success' : 'warning',
+        });
+      } else if (createdCount > 0) {
+        toast({
+          title: t('pricing.bulkHolidayAllImported', { count: createdCount }),
+          variant: 'success',
+        });
+      }
     },
   });
 

@@ -113,6 +113,13 @@ async function loadHolidays(): Promise<Date[]> {
   return dates;
 }
 
+/** Drop the in-process holiday cache. Called from the holidays mutation
+ * endpoints so a freshly added or deleted holiday takes effect immediately
+ * on the pod that handled the mutation, instead of after the 60s TTL. */
+export function clearHolidayCache(): void {
+  holidayCache = null;
+}
+
 export function isTariffFree(tariff: ResolvedTariff | null): boolean {
   return isTariffFreeShared(tariff);
 }

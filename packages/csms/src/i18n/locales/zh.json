@@ -964,7 +964,9 @@
     "holidayName": "节假日名称",
     "holidayDate": "日期",
     "deleteHoliday": "删除节假日",
-    "bulkAddPlaceholder": "每行一个节假日: YYYY-MM-DD 节假日名称"
+    "bulkAddPlaceholder": "每行一个节假日: YYYY-MM-DD 节假日名称",
+    "bulkHolidaySummary": "已导入 {{created}} 个节假日；因日期已存在跳过 {{skipped}} 个。",
+    "bulkHolidayAllImported": "已导入 {{count}} 个节假日。"
   },
   "users": {
     "title": "用户",

@@ -76,7 +76,9 @@ try {
 
   if (missing.length > 0) {
     if (DRY_RUN) {
-      console.log(`verify-migrations-applied: ${missing.length} migration(s) drifted from drizzle:`);
+      console.log(
+        `verify-migrations-applied: ${missing.length} migration(s) drifted from drizzle:`,
+      );
       for (const m of missing) console.log(`  - ${m.tag} (sha256 ${m.hash.slice(0, 12)}...)`);
       console.log(`\n--dry-run: not applying. Re-run without --dry-run to repair.`);
       process.exit(0);

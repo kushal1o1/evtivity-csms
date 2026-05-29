@@ -966,7 +966,9 @@
     "holidayName": "Holiday Name",
     "holidayDate": "Date",
     "deleteHoliday": "Delete Holiday",
-    "bulkAddPlaceholder": "One holiday per line: YYYY-MM-DD Holiday Name"
+    "bulkAddPlaceholder": "One holiday per line: YYYY-MM-DD Holiday Name",
+    "bulkHolidaySummary": "Imported {{created}} holiday(s); {{skipped}} skipped because the date already exists.",
+    "bulkHolidayAllImported": "Imported {{count}} holiday(s)."
   },
   "users": {
     "title": "Users",

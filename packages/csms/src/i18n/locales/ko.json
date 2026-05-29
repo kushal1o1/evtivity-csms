@@ -964,7 +964,9 @@
     "holidayName": "공휴일 이름",
     "holidayDate": "날짜",
     "deleteHoliday": "공휴일 삭제",
-    "bulkAddPlaceholder": "한 줄에 하나의 공휴일: YYYY-MM-DD 공휴일 이름"
+    "bulkAddPlaceholder": "한 줄에 하나의 공휴일: YYYY-MM-DD 공휴일 이름",
+    "bulkHolidaySummary": "{{created}}개 공휴일을 가져왔습니다. 날짜가 이미 존재하여 {{skipped}}개를 건너뛰었습니다.",
+    "bulkHolidayAllImported": "{{count}}개 공휴일을 가져왔습니다."
   },
   "users": {
     "title": "사용자",

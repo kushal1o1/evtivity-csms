@@ -309,8 +309,12 @@ describe('Holiday routes', () => {
       });
       expect(res.statusCode).toBe(201);
       const body = res.json();
-      expect(Array.isArray(body)).toBe(true);
-      expect(body).toHaveLength(2);
+      // Bulk endpoint now returns { created, skipped } so the operator can
+      // see which submitted dates collided with existing rows.
+      expect(body).toEqual({
+        created,
+        skipped: [],
+      });
     });
 
     it('returns 400 when holidays array is empty', async () => {
