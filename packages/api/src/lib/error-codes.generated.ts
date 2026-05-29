@@ -125,7 +125,6 @@ export const ERROR_CODES = {
   NOT_BLOCKED: 'NOT_BLOCKED',
   NOT_CHARGING: 'NOT_CHARGING',
   NOT_DRAFT: 'NOT_DRAFT',
-  NOT_FOUND: 'NOT_FOUND',
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
   NOT_PENDING: 'NOT_PENDING',
   NOT_SUPPORTED: 'NOT_SUPPORTED',
@@ -350,7 +349,6 @@ export type ErrorCode =
   | 'NOT_BLOCKED'
   | 'NOT_CHARGING'
   | 'NOT_DRAFT'
-  | 'NOT_FOUND'
   | 'NOT_IMPLEMENTED'
   | 'NOT_PENDING'
   | 'NOT_SUPPORTED'
@@ -582,7 +580,6 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   NOT_BLOCKED: 'Station is not blocked',
   NOT_CHARGING: 'Session is not currently charging',
   NOT_DRAFT: 'Only draft campaigns can be updated',
-  NOT_FOUND: 'Pricing group not found for driver',
   NOT_IMPLEMENTED: 'Remote start on partner networks requires the OCPI Commands module',
   NOT_PENDING: 'Station is not pending approval',
   NOT_SUPPORTED: 'Not supported for OCPP 1.6',

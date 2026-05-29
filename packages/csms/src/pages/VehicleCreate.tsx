@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface VehicleLookup {
@@ -39,6 +39,7 @@ export function VehicleCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
@@ -69,6 +70,7 @@ export function VehicleCreate(): React.JSX.Element {
       licensePlate?: string;
     }) => api.post<Vehicle>(`/v1/drivers/${id ?? ''}/vehicles`, body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['drivers', id ?? '', 'vehicles'] });
       void navigate(`/drivers/${id ?? ''}/vehicles/${created.id}`);
     },
   });
@@ -86,7 +88,7 @@ export function VehicleCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

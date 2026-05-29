@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { BackButton } from '@/components/back-button';
@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { OCPP_21_VARIABLES, OCPP_16_KEYS } from '@/lib/ocpp-variables';
 
 interface TemplateVariable {
@@ -40,6 +40,7 @@ type OcppVersion = '2.1' | '1.6';
 export function ConfigTemplateCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -57,6 +58,7 @@ export function ConfigTemplateCreate(): React.JSX.Element {
       targetFilter?: TargetFilterValue;
     }) => api.post<ConfigTemplate>('/v1/config-templates', body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['config-templates'] });
       void navigate(`/station-configurations/${created.id}`);
     },
   });
@@ -67,7 +69,7 @@ export function ConfigTemplateCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function addVariable(): void {
     setVariables((prev) => [...prev, { component: '', variable: '', value: '' }]);

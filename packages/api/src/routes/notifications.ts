@@ -538,7 +538,7 @@ export function notificationRoutes(app: FastifyInstance): void {
         querystring: zodSchema(templateQuery),
         response: {
           200: itemResponse(ocppEventTemplateResponse),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Template not found', [ERROR_CODES.TEMPLATE_NOT_FOUND]),
         },
       },
     },

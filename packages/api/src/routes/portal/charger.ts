@@ -2123,7 +2123,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         params: zodSchema(reservationIdParams),
         response: {
           200: itemResponse(reservationDetail),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Reservation not found', [ERROR_CODES.RESERVATION_NOT_FOUND]),
         },
       },
     },
@@ -2559,7 +2559,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(cancelReservationResponse),
           400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Reservation not found', [ERROR_CODES.RESERVATION_NOT_FOUND]),
         },
       },
     },

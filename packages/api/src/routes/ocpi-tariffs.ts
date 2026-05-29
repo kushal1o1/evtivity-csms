@@ -142,7 +142,7 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         params: zodSchema(tariffMappingParams),
         response: {
           200: itemResponse(tariffMappingItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Tariff mapping not found', [ERROR_CODES.MAPPING_NOT_FOUND]),
         },
       },
     },
@@ -244,7 +244,7 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         body: zodSchema(updateTariffMappingBody),
         response: {
           200: itemResponse(tariffMappingItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Tariff mapping not found', [ERROR_CODES.MAPPING_NOT_FOUND]),
         },
       },
     },
@@ -301,7 +301,7 @@ export function ocpiTariffRoutes(app: FastifyInstance): void {
         params: zodSchema(tariffMappingParams),
         response: {
           200: successResponse,
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Tariff mapping not found', [ERROR_CODES.MAPPING_NOT_FOUND]),
         },
       },
     },

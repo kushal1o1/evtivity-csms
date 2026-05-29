@@ -252,7 +252,7 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(portalSupportCaseDetail),
           403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },
@@ -464,7 +464,7 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(portalMessageResponse),
           403: errorWith('Forbidden', [ERROR_CODES.FORBIDDEN]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },

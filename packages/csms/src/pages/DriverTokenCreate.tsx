@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface DriverToken {
@@ -61,7 +61,7 @@ export function DriverTokenCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

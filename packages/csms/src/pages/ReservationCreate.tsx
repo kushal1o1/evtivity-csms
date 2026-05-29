@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/select';
 import { InfoNote } from '@/components/ui/info-note';
 import { DriverCombobox } from '@/components/driver-combobox';
 import { StationCombobox, type StationSelection } from '@/components/station-combobox';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 import {
   getDefaultStartsAt,
@@ -158,7 +158,7 @@ export function ReservationCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   const isStartInFuture = isStartsAtInFuture(startsAt);
 

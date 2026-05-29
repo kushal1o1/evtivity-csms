@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { Search, X } from 'lucide-react';
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { DriverCombobox } from '@/components/driver-combobox';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface SupportCase {
@@ -50,6 +50,7 @@ const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'urgent'] as const;
 export function SupportCaseCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -78,6 +79,7 @@ export function SupportCaseCreate(): React.JSX.Element {
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.post<SupportCase>('/v1/support-cases', data),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['support-cases'] });
       void navigate(`/support-cases/${created.id}`);
     },
   });
@@ -89,7 +91,7 @@ export function SupportCaseCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

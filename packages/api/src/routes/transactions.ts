@@ -187,7 +187,7 @@ export function transactionRoutes(app: FastifyInstance): void {
         params: zodSchema(transactionIdParams),
         response: {
           200: itemResponse(transactionSessionItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Transaction not found', [ERROR_CODES.TRANSACTION_NOT_FOUND]),
         },
       },
     },

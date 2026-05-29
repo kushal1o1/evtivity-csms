@@ -532,7 +532,7 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(caseIdParams),
         response: {
           200: itemResponse(supportCaseDetail),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },
@@ -672,7 +672,7 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         params: zodSchema(caseIdParams),
         response: {
           200: successResponse,
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },
@@ -842,7 +842,7 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         body: zodSchema(updateCaseBody),
         response: {
           200: itemResponse(supportCaseItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },
@@ -1070,7 +1070,7 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         body: zodSchema(createMessageBody),
         response: {
           200: itemResponse(supportCaseMessageItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },
@@ -1315,7 +1315,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(downloadUrlResponse),
           400: errorWith('S3 not configured', [ERROR_CODES.STORAGE_NOT_CONFIGURED]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Attachment not found', [
+            ERROR_CODES.SUPPORT_CASE_NOT_FOUND,
+            ERROR_CODES.ATTACHMENT_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -1382,7 +1385,10 @@ export function supportCaseRoutes(app: FastifyInstance): void {
         response: {
           204: { type: 'null' as const },
           400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Attachment not found', [
+            ERROR_CODES.SUPPORT_CASE_NOT_FOUND,
+            ERROR_CODES.ATTACHMENT_NOT_FOUND,
+          ]),
         },
       },
     },
@@ -1461,7 +1467,7 @@ export function supportCaseRoutes(app: FastifyInstance): void {
             ERROR_CODES.SESSION_NOT_LINKED,
             ERROR_CODES.PAYMENT_PROVIDER_NOT_CONFIGURED,
           ]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
         },
       },
     },

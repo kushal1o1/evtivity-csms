@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { DriverCombobox } from '@/components/driver-combobox';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface Token {
@@ -36,6 +36,7 @@ const TOKEN_TYPES = [
 export function TokenCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [idToken, setIdToken] = useState('');
   const [tokenType, setTokenType] = useState('ISO14443');
@@ -46,6 +47,7 @@ export function TokenCreate(): React.JSX.Element {
     mutationFn: (body: { idToken: string; tokenType: string; driverId?: string }) =>
       api.post<Token>('/v1/tokens', body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['tokens'] });
       void navigate(`/tokens/${created.id}`);
     },
   });
@@ -56,7 +58,7 @@ export function TokenCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

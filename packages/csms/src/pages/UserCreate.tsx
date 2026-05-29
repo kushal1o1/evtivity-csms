@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PermissionEditor } from '@/components/PermissionEditor';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface User {
@@ -37,6 +37,7 @@ interface Site {
 export function UserCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -109,6 +110,7 @@ export function UserCreate(): React.JSX.Element {
       return created;
     },
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
       void navigate(`/users/${created.id}`);
     },
   });
@@ -125,7 +127,7 @@ export function UserCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

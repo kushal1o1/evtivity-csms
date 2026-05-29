@@ -50,6 +50,24 @@ export function getApiErrorMessage(err: unknown): string | null {
   return typeof message === 'string' ? message : null;
 }
 
+// Safely extract `details` (field -> message map) from an ApiError body. The
+// global error handler attaches this on VALIDATION_ERROR responses so forms
+// can show server-rejected fields next to the offending input. Returns an
+// empty object when the error doesn't carry field details — callers can safely
+// spread it without first checking for null.
+export function getApiErrorFieldDetails(err: unknown): Record<string, string> {
+  if (!(err instanceof ApiError)) return {};
+  const body = err.body;
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) return {};
+  const details = (body as Record<string, unknown>).details;
+  if (details == null || typeof details !== 'object' || Array.isArray(details)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(details as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 let refreshPromise: Promise<boolean> | null = null;

@@ -274,7 +274,7 @@ export function pricingRoutes(app: FastifyInstance): void {
         params: zodSchema(groupParams),
         response: {
           200: itemResponse(pricingGroupItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Pricing group not found', [ERROR_CODES.PRICING_GROUP_NOT_FOUND]),
         },
       },
     },
@@ -341,7 +341,7 @@ export function pricingRoutes(app: FastifyInstance): void {
         body: zodSchema(updateGroupBody),
         response: {
           200: itemResponse(pricingGroupItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Pricing group not found', [ERROR_CODES.PRICING_GROUP_NOT_FOUND]),
         },
       },
     },
@@ -394,7 +394,7 @@ export function pricingRoutes(app: FastifyInstance): void {
         params: zodSchema(groupParams),
         response: {
           204: { type: 'null' as const },
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Pricing group not found', [ERROR_CODES.PRICING_GROUP_NOT_FOUND]),
           409: errorWith('Pricing group tariffs in use', [
             ERROR_CODES.PRICING_GROUP_TARIFFS_IN_USE,
           ]),
@@ -920,7 +920,7 @@ export function pricingRoutes(app: FastifyInstance): void {
         params: zodSchema(groupParams),
         response: {
           200: arrayResponse(scheduleItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Pricing group not found', [ERROR_CODES.PRICING_GROUP_NOT_FOUND]),
         },
       },
     },

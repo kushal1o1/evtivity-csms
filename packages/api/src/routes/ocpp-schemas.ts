@@ -365,7 +365,12 @@ export function ocppSchemaRoutes(app: FastifyInstance): void {
         summary: 'Get processed schema for an OCPP 2.1 command',
         operationId: 'getOcppV21CommandSchema',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]) },
+        response: {
+          404: errorWith('Schema or action not found', [
+            ERROR_CODES.SCHEMA_NOT_FOUND,
+            ERROR_CODES.UNKNOWN_ACTION,
+          ]),
+        },
       },
     },
     async (request, reply) =>
@@ -389,7 +394,12 @@ export function ocppSchemaRoutes(app: FastifyInstance): void {
         summary: 'Get processed schema for an OCPP 1.6 command',
         operationId: 'getOcppV16CommandSchema',
         security: [{ bearerAuth: [] }],
-        response: { 404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]) },
+        response: {
+          404: errorWith('Schema or action not found', [
+            ERROR_CODES.SCHEMA_NOT_FOUND,
+            ERROR_CODES.UNKNOWN_ACTION,
+          ]),
+        },
       },
     },
     async (request, reply) =>

@@ -435,7 +435,7 @@ export function reservationRoutes(app: FastifyInstance): void {
         params: zodSchema(reservationIdParams),
         response: {
           200: itemResponse(reservationDetailItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Reservation not found', [ERROR_CODES.RESERVATION_NOT_FOUND]),
         },
       },
     },
@@ -662,7 +662,7 @@ export function reservationRoutes(app: FastifyInstance): void {
         querystring: zodSchema(paginationQuery),
         response: {
           200: paginatedResponse(reservationCommandItem),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('Reservation not found', [ERROR_CODES.RESERVATION_NOT_FOUND]),
         },
       },
     },
@@ -1551,8 +1551,11 @@ export function reservationRoutes(app: FastifyInstance): void {
         // cancelReservationBody and parsed manually in the handler.
         response: {
           200: itemResponse(cancelReservationResponse),
-          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          400: errorWith('Bad request', [
+            ERROR_CODES.VALIDATION_ERROR,
+            ERROR_CODES.RESERVATION_NOT_ACTIVE,
+          ]),
+          404: errorWith('Reservation not found', [ERROR_CODES.RESERVATION_NOT_FOUND]),
         },
       },
     },

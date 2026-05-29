@@ -301,7 +301,7 @@ export function pncCertificateRoutes(app: FastifyInstance): void {
         params: zodSchema(idParams),
         response: {
           200: successResponse,
-          404: errorWith('Resource not found', [ERROR_CODES.NOT_FOUND]),
+          404: errorWith('CA certificate not found', [ERROR_CODES.CA_CERT_NOT_FOUND]),
         },
       },
     },

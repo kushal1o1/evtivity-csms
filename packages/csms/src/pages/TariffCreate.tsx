@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 
 interface Tariff {
@@ -36,6 +36,7 @@ interface Tariff {
 export function TariffCreate(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
 
   const [name, setName] = useState('');
@@ -81,6 +82,7 @@ export function TariffCreate(): React.JSX.Element {
       isDefault?: boolean;
     }) => api.post<Tariff>(`/v1/pricing-groups/${id ?? ''}/tariffs`, body),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pricing-groups', id ?? ''] });
       void navigate(`/pricing/${id ?? ''}?tab=tariffs`);
     },
   });
@@ -128,7 +130,7 @@ export function TariffCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

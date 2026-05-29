@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -12,7 +12,7 @@ import { TargetFilterFields, type TargetFilterValue } from '@/components/TargetF
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 
 interface Campaign {
   id: string;
@@ -26,6 +26,7 @@ interface Campaign {
 export function FirmwareCampaignCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
   const [firmwareUrl, setFirmwareUrl] = useState('');
@@ -41,6 +42,7 @@ export function FirmwareCampaignCreate(): React.JSX.Element {
       targetFilter?: TargetFilterValue;
     }) => api.post<Campaign>('/v1/firmware-campaigns', body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['firmware-campaigns'] });
       void navigate(`/firmware-campaigns/${created.id}`);
     },
   });
@@ -60,7 +62,7 @@ export function FirmwareCampaignCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { GoogleMapPicker } from '@/components/GoogleMapPicker';
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { api } from '@/lib/api';
+import { api, getApiErrorFieldDetails } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
 import { TIMEZONE_OPTIONS } from '@/lib/timezone';
 
@@ -33,6 +33,7 @@ interface Site {
 export function SiteCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -53,6 +54,7 @@ export function SiteCreate(): React.JSX.Element {
   const createMutation = useMutation({
     mutationFn: (body: Record<string, string>) => api.post<Site>('/v1/sites', body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['sites'] });
       void navigate(`/sites/${created.id}`);
     },
   });
@@ -63,7 +65,10 @@ export function SiteCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  // Merge client-side checks with any field-level errors the API returned on
+  // the last submission so server-rejected inputs surface next to the input
+  // they came from (rather than as a generic "Validation error" banner).
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleSubmit(e: React.SyntheticEvent): void {
     e.preventDefault();

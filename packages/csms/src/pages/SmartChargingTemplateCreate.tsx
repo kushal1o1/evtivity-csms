@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { BackButton } from '@/components/back-button';
 import { CancelButton } from '@/components/cancel-button';
@@ -15,7 +15,7 @@ import { Select } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { TimeSlotEditor, type SchedulePeriod } from '@/components/smart-charging/TimeSlotEditor';
-import { api, getApiErrorCode, getApiErrorMessage } from '@/lib/api';
+import { api, getApiErrorCode, getApiErrorMessage, getApiErrorFieldDetails } from '@/lib/api';
 import { useUserTimezone } from '@/lib/timezone';
 import { midnightInTimezone, toDatetimeLocalInTimezone } from '@/lib/schedule-anchor';
 
@@ -43,6 +43,7 @@ interface CreatedTemplate {
 export function SmartChargingTemplateCreate(): React.JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const timezone = useUserTimezone();
 
   const [name, setName] = useState('');
@@ -76,6 +77,7 @@ export function SmartChargingTemplateCreate(): React.JSX.Element {
     mutationFn: (body: Record<string, unknown>) =>
       api.post<CreatedTemplate>('/v1/smart-charging/templates', body),
     onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['smart-charging-templates'] });
       void navigate(`/smart-charging/${created.id}`);
     },
   });
@@ -91,7 +93,7 @@ export function SmartChargingTemplateCreate(): React.JSX.Element {
     return errors;
   }
 
-  const errors = getValidationErrors();
+  const errors = { ...getValidationErrors(), ...getApiErrorFieldDetails(createMutation.error) };
 
   function handleVersionChange(version: OcppVersion): void {
     if (version === ocppVersion) return;

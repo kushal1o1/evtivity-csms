@@ -127,11 +127,34 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
       void reply.status(error.statusCode).send({ error: error.message, code: error.code });
       return;
     }
-    const fastifyError = error as { statusCode?: number; message?: string };
+    const fastifyError = error as {
+      statusCode?: number;
+      message?: string;
+      validation?: Array<{
+        instancePath?: string;
+        message?: string;
+      }>;
+    };
     if (fastifyError.statusCode != null && fastifyError.statusCode < 500) {
-      void reply
-        .status(fastifyError.statusCode)
-        .send({ error: fastifyError.message, code: 'VALIDATION_ERROR' });
+      // Fastify's AJV validator hangs the failed field list on .validation.
+      // Surface it as `details: { fieldName: message }` so frontend forms can
+      // show server-side errors next to the offending input instead of a
+      // generic banner.
+      const details: Record<string, string> = {};
+      for (const entry of fastifyError.validation ?? []) {
+        const field = entry.instancePath?.replace(/^\//, '') ?? '';
+        if (field && entry.message != null && !(field in details)) {
+          details[field] = entry.message;
+        }
+      }
+      const body: Record<string, unknown> = {
+        error: fastifyError.message,
+        code: 'VALIDATION_ERROR',
+      };
+      if (Object.keys(details).length > 0) {
+        body['details'] = details;
+      }
+      void reply.status(fastifyError.statusCode).send(body);
       return;
     }
     app.log.error(error);
