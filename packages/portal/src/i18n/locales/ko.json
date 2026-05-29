@@ -225,7 +225,7 @@
     "payWithCard": "카드로 결제",
     "startWithAccount": "계정으로 시작",
     "signIn": "로그인",
-    "notAvailable": "현재 이 충전기를 사용할 수 없습니다.",
+    "stationNotAvailable": "현재 이 충전소를 사용할 수 없습니다.",
     "pricing": "요금",
     "pricingFree": "무료",
     "freeVendBadge": "이 장소에서 무료 충전",
@@ -791,8 +791,8 @@
     "noImages": "이미지가 없습니다",
     "contactInfo": "연락처",
     "loading": "위치 로딩 중...",
-    "availableChargers": "사용 가능한 충전기",
-    "noAvailableChargers": "현재 사용 가능한 충전기가 없습니다."
+    "stations": "충전소",
+    "noStations": "이 위치에 충전소가 없습니다."
   },
   "stationDetail": {
     "selectConnector": "충전을 시작할 커넥터를 선택하세요",

@@ -222,7 +222,7 @@
     "payWithCard": "Mit Karte bezahlen",
     "startWithAccount": "Mit Konto starten",
     "signIn": "Anmelden",
-    "notAvailable": "Diese Ladestation ist derzeit nicht verfügbar.",
+    "stationNotAvailable": "Diese Ladestation ist derzeit nicht verfügbar.",
     "pricing": "Preise",
     "pricingFree": "Kostenlos",
     "freeVendBadge": "Kostenloses Laden an diesem Standort",
@@ -787,8 +787,8 @@
     "noImages": "Keine Bilder verfügbar",
     "contactInfo": "Kontakt",
     "loading": "Standort wird geladen...",
-    "availableChargers": "Verfügbare Ladegeräte",
-    "noAvailableChargers": "Keine Ladegeräte derzeit verfügbar."
+    "stations": "Stationen",
+    "noStations": "Keine Stationen an diesem Standort."
   },
   "stationDetail": {
     "selectConnector": "Wähle einen Anschluss, um den Ladevorgang zu starten",

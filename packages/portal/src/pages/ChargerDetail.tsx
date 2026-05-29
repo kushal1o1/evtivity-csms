@@ -33,6 +33,7 @@ import { EvPlugAnimation } from '@/components/EvPlugAnimation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn, formatDate } from '@/lib/utils';
+import { connectorStatusVariant, connectorStatusClassName } from '@/lib/connector-status';
 import { isCableDetected, formatConnectorType } from '@/lib/charger-utils';
 import { useStationEvents } from '@/hooks/use-station-events';
 
@@ -92,36 +93,6 @@ function getDefaultExpiresAt(startsAtLocal: string): string {
   const start = new Date(startsAtLocal);
   if (!Number.isFinite(start.getTime())) return '';
   return formatDateTimeLocal(new Date(start.getTime() + 60 * 60 * 1000));
-}
-
-function connectorStatusVariant(): 'secondary' {
-  return 'secondary';
-}
-
-function connectorStatusClassName(status: string): string {
-  switch (status) {
-    case 'available':
-      return 'bg-green-500 text-green-50 hover:bg-green-500/80';
-    case 'finishing':
-      return 'bg-violet-500 text-violet-50 hover:bg-violet-500/80';
-    case 'occupied':
-    case 'charging':
-    case 'discharging':
-      return 'bg-blue-500 text-blue-50 hover:bg-blue-500/80';
-    case 'preparing':
-    case 'ev_connected':
-      return 'bg-cyan-500 text-cyan-50 hover:bg-cyan-500/80';
-    case 'reserved':
-      return 'bg-orange-500 text-orange-50 hover:bg-orange-500/80';
-    case 'suspended_ev':
-    case 'suspended_evse':
-    case 'idle':
-      return 'bg-yellow-500 text-yellow-50 hover:bg-yellow-500/80';
-    case 'faulted':
-      return 'bg-red-500 text-red-50 hover:bg-red-500/80';
-    default:
-      return 'bg-red-500 text-red-50 hover:bg-red-500/80';
-  }
 }
 
 interface ChargerDetailProps {

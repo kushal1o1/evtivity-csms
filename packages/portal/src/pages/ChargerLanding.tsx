@@ -17,7 +17,8 @@ import { PricingDisplay } from '@/components/PricingDisplay';
 import type { PricingInfo } from '@/components/PricingDisplay';
 import { EvPlugAnimation } from '@/components/EvPlugAnimation';
 import { api } from '@/lib/api';
-import { cn, formatDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { connectorStatusVariant, connectorStatusClassName } from '@/lib/connector-status';
 import {
   checkGuestConnectorStatus,
   isCableDetected,
@@ -46,36 +47,6 @@ interface ChargerInfo {
     }>;
     reservationExpiresAt: string | null;
   };
-}
-
-function connectorStatusVariant(): 'secondary' {
-  return 'secondary';
-}
-
-function connectorStatusClassName(status: string): string {
-  switch (status) {
-    case 'available':
-      return 'bg-green-500 text-green-50 hover:bg-green-500/80';
-    case 'finishing':
-      return 'bg-violet-500 text-violet-50 hover:bg-violet-500/80';
-    case 'occupied':
-    case 'charging':
-    case 'discharging':
-      return 'bg-blue-500 text-blue-50 hover:bg-blue-500/80';
-    case 'preparing':
-    case 'ev_connected':
-      return 'bg-cyan-500 text-cyan-50 hover:bg-cyan-500/80';
-    case 'reserved':
-      return 'bg-orange-500 text-orange-50 hover:bg-orange-500/80';
-    case 'suspended_ev':
-    case 'suspended_evse':
-    case 'idle':
-      return 'bg-yellow-500 text-yellow-50 hover:bg-yellow-500/80';
-    case 'faulted':
-      return 'bg-red-500 text-red-50 hover:bg-red-500/80';
-    default:
-      return 'bg-red-500 text-red-50 hover:bg-red-500/80';
-  }
 }
 
 export function ChargerLanding(): React.JSX.Element {
@@ -296,38 +267,30 @@ export function ChargerLanding(): React.JSX.Element {
             </div>
           ) : null}
 
-          {/* Connector info + status */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
-              <Plug className="h-4 w-4 text-muted-foreground" />
-              <span>{connectorTypes.join(', ')}</span>
-              {(maxPower > 0 || maxCurrent > 0) && (
-                <span className="text-muted-foreground">
-                  {maxPower > 0 ? `${String(maxPower)} kW` : ''}
-                  {maxPower > 0 && maxCurrent > 0 ? ' / ' : ''}
-                  {maxCurrent > 0 ? `${String(maxCurrent)}A` : ''}
-                </span>
-              )}
-            </div>
-            <Badge
-              variant={connectorStatusVariant()}
-              className={connectorStatusClassName(connectorStatus)}
-            >
-              {t(`status.${connectorStatus}`)}
-            </Badge>
-          </div>
-          {connectorStatus === 'reserved' && (
-            <p className="text-xs text-muted-foreground">
-              {charger.evse.reservationExpiresAt != null
-                ? t('charger.reservedUntil', {
-                    time: formatDate(charger.evse.reservationExpiresAt),
-                  })
-                : t('charger.reserved')}
-            </p>
+          {isAvailable && charger.isOnline && (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <Plug className="h-4 w-4 text-muted-foreground" />
+                  <span>{connectorTypes.join(', ')}</span>
+                  {(maxPower > 0 || maxCurrent > 0) && (
+                    <span className="text-muted-foreground">
+                      {maxPower > 0 ? `${String(maxPower)} kW` : ''}
+                      {maxPower > 0 && maxCurrent > 0 ? ' / ' : ''}
+                      {maxCurrent > 0 ? `${String(maxCurrent)}A` : ''}
+                    </span>
+                  )}
+                </div>
+                <Badge
+                  variant={connectorStatusVariant()}
+                  className={connectorStatusClassName(connectorStatus)}
+                >
+                  {t(`status.${connectorStatus}`)}
+                </Badge>
+              </div>
+              {displayPricing != null && <PricingDisplay pricing={displayPricing} />}
+            </>
           )}
-
-          {/* Pricing */}
-          {displayPricing != null && <PricingDisplay pricing={displayPricing} />}
 
           {/* Actions */}
           {isReserved ? (
@@ -378,7 +341,7 @@ export function ChargerLanding(): React.JSX.Element {
             </div>
           ) : (
             <p className="pt-2 text-center text-sm text-muted-foreground">
-              {t('charger.notAvailable')}
+              {t('charger.stationNotAvailable')}
             </p>
           )}
         </CardContent>

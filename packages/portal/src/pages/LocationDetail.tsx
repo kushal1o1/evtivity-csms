@@ -5,6 +5,7 @@ import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Clock, Mail, MapPin, Phone, Plug, User } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
@@ -13,6 +14,11 @@ import { LocationMap } from '@/components/LocationMap';
 import { PopularTimesChart } from '@/components/PopularTimesChart';
 import type { PopularTimesData } from '@/components/PopularTimesChart';
 import { api } from '@/lib/api';
+import {
+  STARTABLE_STATUSES,
+  connectorStatusVariant,
+  connectorStatusClassName,
+} from '@/lib/connector-status';
 
 interface ChargerInfo {
   stationId: string;
@@ -148,16 +154,42 @@ export function LocationDetail(): React.JSX.Element {
               </div>
             )}
 
-            {/* Available chargers - one outline button per available connector */}
-            {location.chargers.filter((c) => c.status === 'available').length > 0 ? (
+            {location.chargers.length > 0 ? (
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t('location.availableChargers')}</p>
+                <p className="text-sm font-medium">{t('location.stations')}</p>
                 <div className="space-y-2">
-                  {location.chargers
-                    .filter((c) => c.status === 'available')
-                    .map((c) => (
+                  {location.chargers.map((c) => {
+                    const isStartable = STARTABLE_STATUSES.includes(c.status);
+                    const meta = (
+                      <span className="text-xs text-muted-foreground">
+                        {c.connectorType != null ? c.connectorType : ''}
+                        {c.connectorType != null && c.maxPowerKw != null ? ' - ' : ''}
+                        {c.maxPowerKw != null ? `${c.maxPowerKw} kW` : ''}
+                      </span>
+                    );
+                    const inner = (
+                      <>
+                        <span className="flex items-center gap-2">
+                          <Plug
+                            className={`h-4 w-4 shrink-0 ${isStartable ? 'text-success' : 'text-muted-foreground'}`}
+                          />
+                          <span className="font-medium">{c.stationId}</span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {meta}
+                          <Badge
+                            variant={connectorStatusVariant()}
+                            className={connectorStatusClassName(c.status)}
+                          >
+                            {t(`status.${c.status}`)}
+                          </Badge>
+                        </span>
+                      </>
+                    );
+                    const key = `${c.stationId}-${String(c.evseId)}`;
+                    return isStartable ? (
                       <Link
-                        key={`${c.stationId}-${String(c.evseId)}`}
+                        key={key}
                         to={`/charge/${c.stationId}/${String(c.evseId)}`}
                         className="block"
                       >
@@ -165,22 +197,22 @@ export function LocationDetail(): React.JSX.Element {
                           variant="outline"
                           className="w-full justify-between gap-2 h-auto py-3"
                         >
-                          <span className="flex items-center gap-2">
-                            <Plug className="h-4 w-4 text-success shrink-0" />
-                            <span className="font-medium">{c.stationId}</span>
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {c.connectorType != null ? c.connectorType : ''}
-                            {c.connectorType != null && c.maxPowerKw != null ? ' - ' : ''}
-                            {c.maxPowerKw != null ? `${c.maxPowerKw} kW` : ''}
-                          </span>
+                          {inner}
                         </Button>
                       </Link>
-                    ))}
+                    ) : (
+                      <div
+                        key={key}
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-4 py-3 opacity-70"
+                      >
+                        {inner}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('location.noAvailableChargers')}</p>
+              <p className="text-sm text-muted-foreground">{t('location.noStations')}</p>
             )}
           </CardContent>
         </Card>

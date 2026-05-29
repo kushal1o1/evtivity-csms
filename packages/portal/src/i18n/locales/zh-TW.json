@@ -225,7 +225,7 @@
     "payWithCard": "使用信用卡支付",
     "startWithAccount": "使用帳戶開始",
     "signIn": "登入",
-    "notAvailable": "此充電樁目前不可用。",
+    "stationNotAvailable": "此充電站目前不可用。",
     "pricing": "價格",
     "pricingFree": "免費",
     "freeVendBadge": "本站點免費充電",
@@ -791,8 +791,8 @@
     "noImages": "暫無圖片",
     "contactInfo": "聯繫方式",
     "loading": "載入位置中...",
-    "availableChargers": "可用充電樁",
-    "noAvailableChargers": "目前沒有可用的充電樁。"
+    "stations": "充電站",
+    "noStations": "此位置沒有充電站。"
   },
   "stationDetail": {
     "selectConnector": "選擇連接器以開始充電",

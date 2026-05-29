@@ -147,10 +147,21 @@ function styleHeaderRow(sheet: ExcelJS.Worksheet): void {
   });
 }
 
+// ExcelJS's published Column interface omits eachCell, but the runtime
+// objects in sheet.columns do expose it. Local shape that captures the
+// actual runtime contract so this autosize loop type-checks.
+type ColumnWithEachCell = Partial<ExcelJS.Column> & {
+  width?: number;
+  eachCell: (
+    opt: { includeEmpty: boolean },
+    cb: (cell: ExcelJS.Cell, rowNumber: number) => void,
+  ) => void;
+};
+
 function autoSizeColumns(sheet: ExcelJS.Worksheet): void {
-  sheet.columns.forEach((column) => {
+  (sheet.columns as ColumnWithEachCell[]).forEach((column) => {
     let maxLength = 10;
-    column.eachCell?.({ includeEmpty: false }, (cell) => {
+    column.eachCell({ includeEmpty: false }, (cell) => {
       const val = cell.value;
       const cellLength = (
         val != null ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : ''

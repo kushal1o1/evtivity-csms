@@ -225,7 +225,7 @@
     "payWithCard": "Pagar con tarjeta",
     "startWithAccount": "Iniciar con cuenta",
     "signIn": "Iniciar sesion",
-    "notAvailable": "Este cargador no esta disponible en este momento.",
+    "stationNotAvailable": "Esta estacion no esta disponible en este momento.",
     "pricing": "Precios",
     "pricingFree": "Gratis",
     "freeVendBadge": "Carga gratuita en este sitio",
@@ -791,8 +791,8 @@
     "noImages": "No hay imagenes disponibles",
     "contactInfo": "Contacto",
     "loading": "Cargando ubicacion...",
-    "availableChargers": "Cargadores disponibles",
-    "noAvailableChargers": "No hay cargadores disponibles ahora mismo."
+    "stations": "Estaciones",
+    "noStations": "No hay estaciones en esta ubicacion."
   },
   "stationDetail": {
     "selectConnector": "Selecciona un conector para comenzar a cargar",
