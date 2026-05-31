@@ -449,13 +449,12 @@ export class OcppServer {
 
     this.lifecycle.received(messageId, session.stationId, action);
 
-    // Both OCPP versions allow any Charge Point -> CSMS message to substitute
-    // for a Heartbeat — OCPP 1.6 section 4.6 ("the heartbeat interval can be
-    // restarted at the reception of any message from the Charge Point") and
-    // OCPP 2.1 section B07 (Heartbeat is only required when no other message
-    // has been sent within the configured interval). Treat every inbound CALL
-    // as the liveness signal PingMonitor.checkHeartbeats() consults, not just
-    // Heartbeat messages.
+    // OCPP 2.1 G02.FR.04 and OCPP 1.6 section 4.6 both require the CSMS to
+    // assume availability of a station whenever any message has been received
+    // from it — a station MAY skip the Heartbeat if another PDU was sent in
+    // the interval. Reset the liveness clock on every inbound CALL so
+    // PingMonitor.checkHeartbeats() doesn't close connections on stations
+    // that are actively sending MeterValues, StatusNotifications, etc.
     session.lastHeartbeat = new Date();
 
     // Log inbound CALL from station
