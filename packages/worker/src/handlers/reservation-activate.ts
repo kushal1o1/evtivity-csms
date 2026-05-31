@@ -21,6 +21,35 @@ import { createLogger, dispatchDriverNotification } from '@evtivity/lib';
 
 const log = createLogger('reservation-activate');
 
+async function notifyDriverCancelled(
+  driverId: string,
+  reservationId: number,
+  stationOcppId: string,
+  reservationDbId: string,
+  context: string,
+  pubsub: PubSubClient,
+): Promise<void> {
+  try {
+    await dispatchDriverNotification(
+      client,
+      'reservation.Cancelled',
+      driverId,
+      {
+        reservationId,
+        stationId: stationOcppId,
+        cancellationFeeFormatted: '',
+      },
+      ALL_TEMPLATES_DIRS,
+      pubsub,
+    );
+  } catch (err) {
+    log.warn(
+      { err, driverId, reservationDbId, context },
+      'Failed to dispatch reservation.Cancelled notification',
+    );
+  }
+}
+
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const API_TEMPLATES_DIR =
   process.env['API_TEMPLATES_DIR'] ??
@@ -44,7 +73,6 @@ export async function handleReservationActivate(job: Job, pubsub: PubSubClient):
       stationDbId: reservations.stationId,
       stationOcppId: chargingStations.stationId,
       isOnline: chargingStations.isOnline,
-      ocppProtocol: chargingStations.ocppProtocol,
       evseDbId: reservations.evseId,
     })
     .from(reservations)
@@ -124,25 +152,14 @@ export async function handleReservationActivate(job: Job, pubsub: PubSubClient):
 
     const driverId = cancelled[0]?.driverId ?? null;
     if (driverId != null) {
-      try {
-        await dispatchDriverNotification(
-          client,
-          'reservation.Cancelled',
-          driverId,
-          {
-            reservationId: reservation.reservationId,
-            stationId: reservation.stationOcppId,
-            cancellationFeeFormatted: '',
-          },
-          ALL_TEMPLATES_DIRS,
-          pubsub,
-        );
-      } catch (err) {
-        log.warn(
-          { err, driverId, reservationDbId },
-          'Failed to dispatch offline-station cancel notification',
-        );
-      }
+      await notifyDriverCancelled(
+        driverId,
+        reservation.reservationId,
+        reservation.stationOcppId,
+        reservationDbId,
+        'station_offline_at_activation',
+        pubsub,
+      );
     }
     return;
   }
@@ -274,25 +291,14 @@ export async function handleReservationActivate(job: Job, pubsub: PubSubClient):
 
     const driverId = cancelled[0]?.driverId ?? null;
     if (driverId != null) {
-      try {
-        await dispatchDriverNotification(
-          client,
-          'reservation.Cancelled',
-          driverId,
-          {
-            reservationId: reservation.reservationId,
-            stationId: reservation.stationOcppId,
-            cancellationFeeFormatted: '',
-          },
-          ALL_TEMPLATES_DIRS,
-          pubsub,
-        );
-      } catch (err) {
-        log.warn(
-          { err, driverId, reservationDbId },
-          'Failed to dispatch evse-unavailable cancel notification',
-        );
-      }
+      await notifyDriverCancelled(
+        driverId,
+        reservation.reservationId,
+        reservation.stationOcppId,
+        reservationDbId,
+        cancelReason,
+        pubsub,
+      );
     }
     return;
   }

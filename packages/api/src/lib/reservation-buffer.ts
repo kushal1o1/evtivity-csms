@@ -3,15 +3,15 @@
 
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { db, getReservationSettings } from '@evtivity/database';
-import { reservations } from '@evtivity/database';
+import { db, getReservationSettings, reservations } from '@evtivity/database';
 
 /**
- * Returns true if the given EVSE has an active reservation whose startsAt
- * falls within the configured buffer window from now.
+ * Returns true if the given EVSE has a scheduled or active reservation whose
+ * effective start time (startsAt, falling back to createdAt) falls within the
+ * configured buffer window from now.
  *
  * When bufferMinutes is 0, the check is skipped and false is returned.
- * When evseDbId is null, checks only station-level reservations (evseId IS NULL).
+ * Station-wide reservations (evseId IS NULL) match every EVSE on the station.
  */
 export async function isEvseInReservationBuffer(
   stationDbId: string,
@@ -25,15 +25,14 @@ export async function isEvseInReservationBuffer(
 
   const conditions = [
     eq(reservations.stationId, stationDbId),
-    inArray(reservations.status, ['active']),
+    // Pre-activation reservations are 'scheduled'; the worker flips to 'active' at startsAt.
+    inArray(reservations.status, ['scheduled', 'active']),
     gte(reservations.expiresAt, now),
-    // The reservation's intended start time (or created_at if null) falls within [now, now + bufferMinutes]
     sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) <= ${bufferCutoff}`,
     sql`COALESCE(${reservations.startsAt}, ${reservations.createdAt}) >= ${now}`,
   ];
 
   if (evseDbId != null) {
-    // A station-wide reservation (evseId IS NULL) also blocks any EVSE on that station
     conditions.push(or(eq(reservations.evseId, evseDbId), isNull(reservations.evseId)) as SQL);
   }
 

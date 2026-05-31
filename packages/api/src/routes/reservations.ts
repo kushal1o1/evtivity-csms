@@ -812,8 +812,10 @@ export function reservationRoutes(app: FastifyInstance): void {
           ]),
           409: errorWith('Conflict', [ERROR_CODES.EVSE_IN_USE, ERROR_CODES.RESERVATION_CONFLICT]),
           500: errorWith('Reservation create failed', [ERROR_CODES.RESERVATION_CREATE_FAILED]),
-          502: errorWith('Station rejected the command', [ERROR_CODES.STATION_REJECTED]),
-          504: errorWith('Station did not respond within timeout', [ERROR_CODES.STATION_TIMEOUT]),
+          502: errorWith('Station rejected the command', [ERROR_CODES.RESERVATION_REJECTED]),
+          504: errorWith('Station did not respond within timeout', [
+            ERROR_CODES.RESERVATION_TIMEOUT,
+          ]),
         },
       },
     },
@@ -1290,7 +1292,10 @@ export function reservationRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(reservationDetailItem),
           400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
-          404: errorWith('Evse not found', [ERROR_CODES.EVSE_NOT_FOUND]),
+          404: errorWith('Resource not found', [
+            ERROR_CODES.RESERVATION_NOT_FOUND,
+            ERROR_CODES.EVSE_NOT_FOUND,
+          ]),
           409: errorWith('Reservation conflict', [ERROR_CODES.RESERVATION_CONFLICT]),
         },
       },

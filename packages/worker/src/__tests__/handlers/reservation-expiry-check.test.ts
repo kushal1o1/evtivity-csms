@@ -63,6 +63,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_1',
           driver_id: 'drv_1',
+          prior_status: 'active',
           reservation_ocpp_id: 42,
           station_ocpp_id: 'CS-001',
           station_uuid: 'sta_1',
@@ -112,6 +113,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_2',
           driver_id: 'drv_1',
+          prior_status: 'active',
           reservation_ocpp_id: 43,
           station_ocpp_id: 'CS-001',
           station_uuid: 'sta_1',
@@ -137,6 +139,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_3',
           driver_id: null,
+          prior_status: 'active',
           reservation_ocpp_id: 44,
           station_ocpp_id: 'CS-001',
           station_uuid: 'sta_1',
@@ -162,6 +165,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_4',
           driver_id: 'drv_1',
+          prior_status: 'active',
           reservation_ocpp_id: 45,
           station_ocpp_id: 'CS-001',
           station_uuid: 'sta_1',
@@ -187,6 +191,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_a',
           driver_id: null,
+          prior_status: 'active',
           reservation_ocpp_id: 1,
           station_ocpp_id: 'CS-A',
           station_uuid: 'sta_a',
@@ -198,6 +203,7 @@ describe('reservationExpiryCheckHandler', () => {
         {
           id: 'rsv_b',
           driver_id: 'drv_b',
+          prior_status: 'active',
           reservation_ocpp_id: 2,
           station_ocpp_id: 'CS-B',
           station_uuid: 'sta_b',

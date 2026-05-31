@@ -25,6 +25,7 @@ const EXPIRY_WARNING_MINUTES = 15;
 interface ExpiredRow {
   id: string;
   driver_id: string | null;
+  prior_status: 'active' | 'scheduled';
   reservation_ocpp_id: number;
   station_ocpp_id: string;
   station_uuid: string;
@@ -47,18 +48,28 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
   // Atomic UPDATE+RETURNING joined with charging_stations so we can also tell
   // the station to release the connector AND determine whether to charge a
   // no-show fee (active reservation that expired without a linked session).
-  // The status='active' guard makes concurrent runs safe -- only one row is
-  // returned per expired reservation even if the job somehow fans out.
+  // The status IN ('active','scheduled') guard makes concurrent runs safe --
+  // only one row is returned per expired reservation even if the job somehow
+  // fans out. 'scheduled' covers orphaned reservations whose worker activation
+  // never fired (BullMQ outage or job loss); they still need terminal cleanup.
+  // prior_status is captured so the audit reflects the actual transition.
   const expired = await client<ExpiredRow[]>`
     WITH updated AS (
-      UPDATE reservations
+      UPDATE reservations r
       SET status = 'expired', updated_at = now()
-      WHERE status = 'active' AND expires_at < now()
-      RETURNING id, driver_id, reservation_id, station_id, starts_at, expires_at, created_at
+      FROM (
+        SELECT id, status AS prior_status FROM reservations
+        WHERE status IN ('active', 'scheduled') AND expires_at < now()
+        FOR UPDATE SKIP LOCKED
+      ) pre
+      WHERE r.id = pre.id
+      RETURNING r.id, r.driver_id, pre.prior_status, r.reservation_id, r.station_id,
+                r.starts_at, r.expires_at, r.created_at
     )
     SELECT
       updated.id,
       updated.driver_id,
+      updated.prior_status,
       updated.reservation_id AS reservation_ocpp_id,
       charging_stations.station_id AS station_ocpp_id,
       charging_stations.id AS station_uuid,
@@ -74,9 +85,8 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
   `;
 
   for (const row of expired) {
-    // Audit the expired transition. The conditional UPDATE above (status =
-    // 'active' AND expires_at < now()) guarantees exactly one row per
-    // reservation here, so the audit row is never duplicated even if the
+    // Conditional UPDATE + FOR UPDATE SKIP LOCKED guarantees exactly one row
+    // per reservation here, so the audit row is never duplicated even if the
     // cron job overlaps with itself.
     await writeReservationAudit({
       reservationId: row.id,
@@ -84,7 +94,7 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
       actor: 'system',
       driverIdBefore: row.driver_id,
       driverIdAfter: row.driver_id,
-      statusBefore: 'active',
+      statusBefore: row.prior_status,
       statusAfter: 'expired',
     });
 
@@ -102,30 +112,37 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
     // Best-effort CancelReservation. CommandListener routes through
     // sendVersionAwareCommand for protocol translation. Offline stations get
     // the command queued via offline_command_queue and replayed on reconnect.
-    try {
-      await pubsub.publish(
-        'ocpp_commands',
-        JSON.stringify({
-          commandId: crypto.randomUUID(),
-          stationId: row.station_ocpp_id,
-          action: 'CancelReservation',
-          payload: { reservationId: row.reservation_ocpp_id },
-        }),
-      );
-    } catch (err) {
-      log.warn(
-        { err, reservationId: row.id, stationOcppId: row.station_ocpp_id },
-        'Failed to publish CancelReservation for expired reservation',
-      );
+    // Skip for prior_status='scheduled': the station never received ReserveNow,
+    // so CancelReservation would refer to an unknown id and the station would
+    // log an error.
+    if (row.prior_status === 'active') {
+      try {
+        await pubsub.publish(
+          'ocpp_commands',
+          JSON.stringify({
+            commandId: crypto.randomUUID(),
+            stationId: row.station_ocpp_id,
+            action: 'CancelReservation',
+            payload: { reservationId: row.reservation_ocpp_id },
+          }),
+        );
+      } catch (err) {
+        log.warn(
+          { err, reservationId: row.id, stationOcppId: row.station_ocpp_id },
+          'Failed to publish CancelReservation for expired reservation',
+        );
+      }
     }
 
     // No-show fee. Charge the holding rate * minutes the connector was held
     // when the reservation expired without a linked session. Skip when:
     //   - No driver attached (open / operator-comp reservation)
+    //   - Prior status is 'scheduled' (the connector was never actually held;
+    //     the worker activation never fired, so no-show is unjust)
     //   - The driver actually charged (has_session)
     //   - The resolved tariff has no holding rate
     //   - The driver has no default payment method (charge helper no-ops)
-    if (row.driver_id != null && !row.has_session) {
+    if (row.driver_id != null && row.prior_status === 'active' && !row.has_session) {
       try {
         const tariff = await resolveTariff(row.station_uuid, row.driver_id);
         const ratePerMinute =
@@ -165,16 +182,29 @@ export async function reservationExpiryCheckHandler(log: Logger): Promise<void> 
   }
 
   if (expired.length > 0) {
-    log.info({ count: expired.length }, 'Expired reservations and dispatched cancellations');
+    log.info({ count: expired.length }, 'Expired reservations');
   }
 
   // Warn drivers about reservations expiring within the warning window.
+  // Dedup: skip drivers who already got a reservation.Expiring within the last
+  // WARNING window. The cron fires every minute and the window is 15 minutes,
+  // so without dedup each driver would receive up to 15 duplicate notifications
+  // (one per cron tick). Driver-level dedup (not per-reservation) is the finest
+  // grain available: `notifications.metadata` only stores `driverId`. Multi-pod
+  // safe because the notifications table is shared.
   const warningThreshold = new Date(Date.now() + EXPIRY_WARNING_MINUTES * 60 * 1000);
   const expiringSoon = await client<ExpiringRow[]>`
-    SELECT id, driver_id, expires_at FROM reservations
-    WHERE status = 'active'
-      AND expires_at > now()
-      AND expires_at <= ${warningThreshold}
+    SELECT r.id, r.driver_id, r.expires_at FROM reservations r
+    WHERE r.status = 'active'
+      AND r.expires_at > now()
+      AND r.expires_at <= ${warningThreshold}
+      AND r.driver_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM notifications n
+        WHERE n.event_type = 'reservation.Expiring'
+          AND n.metadata->>'driverId' = r.driver_id
+          AND n.created_at > now() - (${EXPIRY_WARNING_MINUTES} || ' minutes')::interval
+      )
   `;
 
   for (const row of expiringSoon) {

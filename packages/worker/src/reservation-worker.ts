@@ -22,7 +22,8 @@ export async function startReservationBridge(
     let data: { reservationDbId: string; delayMs: number };
     try {
       data = JSON.parse(payload) as { reservationDbId: string; delayMs: number };
-    } catch {
+    } catch (err) {
+      log.warn({ err, payload: payload.slice(0, 200) }, 'Malformed reservation_schedule payload');
       return;
     }
 
