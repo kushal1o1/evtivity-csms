@@ -27,8 +27,9 @@ import {
   errorWith,
 } from '../lib/response-schemas.js';
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
-import { isPrivateUrl } from '@evtivity/lib';
+import { isPrivateUrl, encryptString } from '@evtivity/lib';
 import { getPubSub } from '../lib/pubsub.js';
+import { config as apiConfig } from '../lib/config.js';
 import { authorize } from '../middleware/rbac.js';
 
 const ocpiPartnerItem = z
@@ -44,10 +45,44 @@ const ocpiPartnerItem = z
       .describe('Partner connection status'),
     version: z.string().max(20).nullable().describe('Negotiated OCPI version'),
     versionUrl: z.string().max(2048).nullable().describe('OCPI versions endpoint URL'),
+    hasPartnerRegistrationToken: z
+      .boolean()
+      .describe(
+        'True when a partner registration token is stored; the ciphertext itself is never returned. Operators rotate it via PATCH partnerRegistrationToken.',
+      ),
     createdAt: z.string().describe('Row creation timestamp'),
     updatedAt: z.string().describe('Row last update timestamp'),
   })
   .passthrough();
+
+interface PartnerRow {
+  id: string;
+  name: string;
+  countryCode: string;
+  partyId: string;
+  roles: unknown;
+  ourRoles: unknown;
+  status: 'pending' | 'connected' | 'suspended' | 'disconnected';
+  version: string | null;
+  versionUrl: string | null;
+  partnerRegistrationTokenEnc: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Strip the encrypted registration-token ciphertext from API responses and
+// surface a presence boolean instead. The ciphertext is operationally a
+// secret — leaking it expands the attack surface even though the symmetric
+// key is held server-side.
+function publicPartner(row: PartnerRow): Omit<PartnerRow, 'partnerRegistrationTokenEnc'> & {
+  hasPartnerRegistrationToken: boolean;
+} {
+  const { partnerRegistrationTokenEnc, ...rest } = row;
+  return {
+    ...rest,
+    hasPartnerRegistrationToken: partnerRegistrationTokenEnc != null,
+  };
+}
 
 const createPartnerResponse = z
   .object({
@@ -61,22 +96,18 @@ const createPartnerResponse = z
 
 const syncLogItem = z
   .object({
-    id: z.string().describe('Identifier'),
+    // ocpi_sync_log.id is `serial integer` in the DB schema; the Zod type
+    // must match or fast-json-stringify mangles the response.
+    id: z.number().int().describe('Identifier'),
     partnerId: z.string().describe('OCPI partner ID'),
     module: z
       .enum(['locations', 'tariffs', 'cdrs', 'tokens', 'sessions', 'commands'])
       .describe('OCPI module name involved in the sync'),
-    direction: z
-      .enum(['inbound', 'outbound'])
-      .describe('Whether data flowed in (pull) or out (push)'),
+    direction: z.enum(['push', 'pull']).describe('Whether data flowed out (push) or in (pull)'),
     action: z.string().max(50).describe('Specific action performed (e.g., pull, push, register)'),
-    status: z.enum(['success', 'partial', 'failed']).describe('Outcome status of the sync'),
-    objectsCount: z
-      .number()
-      .int()
-      .min(0)
-      .nullable()
-      .describe('Number of objects transferred during the sync'),
+    status: z.enum(['started', 'completed', 'failed']).describe('Outcome status of the sync'),
+    // ocpi_sync_log.objects_count is `varchar(10) NOT NULL DEFAULT '0'`.
+    objectsCount: z.string().max(10).describe('Number of objects transferred during the sync'),
     errorMessage: z.string().max(1000).nullable().describe('Error details when the sync failed'),
     createdAt: z.coerce.date().describe('Timestamp when the sync ran'),
   })
@@ -91,6 +122,14 @@ const createPartnerBody = z.object({
   countryCode: z.string().length(2).describe('ISO 3166-1 alpha-2 country code'),
   partyId: z.string().min(1).max(3).describe('OCPI party identifier'),
   versionUrl: z.string().url().max(2048).optional().describe('OCPI versions endpoint URL'),
+  partnerRegistrationToken: z
+    .string()
+    .min(1)
+    .max(255)
+    .optional()
+    .describe(
+      "Partner's OOB-shared OCPI 2.2.1 Token C. Required only for outbound registration, when WE are the Sender calling the partner's /credentials endpoint.",
+    ),
 });
 
 const updatePartnerBody = z.object({
@@ -100,6 +139,14 @@ const updatePartnerBody = z.object({
     .optional()
     .describe('Partner connection status'),
   versionUrl: z.string().url().max(2048).optional().describe('OCPI versions endpoint URL'),
+  partnerRegistrationToken: z
+    .string()
+    .min(1)
+    .max(255)
+    .optional()
+    .describe(
+      "Partner's OOB-shared OCPI 2.2.1 Token C. Set or rotate when the partner provides a new outbound-registration token.",
+    ),
 });
 
 const syncParams = z.object({
@@ -155,9 +202,10 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
           .where(where),
       ]);
 
-      return { data, total: countRows[0]?.count ?? 0 } satisfies PaginatedResponse<
-        (typeof data)[number]
-      >;
+      return {
+        data: data.map((row) => publicPartner(row)),
+        total: countRows[0]?.count ?? 0,
+      } satisfies PaginatedResponse<ReturnType<typeof publicPartner>>;
     },
   );
 
@@ -197,7 +245,7 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         .from(ocpiPartnerEndpoints)
         .where(eq(ocpiPartnerEndpoints.partnerId, id));
 
-      return { ...partner, endpoints };
+      return { ...publicPartner(partner), endpoints };
     },
   );
 
@@ -251,6 +299,11 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         return;
       }
 
+      const partnerRegistrationTokenEnc =
+        body.partnerRegistrationToken != null
+          ? encryptString(body.partnerRegistrationToken, apiConfig.SETTINGS_ENCRYPTION_KEY)
+          : null;
+
       const [partner] = await db
         .insert(ocpiPartners)
         .values({
@@ -261,6 +314,7 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
           status: 'pending',
           roles: [],
           ourRoles: [],
+          partnerRegistrationTokenEnc,
         })
         .returning();
 
@@ -296,7 +350,7 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
       );
 
       await reply.status(201).send({
-        partner,
+        partner: publicPartner(partner),
         registrationToken,
       });
     },
@@ -325,13 +379,11 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
       const { id } = request.params as z.infer<typeof partnerParams>;
       const body = request.body as z.infer<typeof updatePartnerBody>;
 
-      const [existing] = await db
-        .select({ id: ocpiPartners.id })
-        .from(ocpiPartners)
-        .where(eq(ocpiPartners.id, id))
-        .limit(1);
+      // The before-snapshot SELECT also serves as the existence check, so we
+      // don't need a separate id-only SELECT first.
+      const [before] = await db.select().from(ocpiPartners).where(eq(ocpiPartners.id, id));
 
-      if (existing == null) {
+      if (before == null) {
         await reply.status(404).send({ error: 'Partner not found', code: 'PARTNER_NOT_FOUND' });
         return;
       }
@@ -348,8 +400,13 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
       if (body.name != null) updateData['name'] = body.name;
       if (body.status != null) updateData['status'] = body.status;
       if (body.versionUrl != null) updateData['versionUrl'] = body.versionUrl;
+      if (body.partnerRegistrationToken != null) {
+        updateData['partnerRegistrationTokenEnc'] = encryptString(
+          body.partnerRegistrationToken,
+          apiConfig.SETTINGS_ENCRYPTION_KEY,
+        );
+      }
 
-      const [before] = await db.select().from(ocpiPartners).where(eq(ocpiPartners.id, id));
       const [updated] = await db
         .update(ocpiPartners)
         .set(updateData)
@@ -365,7 +422,7 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
             entityIdSnapshot: updated.id,
             action: 'updated',
             ...actor,
-            before: before ?? null,
+            before,
             after: updated,
           },
           db,
@@ -373,7 +430,7 @@ export function ocpiPartnerRoutes(app: FastifyInstance): void {
         );
       }
 
-      return updated;
+      return updated != null ? publicPartner(updated) : null;
     },
   );
 

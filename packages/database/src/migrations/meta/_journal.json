@@ -435,6 +435,20 @@
       "when": 1778700000043,
       "tag": "0061_add_maintenance_audit_updated",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1778700000044,
+      "tag": "0062_add_partner_registration_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1778700000045,
+      "tag": "0063_reseed_missing_cron_jobs",
+      "breakpoints": true
     }
   ]
 }

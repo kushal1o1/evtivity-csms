@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import type { FastifyInstance } from 'fastify';
-import { eq, and, gte, lte, sql, isNotNull } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, isNotNull, desc } from 'drizzle-orm';
 import {
   db,
   sites,
@@ -23,6 +23,7 @@ import {
   transformConnectorStandalone,
 } from '../../transformers/location.transformer.js';
 import { config } from '../../lib/config.js';
+import { isLocationVisibleToPartner } from '../../lib/location-visibility.js';
 import type { OcpiVersion } from '../../types/ocpi.js';
 
 function getCountryCode(): string {
@@ -71,6 +72,11 @@ async function getPublishedLocations(
   // Inner-join sites and require non-null coordinates so the OCPI list reflects
   // only locations we can actually represent (coordinates is a required field
   // in the OCPI Location object); count and pagination both reflect that filter.
+  // OCPI 2.2.1 §3.1.3: list responses MUST be sorted by `last_updated`.
+  // Without an explicit ORDER BY, Postgres returns rows in storage order,
+  // which means client pagination can skip or repeat rows as the index
+  // mutates. Sort by site.updated_at DESC to match the Location.last_updated
+  // each row will carry.
   const publishedSiteIds = await db
     .select({
       siteId: ocpiLocationPublish.siteId,
@@ -89,11 +95,16 @@ async function getPublishedLocations(
         isNotNull(sites.longitude),
         sql`(${ocpiLocationPublish.publishToAll} = true OR ${ocpiLocationPublishPartners.partnerId} = ${partnerId})`,
       ),
-    );
+    )
+    .orderBy(desc(sites.updatedAt), desc(ocpiLocationPublish.siteId));
 
+  // Dedupe while preserving sort order. A site with multiple allow-list rows
+  // appears once per row from the LEFT JOIN; the first hit wins.
   const siteIdSet = new Map<string, string | null>();
   for (const row of publishedSiteIds) {
-    siteIdSet.set(row.siteId, row.ocpiLocationId);
+    if (!siteIdSet.has(row.siteId)) {
+      siteIdSet.set(row.siteId, row.ocpiLocationId);
+    }
   }
 
   const uniqueSiteIds = [...siteIdSet.keys()];
@@ -110,10 +121,15 @@ async function getPublishedLocations(
     return { locations: [], total };
   }
 
+  // Sites returned by the IN-list filter come back unordered. Re-sort to
+  // match the canonical pagination order so the response array matches the
+  // header offsets.
+  const orderIndex = new Map(pagedSiteIds.map((id, idx) => [id, idx]));
   const siteRows = await db
     .select()
     .from(sites)
     .where(sql`${sites.id} IN ${pagedSiteIds}`);
+  siteRows.sort((a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0));
 
   return { locations: siteRows, total };
 }
@@ -302,6 +318,12 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
   app.get(`${prefix}/:location_id`, { onRequest: [ocpiAuthenticate] }, async (request, reply) => {
     const { location_id } = request.params as { location_id: string };
 
+    const partner = request.ocpiPartner;
+    if (partner?.partnerId == null) {
+      await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+      return;
+    }
+
     // Find site by OCPI location ID or direct site ID
     const publishRow = await db
       .select({ siteId: ocpiLocationPublish.siteId })
@@ -316,6 +338,13 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
 
     const siteId = publishRow[0]?.siteId;
     if (siteId == null) {
+      await reply
+        .status(404)
+        .send(ocpiError(OcpiStatusCode.CLIENT_UNKNOWN_LOCATION, 'Location not found'));
+      return;
+    }
+
+    if (!(await isLocationVisibleToPartner(partner.partnerId, siteId))) {
       await reply
         .status(404)
         .send(ocpiError(OcpiStatusCode.CLIENT_UNKNOWN_LOCATION, 'Location not found'));
@@ -365,6 +394,12 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
     async (request, reply) => {
       const { evse_uid } = request.params as { location_id: string; evse_uid: string };
 
+      const partner = request.ocpiPartner;
+      if (partner?.partnerId == null) {
+        await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
       // Parse evse_uid format: {siteId}-{evseId}
       const dashIdx = evse_uid.lastIndexOf('-');
       if (dashIdx === -1) {
@@ -376,6 +411,13 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
 
       const siteIdPart = evse_uid.slice(0, dashIdx);
       const evseIdNum = parseInt(evse_uid.slice(dashIdx + 1), 10);
+
+      if (!(await isLocationVisibleToPartner(partner.partnerId, siteIdPart))) {
+        await reply
+          .status(404)
+          .send(ocpiError(OcpiStatusCode.CLIENT_UNKNOWN_LOCATION, 'EVSE not found'));
+        return;
+      }
 
       // Find station at this site
       const stationRows = await db
@@ -440,6 +482,12 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
         connector_id: string;
       };
 
+      const partner = request.ocpiPartner;
+      if (partner?.partnerId == null) {
+        await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
       const dashIdx = evse_uid.lastIndexOf('-');
       if (dashIdx === -1) {
         await reply
@@ -451,6 +499,13 @@ function registerCpoLocationRoutes(app: FastifyInstance, version: OcpiVersion): 
       const siteIdPart = evse_uid.slice(0, dashIdx);
       const evseIdNum = parseInt(evse_uid.slice(dashIdx + 1), 10);
       const connectorIdNum = parseInt(connector_id, 10);
+
+      if (!(await isLocationVisibleToPartner(partner.partnerId, siteIdPart))) {
+        await reply
+          .status(404)
+          .send(ocpiError(OcpiStatusCode.CLIENT_UNKNOWN_LOCATION, 'Connector not found'));
+        return;
+      }
 
       const stationRows = await db
         .select({ id: chargingStations.id })

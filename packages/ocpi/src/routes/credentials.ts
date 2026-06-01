@@ -23,7 +23,7 @@ function isValidCredentials(body: unknown): body is OcpiCredentials {
   );
 }
 
-function registerCredentialRoutes(app: FastifyInstance, version: string): void {
+function registerCredentialRoutes(app: FastifyInstance, version: '2.2.1' | '2.3.0'): void {
   // GET /ocpi/{version}/credentials - return our credentials
   app.get(`/ocpi/${version}/credentials`, { onRequest: [ocpiAuthenticate] }, () => {
     const credentials = buildOurCredentials('');
@@ -70,7 +70,10 @@ function registerCredentialRoutes(app: FastifyInstance, version: string): void {
       }
 
       try {
-        const result = await handleRegistration(body, partner.tokenId);
+        // Prefer the OCPI version the partner POSTed to — that's the
+        // version they explicitly accepted. Without this, the handshake
+        // always settles on 2.2.1 even when both sides support 2.3.0.
+        const result = await handleRegistration(body, partner.tokenId, version);
         await reply.status(201).send(ocpiSuccess(result));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Registration failed';
@@ -108,7 +111,7 @@ function registerCredentialRoutes(app: FastifyInstance, version: string): void {
       }
 
       try {
-        const result = await handleCredentialUpdate(body, partner.partnerId);
+        const result = await handleCredentialUpdate(body, partner.partnerId, version);
         return ocpiSuccess(result);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Credential update failed';

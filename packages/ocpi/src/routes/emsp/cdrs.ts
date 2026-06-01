@@ -7,6 +7,7 @@ import { db, ocpiCdrs } from '@evtivity/database';
 import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { config } from '../../lib/config.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
+import { namespaceMismatch } from '../../lib/namespace-check.js';
 import type { OcpiVersion, OcpiCdr } from '../../types/ocpi.js';
 
 function isValidCdr(body: unknown): body is OcpiCdr {
@@ -64,6 +65,20 @@ function registerEmspCdrRoutes(app: FastifyInstance, version: OcpiVersion): void
       await reply
         .status(400)
         .send(ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'Invalid CDR object'));
+      return;
+    }
+
+    // CDR POST has no URL country_code/party_id; the body itself names the
+    // sending party. Per OCPI 2.2.1 §3.1.5 these MUST match the auth.
+    if (namespaceMismatch(partner, body.country_code, body.party_id)) {
+      await reply
+        .status(403)
+        .send(
+          ocpiError(
+            OcpiStatusCode.CLIENT_ERROR,
+            'CDR country_code/party_id does not match credentials',
+          ),
+        );
       return;
     }
 

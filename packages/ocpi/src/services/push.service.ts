@@ -23,6 +23,7 @@ import { OcpiClient } from '../lib/ocpi-client.js';
 import { getOutboundToken } from '../lib/outbound-token.js';
 import { config } from '../lib/config.js';
 import { transformLocation } from '../transformers/location.transformer.js';
+import { resolvePartnerVersion } from '../lib/ocpi-version.js';
 import type { OcpiSession, OcpiTariff } from '../types/ocpi.js';
 
 const logger = createLogger('ocpi-push');
@@ -45,13 +46,14 @@ function getPartyId(): string {
 }
 
 async function getConnectedPartners(): Promise<
-  Array<{ id: string; countryCode: string; partyId: string }>
+  Array<{ id: string; countryCode: string; partyId: string; version: string | null }>
 > {
   return db
     .select({
       id: ocpiPartners.id,
       countryCode: ocpiPartners.countryCode,
       partyId: ocpiPartners.partyId,
+      version: ocpiPartners.version,
     })
     .from(ocpiPartners)
     .where(eq(ocpiPartners.status, 'connected'));
@@ -221,17 +223,14 @@ async function pushLocationUpdate(siteId: string): Promise<void> {
     coverage = { allAffected, affectedStationIds: stationSet };
   }
 
-  const location = transformLocation(
-    {
-      site,
-      evses: evsesWithConnectors,
-      ocpiLocationId: locationId,
-      countryCode,
-      partyId,
-      ...(coverage != null ? { maintenance: coverage } : {}),
-    },
-    '2.2.1',
-  );
+  const locationInput = {
+    site,
+    evses: evsesWithConnectors,
+    ocpiLocationId: locationId,
+    countryCode,
+    partyId,
+    ...(coverage != null ? { maintenance: coverage } : {}),
+  };
 
   // Determine which partners to push to
   let partnerIds: string[];
@@ -260,7 +259,11 @@ async function pushLocationUpdate(siteId: string): Promise<void> {
           getPartnerEndpoint(partnerId, 'locations', 'RECEIVER'),
           getPartnerToken(partnerId),
           db
-            .select({ countryCode: ocpiPartners.countryCode, partyId: ocpiPartners.partyId })
+            .select({
+              countryCode: ocpiPartners.countryCode,
+              partyId: ocpiPartners.partyId,
+              version: ocpiPartners.version,
+            })
             .from(ocpiPartners)
             .where(eq(ocpiPartners.id, partnerId))
             .limit(1),
@@ -273,6 +276,10 @@ async function pushLocationUpdate(siteId: string): Promise<void> {
         const partner = partnerRows[0];
         if (partner == null) return;
 
+        // Shape the payload to the partner's negotiated version so 2.3.0
+        // partners receive the 2.3.0 fields (e.g. open-enum statuses, AFIR
+        // metadata) instead of being silently downshifted to 2.2.1.
+        const location = transformLocation(locationInput, resolvePartnerVersion(partner.version));
         const client = createOcpiClient(token, partner.countryCode, partner.partyId);
         await client.put(`${url}/${countryCode}/${partyId}/${locationId}`, location);
         await logSync(partnerId, 'locations', 'push_update', 'completed', 1);

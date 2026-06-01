@@ -198,7 +198,16 @@ function registerCpoTokenRoutes(app: FastifyInstance, version: OcpiVersion): voi
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const rawBody = request.body;
+      if (rawBody == null || typeof rawBody !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
+        return;
+      }
+      const patch = rawBody as Record<string, unknown>;
       const currentData = existing.tokenData as Record<string, unknown>;
       const mergedData = { ...currentData, ...patch };
 
@@ -227,55 +236,73 @@ function registerCpoTokenRoutes(app: FastifyInstance, version: OcpiVersion): voi
   );
 
   // POST /ocpi/{version}/cpo/tokens/:token_uid/authorize - real-time authorization
-  app.post(`${prefix}/:token_uid/authorize`, { onRequest: [ocpiAuthenticate] }, async (request) => {
-    const { token_uid } = request.params as { token_uid: string };
+  app.post(
+    `${prefix}/:token_uid/authorize`,
+    { onRequest: [ocpiAuthenticate] },
+    async (request, reply) => {
+      const { token_uid } = request.params as { token_uid: string };
 
-    // Look up the token
-    const [token] = await db
-      .select()
-      .from(ocpiExternalTokens)
-      .where(eq(ocpiExternalTokens.uid, token_uid))
-      .limit(1);
-
-    if (token == null) {
-      const result: OcpiAuthorizationInfo = {
-        allowed: 'NOT_ALLOWED',
-        token: {
-          country_code: '',
-          party_id: '',
-          uid: token_uid,
-          type: 'RFID',
-          contract_id: token_uid,
-          issuer: '',
-          valid: false,
-          whitelist: 'NEVER',
-          last_updated: new Date().toISOString(),
-        },
-      };
-      return ocpiSuccess(result);
-    }
-
-    const tokenData = token.tokenData as OcpiToken;
-    const allowed = token.isValid ? 'ALLOWED' : 'BLOCKED';
-
-    const body = request.body as Record<string, unknown> | null;
-    const result: OcpiAuthorizationInfo = {
-      allowed,
-      token: tokenData,
-    };
-
-    if (body != null && typeof body['location_id'] === 'string') {
-      result.location = {
-        location_id: body['location_id'],
-      };
-      const evseUids = body['evse_uids'];
-      if (Array.isArray(evseUids)) {
-        result.location.evse_uids = evseUids as string[];
+      const partner = request.ocpiPartner;
+      if (partner?.partnerId == null) {
+        await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return undefined;
       }
-    }
 
-    return ocpiSuccess(result);
-  });
+      // Per-partner namespace scoping. The eMSP partner asking us to
+      // authorize is asking about a token IT previously uploaded. Looking
+      // up by uid alone would let partner A enumerate partner B's tokens
+      // (existence, validity, full token payload) by guessing token UIDs.
+      const [token] = await db
+        .select()
+        .from(ocpiExternalTokens)
+        .where(
+          and(
+            eq(ocpiExternalTokens.partnerId, partner.partnerId),
+            eq(ocpiExternalTokens.uid, token_uid),
+          ),
+        )
+        .limit(1);
+
+      if (token == null) {
+        const result: OcpiAuthorizationInfo = {
+          allowed: 'NOT_ALLOWED',
+          token: {
+            country_code: '',
+            party_id: '',
+            uid: token_uid,
+            type: 'RFID',
+            contract_id: token_uid,
+            issuer: '',
+            valid: false,
+            whitelist: 'NEVER',
+            last_updated: new Date().toISOString(),
+          },
+        };
+        return ocpiSuccess(result);
+      }
+
+      const tokenData = token.tokenData as OcpiToken;
+      const allowed = token.isValid ? 'ALLOWED' : 'BLOCKED';
+
+      const body = request.body as Record<string, unknown> | null;
+      const result: OcpiAuthorizationInfo = {
+        allowed,
+        token: tokenData,
+      };
+
+      if (body != null && typeof body['location_id'] === 'string') {
+        result.location = {
+          location_id: body['location_id'],
+        };
+        const evseUids = body['evse_uids'];
+        if (Array.isArray(evseUids)) {
+          result.location.evse_uids = evseUids as string[];
+        }
+      }
+
+      return ocpiSuccess(result);
+    },
+  );
 }
 
 export function cpoTokenRoutes(app: FastifyInstance): void {

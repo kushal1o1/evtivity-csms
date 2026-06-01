@@ -56,6 +56,10 @@ export const ocpiPartners = pgTable(
     status: ocpiPartnerStatusEnum('status').notNull().default('pending'),
     version: varchar('version', { length: 10 }),
     versionUrl: text('version_url'),
+    // OCPI 2.2.1 Token C — the partner's out-of-band registration token used
+    // when WE are the Sender (outbound registration). Encrypted at rest via
+    // SETTINGS_ENCRYPTION_KEY; null for partners that registered inbound.
+    partnerRegistrationTokenEnc: text('partner_registration_token_enc'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

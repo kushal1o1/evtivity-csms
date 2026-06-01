@@ -52,9 +52,9 @@ interface SyncLogEntry {
   id: number;
   partnerId: string;
   module: string;
-  direction: string;
+  direction: 'push' | 'pull';
   action: string;
-  status: string;
+  status: 'started' | 'completed' | 'failed';
   objectsCount: string;
   errorMessage: string | null;
   createdAt: string;
@@ -113,7 +113,10 @@ export function RoamingPartnerDetail(): React.JSX.Element {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2 sm:flex">
-          {partner.status === 'pending' && (
+          {partner.status !== 'connected' && partner.versionUrl != null && (
+            // Register is also valid for disconnected/suspended partners that
+            // need a fresh handshake; the API route accepts any status as long
+            // as versionUrl is set.
             <Button
               onClick={() => {
                 registerMutation.mutate();
@@ -233,10 +236,10 @@ export function RoamingPartnerDetail(): React.JSX.Element {
                         <Badge
                           variant={
                             entry.status === 'completed'
-                              ? 'default'
+                              ? 'success'
                               : entry.status === 'failed'
                                 ? 'destructive'
-                                : 'secondary'
+                                : 'warning'
                           }
                         >
                           {entry.status}

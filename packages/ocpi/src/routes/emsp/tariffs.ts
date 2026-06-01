@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, ocpiExternalTariffs } from '@evtivity/database';
 import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
+import { namespaceMismatch } from '../../lib/namespace-check.js';
 import type { OcpiVersion, OcpiTariff } from '../../types/ocpi.js';
 
 function isValidTariff(body: unknown): body is OcpiTariff {
@@ -79,6 +80,13 @@ function registerEmspTariffRoutes(app: FastifyInstance, version: OcpiVersion): v
         return;
       }
 
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PUT tariff for another partner'));
+        return;
+      }
+
       const body = request.body;
       if (!isValidTariff(body)) {
         await reply
@@ -141,6 +149,23 @@ function registerEmspTariffRoutes(app: FastifyInstance, version: OcpiVersion): v
         return;
       }
 
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PATCH tariff for another partner'));
+        return;
+      }
+
+      const rawPatch = request.body;
+      if (rawPatch == null || typeof rawPatch !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
+        return;
+      }
+
       const [existing] = await db
         .select()
         .from(ocpiExternalTariffs)
@@ -159,7 +184,7 @@ function registerEmspTariffRoutes(app: FastifyInstance, version: OcpiVersion): v
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const patch = rawPatch as Record<string, unknown>;
       const currentData = existing.tariffData as Record<string, unknown>;
       const mergedData = { ...currentData, ...patch };
 
@@ -199,6 +224,13 @@ function registerEmspTariffRoutes(app: FastifyInstance, version: OcpiVersion): v
       const partner = request.ocpiPartner;
       if (partner?.partnerId == null) {
         await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot DELETE tariff for another partner'));
         return;
       }
 

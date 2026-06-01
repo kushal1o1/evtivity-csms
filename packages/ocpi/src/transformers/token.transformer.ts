@@ -8,6 +8,8 @@ interface DriverTokenRow {
   idToken: string;
   tokenType: string;
   isActive: boolean;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
   updatedAt: Date;
 }
 
@@ -36,6 +38,17 @@ function mapTokenType(tokenType: string): OcpiTokenType {
 export function transformToken(input: TokenTransformInput, version: OcpiVersion): OcpiToken {
   const { token, countryCode, partyId } = input;
 
+  // Mirror the same usability check the OCPP authorize handlers apply: a
+  // card is only `valid` while active, not revoked, and not expired. Without
+  // this, revoked or expired cards round-trip to partners as valid and
+  // partners then attempt to authorize charging that the CSMS rejects at
+  // the OCPP layer — drivers see an inconsistent experience.
+  const now = Date.now();
+  const valid =
+    token.isActive &&
+    token.revokedAt == null &&
+    (token.expiresAt == null || token.expiresAt.getTime() > now);
+
   const result: OcpiToken = {
     country_code: countryCode,
     party_id: partyId,
@@ -43,7 +56,7 @@ export function transformToken(input: TokenTransformInput, version: OcpiVersion)
     type: mapTokenType(token.tokenType),
     contract_id: token.idToken,
     issuer: partyId,
-    valid: token.isActive,
+    valid,
     whitelist: 'ALLOWED',
     last_updated: token.updatedAt.toISOString(),
   };

@@ -7,6 +7,7 @@ import { getSentryConfig } from '@evtivity/database';
 import { buildOcpiApp } from './app.js';
 import { OcpiPushListener } from './services/push.service.js';
 import { OcpiPullListener } from './services/pull.service.js';
+import { OcpiRegisterListener } from './services/register-listener.service.js';
 import { initCommandCallbackService } from './services/command-callback.service.js';
 import { config } from './lib/config.js';
 
@@ -48,6 +49,11 @@ async function start(): Promise<void> {
   const pullListener = new OcpiPullListener(pubsub);
   await pullListener.start();
 
+  // Start outbound-registration listener so the operator-triggered
+  // /v1/ocpi/partners/:id/register endpoint actually drives a handshake.
+  const registerListener = new OcpiRegisterListener(pubsub);
+  await registerListener.start();
+
   // Start command callback service for OCPI-initiated OCPP commands
   const commandCallbackService = initCommandCallbackService(pubsub);
   await commandCallbackService.start();
@@ -55,6 +61,7 @@ async function start(): Promise<void> {
   // Graceful shutdown
   const shutdown = async (): Promise<void> => {
     await commandCallbackService.stop();
+    await registerListener.stop();
     await pullListener.stop();
     await pushListener.stop();
     await pubsub.close();

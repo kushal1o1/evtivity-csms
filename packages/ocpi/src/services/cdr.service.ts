@@ -22,6 +22,7 @@ import { getOutboundToken } from '../lib/outbound-token.js';
 import { OcpiClient } from '../lib/ocpi-client.js';
 import { config } from '../lib/config.js';
 import { transformCdr } from '../transformers/cdr.transformer.js';
+import { resolvePartnerVersion } from '../lib/ocpi-version.js';
 import type { OcpiCdr, OcpiTariff } from '../types/ocpi.js';
 
 const logger = createLogger('ocpi-cdr');
@@ -135,12 +136,19 @@ export async function generateCdr(
 
   const tokenUid = roamingSession?.tokenUid ?? 'unknown';
 
-  // Get partner info for token country/party
+  // Get partner info for token country/party plus negotiated version so the
+  // CDR is shaped to match what the partner agreed to consume.
   const [partner] = await db
-    .select({ countryCode: ocpiPartners.countryCode, partyId: ocpiPartners.partyId })
+    .select({
+      countryCode: ocpiPartners.countryCode,
+      partyId: ocpiPartners.partyId,
+      version: ocpiPartners.version,
+    })
     .from(ocpiPartners)
     .where(eq(ocpiPartners.id, partnerId))
     .limit(1);
+
+  const partnerVersion = resolvePartnerVersion(partner?.version);
 
   const cdrId = crypto.randomUUID();
 
@@ -180,7 +188,7 @@ export async function generateCdr(
     cdrInput.tariff = ocpiTariff;
   }
 
-  const cdr = transformCdr(cdrInput, '2.2.1');
+  const cdr = transformCdr(cdrInput, partnerVersion);
 
   // Store the CDR
   await db.insert(ocpiCdrs).values({
@@ -302,13 +310,54 @@ export async function generateCreditCdr(
   const originalData = originalCdr.cdrData as OcpiCdr;
   const creditCdrId = crypto.randomUUID();
 
+  // Negate every OcpiPrice on the CDR. Preserve `incl_vat` when present so
+  // the credit reflects both pre- and post-tax amounts. Per OCPI 2.2.1
+  // §11.4.2 a credit CDR represents a refund, so all cost components must
+  // flip sign. The earlier implementation only negated `total_cost.excl_vat`
+  // and dropped `incl_vat` and the per-component costs (total_energy_cost,
+  // total_time_cost, etc.), leaving partners with an inconsistent credit.
+  const negatePrice = (p: {
+    excl_vat: number;
+    incl_vat?: number;
+  }): { excl_vat: number; incl_vat?: number } => {
+    const result: { excl_vat: number; incl_vat?: number } = { excl_vat: -p.excl_vat };
+    if (p.incl_vat != null) result.incl_vat = -p.incl_vat;
+    return result;
+  };
+
+  // Defensive: cdrData is JSONB, so the typed-shape promise is only as good
+  // as whatever was stored. A legacy row missing total_cost would otherwise
+  // crash inside negatePrice; treat that as "cannot synthesize credit".
+  const totalCostMaybe = (originalData as { total_cost?: { excl_vat: number; incl_vat?: number } })
+    .total_cost;
+  if (totalCostMaybe == null) {
+    logger.warn({ originalCdrId }, 'Original CDR has no total_cost; cannot generate credit');
+    return null;
+  }
+  const negatedTotalCost = negatePrice(totalCostMaybe);
+
   const creditCdr: OcpiCdr = {
     ...originalData,
     id: creditCdrId,
     credit: true,
     credit_reference_id: originalCdrId,
     remark: reason,
-    total_cost: { excl_vat: -originalData.total_cost.excl_vat },
+    total_cost: negatedTotalCost,
+    ...(originalData.total_fixed_cost != null
+      ? { total_fixed_cost: negatePrice(originalData.total_fixed_cost) }
+      : {}),
+    ...(originalData.total_energy_cost != null
+      ? { total_energy_cost: negatePrice(originalData.total_energy_cost) }
+      : {}),
+    ...(originalData.total_time_cost != null
+      ? { total_time_cost: negatePrice(originalData.total_time_cost) }
+      : {}),
+    ...(originalData.total_parking_cost != null
+      ? { total_parking_cost: negatePrice(originalData.total_parking_cost) }
+      : {}),
+    ...(originalData.total_reservation_cost != null
+      ? { total_reservation_cost: negatePrice(originalData.total_reservation_cost) }
+      : {}),
     last_updated: new Date().toISOString(),
   };
 

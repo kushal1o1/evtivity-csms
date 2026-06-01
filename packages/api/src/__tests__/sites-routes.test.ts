@@ -219,6 +219,7 @@ describe('Site routes - handler logic', () => {
         updatedAt: new Date().toISOString(),
         stationCount: 3,
         loadManagementEnabled: false,
+        underMaintenance: false,
         maxPowerKw: null,
         totalDrawKw: 0,
       };
@@ -286,6 +287,7 @@ describe('Site routes - handler logic', () => {
         updatedAt: new Date().toISOString(),
         stationCount: 5,
         loadManagementEnabled: false,
+        underMaintenance: false,
         maxPowerKw: null,
         totalDrawKw: 0,
       };

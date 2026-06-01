@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, ocpiExternalLocations } from '@evtivity/database';
 import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
+import { namespaceMismatch } from '../../lib/namespace-check.js';
 import type { OcpiVersion, OcpiLocation, OcpiEVSE } from '../../types/ocpi.js';
 
 function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion): void {
@@ -180,13 +181,31 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
-      const body = request.body as OcpiLocation | null;
-      if (body == null || typeof body !== 'object') {
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PUT location for another partner'));
+        return;
+      }
+
+      const rawBody = request.body;
+      if (rawBody == null || typeof rawBody !== 'object') {
         await reply
           .status(400)
           .send(ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'Invalid location object'));
         return;
       }
+      const candidate = rawBody as Record<string, unknown>;
+      const coords = candidate['coordinates'];
+      if (coords == null || typeof coords !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'Location coordinates are required'),
+          );
+        return;
+      }
+      const body = rawBody as OcpiLocation;
 
       const evseCount = String(Array.isArray(body.evses) ? body.evses.length : 0);
       const latitude = body.coordinates.latitude;
@@ -253,7 +272,21 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
-      const evseBody = request.body as OcpiEVSE;
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PUT EVSE for another partner'));
+        return;
+      }
+
+      const rawEvse = request.body;
+      if (rawEvse == null || typeof rawEvse !== 'object') {
+        await reply
+          .status(400)
+          .send(ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'Invalid EVSE object'));
+        return;
+      }
+      const evseBody = rawEvse as OcpiEVSE;
 
       const [existing] = await db
         .select()
@@ -317,7 +350,20 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PUT connector for another partner'));
+        return;
+      }
+
       const connectorBody = request.body;
+      if (connectorBody == null || typeof connectorBody !== 'object') {
+        await reply
+          .status(400)
+          .send(ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'Invalid connector object'));
+        return;
+      }
 
       const [existing] = await db
         .select()
@@ -384,6 +430,25 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PATCH location for another partner'),
+          );
+        return;
+      }
+
+      const rawPatch = request.body;
+      if (rawPatch == null || typeof rawPatch !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
+        return;
+      }
+
       const [existing] = await db
         .select()
         .from(ocpiExternalLocations)
@@ -404,7 +469,7 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const patch = rawPatch as Record<string, unknown>;
       const currentData = existing.locationData as Record<string, unknown>;
       const mergedData = { ...currentData, ...patch } as unknown as OcpiLocation;
 
@@ -459,6 +524,23 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PATCH EVSE for another partner'));
+        return;
+      }
+
+      const rawPatch = request.body;
+      if (rawPatch == null || typeof rawPatch !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
+        return;
+      }
+
       const [existing] = await db
         .select()
         .from(ocpiExternalLocations)
@@ -489,7 +571,7 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const patch = rawPatch as Record<string, unknown>;
       const currentEvse = evses[evseIndex] as unknown as Record<string, unknown>;
       evses[evseIndex] = { ...currentEvse, ...patch } as unknown as OcpiEVSE;
       locationData.evses = evses;
@@ -522,6 +604,25 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
       const partner = request.ocpiPartner;
       if (partner?.partnerId == null) {
         await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PATCH connector for another partner'),
+          );
+        return;
+      }
+
+      const rawPatch = request.body;
+      if (rawPatch == null || typeof rawPatch !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
         return;
       }
 
@@ -562,7 +663,7 @@ function registerEmspLocationRoutes(app: FastifyInstance, version: OcpiVersion):
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const patch = rawPatch as Record<string, unknown>;
       const currentConn = evse.connectors[connIndex] as unknown as Record<string, unknown>;
       evse.connectors[connIndex] = {
         ...currentConn,

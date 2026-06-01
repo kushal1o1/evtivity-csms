@@ -47,13 +47,29 @@ function registerHubClientInfoRoutes(app: FastifyInstance, version: OcpiVersion)
       })
       .from(ocpiPartners);
 
-    const data: HubClientInfo[] = partners.map((p) => ({
-      party_id: p.partyId,
-      country_code: p.countryCode,
-      role: Array.isArray(p.roles) ? (p.roles as string[]) : ['CPO'],
-      status: mapPartnerStatus(p.status),
-      last_updated: p.updatedAt.toISOString(),
-    }));
+    // `ocpi_partners.roles` is a JSONB array of OcpiCredentialRole objects
+    // ({ role, party_id, country_code, business_details }). HubClientInfo's
+    // `role` field is a list of role-name strings ("CPO" / "EMSP" / ...).
+    // The earlier cast `as string[]` left full role objects in the response,
+    // which serialize as `[object Object]`-style garbage on the wire.
+    const data: HubClientInfo[] = partners.map((p) => {
+      const roleArr = Array.isArray(p.roles)
+        ? (p.roles as unknown[])
+            .map((r) => {
+              if (r == null || typeof r !== 'object') return null;
+              const role = (r as { role?: unknown }).role;
+              return typeof role === 'string' ? role : null;
+            })
+            .filter((r): r is string => r != null)
+        : [];
+      return {
+        party_id: p.partyId,
+        country_code: p.countryCode,
+        role: roleArr.length > 0 ? roleArr : ['CPO'],
+        status: mapPartnerStatus(p.status),
+        last_updated: p.updatedAt.toISOString(),
+      };
+    });
 
     return ocpiSuccess(data);
   });

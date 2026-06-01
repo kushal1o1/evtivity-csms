@@ -6,18 +6,25 @@ import { eq, and } from 'drizzle-orm';
 import { db, ocpiRoamingSessions } from '@evtivity/database';
 import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
+import { namespaceMismatch } from '../../lib/namespace-check.js';
 import type { OcpiVersion, OcpiSession } from '../../types/ocpi.js';
 
 function isValidSession(body: unknown): body is OcpiSession {
   if (body == null || typeof body !== 'object') return false;
   const obj = body as Record<string, unknown>;
+  // cdr_token is required at the wire level (we read body.cdr_token.uid on
+  // insert). Without this check a PUT with no cdr_token crashes with
+  // "Cannot read properties of undefined" deep in the handler.
+  const cdrToken = obj['cdr_token'] as { uid?: unknown } | undefined;
   return (
     typeof obj['id'] === 'string' &&
     typeof obj['country_code'] === 'string' &&
     typeof obj['party_id'] === 'string' &&
     typeof obj['start_date_time'] === 'string' &&
     typeof obj['status'] === 'string' &&
-    typeof obj['currency'] === 'string'
+    typeof obj['currency'] === 'string' &&
+    cdrToken != null &&
+    typeof cdrToken.uid === 'string'
   );
 }
 
@@ -66,7 +73,7 @@ function registerEmspSessionRoutes(app: FastifyInstance, version: OcpiVersion): 
     `${prefix}/:country_code/:party_id/:session_id`,
     { onRequest: [ocpiAuthenticate] },
     async (request, reply) => {
-      const { session_id } = request.params as {
+      const { country_code, party_id, session_id } = request.params as {
         country_code: string;
         party_id: string;
         session_id: string;
@@ -75,6 +82,13 @@ function registerEmspSessionRoutes(app: FastifyInstance, version: OcpiVersion): 
       const partner = request.ocpiPartner;
       if (partner?.partnerId == null) {
         await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PUT session for another partner'));
         return;
       }
 
@@ -136,7 +150,7 @@ function registerEmspSessionRoutes(app: FastifyInstance, version: OcpiVersion): 
     `${prefix}/:country_code/:party_id/:session_id`,
     { onRequest: [ocpiAuthenticate] },
     async (request, reply) => {
-      const { session_id } = request.params as {
+      const { country_code, party_id, session_id } = request.params as {
         country_code: string;
         party_id: string;
         session_id: string;
@@ -145,6 +159,23 @@ function registerEmspSessionRoutes(app: FastifyInstance, version: OcpiVersion): 
       const partner = request.ocpiPartner;
       if (partner?.partnerId == null) {
         await reply.status(401).send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated'));
+        return;
+      }
+
+      if (namespaceMismatch(partner, country_code, party_id)) {
+        await reply
+          .status(403)
+          .send(ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Cannot PATCH session for another partner'));
+        return;
+      }
+
+      const rawPatch = request.body;
+      if (rawPatch == null || typeof rawPatch !== 'object') {
+        await reply
+          .status(400)
+          .send(
+            ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'PATCH body must be a JSON object'),
+          );
         return;
       }
 
@@ -164,7 +195,7 @@ function registerEmspSessionRoutes(app: FastifyInstance, version: OcpiVersion): 
         return;
       }
 
-      const patch = request.body as Record<string, unknown>;
+      const patch = rawPatch as Record<string, unknown>;
       const currentData = existing.sessionData as Record<string, unknown>;
       const mergedData = { ...currentData, ...patch } as unknown as OcpiSession;
 

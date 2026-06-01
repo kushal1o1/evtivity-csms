@@ -36,6 +36,7 @@ export function RoamingPartnerCreate(): React.JSX.Element {
   const [countryCode, setCountryCode] = useState('');
   const [partyId, setPartyId] = useState('');
   const [versionUrl, setVersionUrl] = useState('');
+  const [partnerRegistrationToken, setPartnerRegistrationToken] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export function RoamingPartnerCreate(): React.JSX.Element {
       countryCode: string;
       partyId: string;
       versionUrl?: string;
+      partnerRegistrationToken?: string;
     }) => api.post<CreateResult>('/v1/ocpi/partners', data),
     onSuccess: (result) => {
       setCreatedToken(result.registrationToken);
@@ -68,13 +70,22 @@ export function RoamingPartnerCreate(): React.JSX.Element {
     e.preventDefault();
     setHasSubmitted(true);
     if (Object.keys(errors).length > 0) return;
-    const data: { name: string; countryCode: string; partyId: string; versionUrl?: string } = {
+    const data: {
+      name: string;
+      countryCode: string;
+      partyId: string;
+      versionUrl?: string;
+      partnerRegistrationToken?: string;
+    } = {
       name,
       countryCode: countryCode.toUpperCase(),
       partyId: partyId.toUpperCase(),
     };
     if (versionUrl.trim() !== '') {
       data.versionUrl = versionUrl;
+    }
+    if (partnerRegistrationToken.trim() !== '') {
+      data.partnerRegistrationToken = partnerRegistrationToken.trim();
     }
     createMutation.mutate(data);
   }
@@ -166,6 +177,24 @@ export function RoamingPartnerCreate(): React.JSX.Element {
                   }}
                   placeholder="https://partner.example.com/ocpi/versions"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="partner-registration-token">
+                  {t('roaming.partners.partnerRegistrationToken')}
+                </Label>
+                <Input
+                  id="partner-registration-token"
+                  type="password"
+                  autoComplete="off"
+                  value={partnerRegistrationToken}
+                  onChange={(e) => {
+                    setPartnerRegistrationToken(e.target.value);
+                  }}
+                  placeholder={t('roaming.partners.partnerRegistrationTokenPlaceholder')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('roaming.partners.partnerRegistrationTokenHint')}
+                </p>
               </div>
               {createMutation.isError && (
                 <p className="text-sm text-destructive">

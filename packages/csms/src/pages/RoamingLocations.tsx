@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -77,13 +78,12 @@ export function RoamingLocations(): React.JSX.Element {
                       {[loc.address, loc.city, loc.country].filter(Boolean).join(', ') || '-'}
                     </TableCell>
                     <TableCell>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={loc.isPublished}
+                        aria-label={t('roaming.locations.published')}
                         onChange={(e) => {
                           toggleMutation.mutate({ siteId: loc.id, isPublished: e.target.checked });
                         }}
-                        className="h-4 w-4 rounded border-gray-300"
                       />
                     </TableCell>
                     <TableCell>

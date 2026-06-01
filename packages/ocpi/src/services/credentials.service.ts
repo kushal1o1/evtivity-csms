@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { db, ocpiPartners, ocpiPartnerEndpoints, ocpiCredentialsTokens } from '@evtivity/database';
 import { eq, and } from 'drizzle-orm';
-import { createLogger, encryptString } from '@evtivity/lib';
+import { createLogger, encryptString, decryptString } from '@evtivity/lib';
 import { OcpiClient } from '../lib/ocpi-client.js';
 import { config } from '../lib/config.js';
 import type {
@@ -176,6 +176,7 @@ async function fetchPartnerEndpoints(
 export async function handleRegistration(
   credentials: OcpiCredentials,
   registrationTokenId: number,
+  preferredVersion: OcpiVersion = '2.2.1',
 ): Promise<OcpiCredentials> {
   logger.info({ url: credentials.url, roles: credentials.roles }, 'Processing registration');
 
@@ -199,7 +200,7 @@ export async function handleRegistration(
   const { version, endpoints } = await fetchPartnerEndpoints(
     credentials.url,
     credentials.token,
-    '2.2.1',
+    preferredVersion,
   );
 
   // Create or update partner
@@ -292,6 +293,7 @@ export async function handleRegistration(
 export async function handleCredentialUpdate(
   credentials: OcpiCredentials,
   partnerId: string,
+  preferredVersion: OcpiVersion = '2.2.1',
 ): Promise<OcpiCredentials> {
   logger.info({ partnerId }, 'Updating credentials');
 
@@ -304,7 +306,7 @@ export async function handleCredentialUpdate(
   const { version, endpoints } = await fetchPartnerEndpoints(
     credentials.url,
     credentials.token,
-    '2.2.1',
+    preferredVersion,
   );
 
   // Update partner
@@ -371,11 +373,28 @@ export async function handleUnregister(partnerId: string): Promise<void> {
     );
 }
 
+/**
+ * Initiate outbound OCPI registration where WE are the Sender. The partner
+ * has shared their one-time registration token (Token C) with us via OOB
+ * channels; we stored it encrypted on `ocpi_partners.partner_registration_
+ * token_enc`. This function decrypts it, calls the partner's /versions to
+ * discover their /credentials endpoint, POSTs our credentials there, and
+ * stores the Token B they hand back for ongoing outbound calls.
+ *
+ * Per the OCPI 2.2.1 registration flow Section 5.1.2:
+ *   1. Sender (us) calls GET /versions on Receiver (partner) with Token C
+ *   2. Sender calls GET on selected versionDetail URL with Token C
+ *   3. Sender POSTs /credentials with body containing OUR new Token A
+ *      (Receiver will use it to call us going forward) - using Token C
+ *   4. Receiver responds with credentials containing THEIR new Token B
+ *      (Sender uses it to call Receiver going forward)
+ *   5. Token C is now retired on both sides
+ */
 export async function initiateRegistration(
   partnerId: string,
-  partnerVersionsUrl: string,
+  preferredVersion: OcpiVersion = '2.2.1',
 ): Promise<OcpiCredentials> {
-  logger.info({ partnerId, url: partnerVersionsUrl }, 'Initiating outbound registration');
+  logger.info({ partnerId }, 'Initiating outbound registration');
 
   const [partner] = await db
     .select()
@@ -387,28 +406,28 @@ export async function initiateRegistration(
     throw new Error('Partner not found');
   }
 
-  // Get our registration token for calling them
-  const tokenRows = await db
-    .select({ tokenHash: ocpiCredentialsTokens.tokenHash })
-    .from(ocpiCredentialsTokens)
-    .where(
-      and(
-        eq(ocpiCredentialsTokens.partnerId, partnerId),
-        eq(ocpiCredentialsTokens.direction, 'issued'),
-        eq(ocpiCredentialsTokens.isActive, true),
-      ),
-    )
-    .limit(1);
-
-  if (tokenRows.length === 0 || tokenRows[0] == null) {
-    throw new Error('No active token for partner. Create a registration token first.');
+  if (partner.versionUrl == null || partner.versionUrl === '') {
+    throw new Error('Partner versionUrl not configured');
   }
 
-  // Fetch their versions and find credentials endpoint
+  if (partner.partnerRegistrationTokenEnc == null) {
+    throw new Error(
+      "Partner registration token not configured. Outbound registration requires the partner's OOB-shared Token C; set it via PATCH /v1/ocpi/partners/:id with partnerRegistrationToken.",
+    );
+  }
+
+  const encKey = getEncryptionKey();
+  if (encKey === '') {
+    throw new Error('SETTINGS_ENCRYPTION_KEY not configured; cannot decrypt registration token');
+  }
+
+  const tokenC = decryptString(partner.partnerRegistrationTokenEnc, encKey);
+
+  // Step 1+2: discover partner's endpoints using Token C
   const { version, endpoints } = await fetchPartnerEndpoints(
-    partnerVersionsUrl,
-    '', // We need the plain token, not the hash
-    '2.2.1',
+    partner.versionUrl,
+    tokenC,
+    preferredVersion,
   );
 
   const credentialsEndpoint = endpoints.find((ep) => ep.identifier === 'credentials');
@@ -416,14 +435,15 @@ export async function initiateRegistration(
     throw new Error('Partner does not expose a credentials endpoint');
   }
 
-  // Generate token for them to call us (issued = we issue it for their inbound calls)
+  // Generate Token A — the token partner will use to call us going forward
+  // (issued = we issued it for their inbound calls).
   await deactivateTokens(partnerId, 'issued');
-  const tokenForPartner = await generateAndStoreToken(partnerId, 'issued');
-  const ourCredentials = buildOurCredentials(tokenForPartner);
+  const tokenA = await generateAndStoreToken(partnerId, 'issued');
+  const ourCredentials = buildOurCredentials(tokenA);
 
-  // POST our credentials to their credentials endpoint
+  // Step 3: POST our credentials using Token C as bearer
   const client = new OcpiClient({
-    token: '', // Uses the registration token
+    token: tokenC,
     fromCountryCode: getOurCountryCode(),
     fromPartyId: getOurPartyId(),
     toCountryCode: partner.countryCode,
@@ -437,26 +457,24 @@ export async function initiateRegistration(
     throw new Error('Partner returned no credentials');
   }
 
-  // Store their new token for us to call them
-  // Note: in outbound registration the token they return is for us to call them,
-  // which is stored as 'received' direction (we received it from them for outbound use)
+  // Step 4: store Token B (their token for us to use on outbound calls).
+  // 'received' direction = token we received from them, use for outbound.
   await deactivateTokens(partnerId, 'received');
-  const receivedHash = await argon2.hash(theirCredentials.token);
-  const encKey3 = getEncryptionKey();
-  const outboundTokenEnc3 = encKey3 !== '' ? encryptString(theirCredentials.token, encKey3) : null;
+  const tokenBHash = await argon2.hash(theirCredentials.token);
+  const tokenBEnc = encryptString(theirCredentials.token, encKey);
   await db.insert(ocpiCredentialsTokens).values({
     partnerId,
-    tokenHash: receivedHash,
+    tokenHash: tokenBHash,
     tokenPrefix: theirCredentials.token.slice(0, 8),
     direction: 'received',
     isActive: true,
-    outboundTokenEnc: outboundTokenEnc3,
+    outboundTokenEnc: tokenBEnc,
   });
 
-  // Update partner status and endpoints
+  // Replace endpoints from the credentials response (the partner may return
+  // a new versions URL or updated endpoint list).
   await db.delete(ocpiPartnerEndpoints).where(eq(ocpiPartnerEndpoints.partnerId, partnerId));
 
-  // Re-fetch endpoints with the new token
   const { endpoints: newEndpoints } = await fetchPartnerEndpoints(
     theirCredentials.url,
     theirCredentials.token,
@@ -474,12 +492,14 @@ export async function initiateRegistration(
     );
   }
 
+  // Step 5: Token C is now retired; clear the stored ciphertext.
   await db
     .update(ocpiPartners)
     .set({
       status: 'connected',
       version,
       versionUrl: theirCredentials.url,
+      partnerRegistrationTokenEnc: null,
       updatedAt: new Date(),
     })
     .where(eq(ocpiPartners.id, partnerId));

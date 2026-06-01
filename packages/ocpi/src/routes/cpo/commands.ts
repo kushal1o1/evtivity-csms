@@ -2,23 +2,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import type { FastifyInstance } from 'fastify';
-import { eq, and, lte, gte } from 'drizzle-orm';
+import { eq, and, lte, gte, sql } from 'drizzle-orm';
 import {
   db,
-  sites,
   chargingStations,
   chargingSessions,
   evses,
   connectors,
-  reservations,
   ocpiLocationPublish,
   ocpiExternalTokens,
   ocpiRoamingSessions,
   maintenanceEvents,
 } from '@evtivity/database';
-import { isPrivateUrl } from '@evtivity/lib';
+import { createLogger, isPrivateUrl } from '@evtivity/lib';
 import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
+import { isLocationVisibleToPartner } from '../../lib/location-visibility.js';
 import { getCommandCallbackService } from '../../services/command-callback.service.js';
 import type {
   OcpiVersion,
@@ -30,6 +29,7 @@ import type {
   OcpiCommandResponse,
 } from '../../types/ocpi.js';
 
+const logger = createLogger('ocpi-cpo-commands');
 const COMMAND_TIMEOUT = 30;
 
 /**
@@ -42,26 +42,34 @@ function isAcceptableResponseUrl(url: string): boolean {
   return !isPrivateUrl(url);
 }
 
-async function resolveSiteId(locationId: string): Promise<string | null> {
-  // Check if there's a publish entry with a custom OCPI location ID
+// Resolve a partner-supplied `location_id` to our internal site UUID, but
+// only when the partner has been granted visibility to it. Without the
+// partner-scoped publish check, an authenticated partner could issue
+// START_SESSION / RESERVE_NOW / UNLOCK_CONNECTOR against ANY site (even
+// unpublished ones) by guessing its UUID or OCPI location id. The free
+// "fall back to site UUID" path that used to exist here was the same data
+// leak we patched in cpo/locations.ts for the GET endpoints.
+async function resolveSiteId(locationId: string, partnerId: string): Promise<string | null> {
+  // Check if there's a publish entry with a custom OCPI location ID OR
+  // the raw siteId. We honour both because OCPI partners may use either
+  // form depending on how they integrated.
   const [publish] = await db
     .select({ siteId: ocpiLocationPublish.siteId })
     .from(ocpiLocationPublish)
-    .where(eq(ocpiLocationPublish.ocpiLocationId, locationId))
+    .where(
+      and(
+        eq(ocpiLocationPublish.isPublished, true),
+        sql`(${ocpiLocationPublish.ocpiLocationId} = ${locationId} OR ${ocpiLocationPublish.siteId} = ${locationId})`,
+      ),
+    )
     .limit(1);
 
-  if (publish != null) {
-    return publish.siteId;
+  if (publish == null) return null;
+
+  if (!(await isLocationVisibleToPartner(partnerId, publish.siteId))) {
+    return null;
   }
-
-  // Fall back to using locationId as the site UUID directly
-  const [site] = await db
-    .select({ id: sites.id })
-    .from(sites)
-    .where(eq(sites.id, locationId))
-    .limit(1);
-
-  return site?.id ?? null;
+  return publish.siteId;
 }
 
 // EVSE uid format is ${siteId}-${evseId}. Three command handlers below
@@ -177,12 +185,18 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
     }
     const body = raw as unknown as OcpiStartSession;
 
-    // Validate token
+    // Validate token. Scope by partnerId so partner A cannot start a
+    // session using partner B's token uid (cross-partner token leak).
     const tokenUid = body.token.uid;
     const [token] = await db
       .select({ isValid: ocpiExternalTokens.isValid })
       .from(ocpiExternalTokens)
-      .where(eq(ocpiExternalTokens.uid, tokenUid))
+      .where(
+        and(
+          eq(ocpiExternalTokens.partnerId, partner.partnerId),
+          eq(ocpiExternalTokens.uid, tokenUid),
+        ),
+      )
       .limit(1);
 
     if (token == null || !token.isValid) {
@@ -191,7 +205,7 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
     }
 
     // Resolve location
-    const siteId = await resolveSiteId(body.location_id);
+    const siteId = await resolveSiteId(body.location_id, partner.partnerId);
     if (siteId == null) {
       const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
       return ocpiSuccess(response);
@@ -361,12 +375,18 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
     }
     const body = raw as unknown as OcpiReserveNow;
 
-    // Validate token
+    // Validate token. Scope by partnerId for the same reason as
+    // START_SESSION (cross-partner token leak).
     const tokenUid = body.token.uid;
     const [token] = await db
       .select({ isValid: ocpiExternalTokens.isValid })
       .from(ocpiExternalTokens)
-      .where(eq(ocpiExternalTokens.uid, tokenUid))
+      .where(
+        and(
+          eq(ocpiExternalTokens.partnerId, partner.partnerId),
+          eq(ocpiExternalTokens.uid, tokenUid),
+        ),
+      )
       .limit(1);
 
     if (token == null || !token.isValid) {
@@ -375,7 +395,7 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
     }
 
     // Resolve location
-    const siteId = await resolveSiteId(body.location_id);
+    const siteId = await resolveSiteId(body.location_id, partner.partnerId);
     if (siteId == null) {
       const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
       return ocpiSuccess(response);
@@ -449,49 +469,19 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
         return;
       }
 
-      // Look up reservation by OCPP reservation ID (integer)
-      const reservationIdNum = Number(body.reservation_id);
-      if (Number.isNaN(reservationIdNum)) {
-        const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
-        return ocpiSuccess(response);
-      }
-
-      const [reservation] = await db
-        .select({
-          stationId: chargingStations.stationId,
-          reservationId: reservations.reservationId,
-        })
-        .from(reservations)
-        .innerJoin(chargingStations, eq(reservations.stationId, chargingStations.id))
-        .where(eq(reservations.reservationId, reservationIdNum))
-        .limit(1);
-
-      if (reservation == null) {
-        const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
-        return ocpiSuccess(response);
-      }
-
-      if (!isAcceptableResponseUrl(body.response_url)) {
-        return ocpiError(OcpiStatusCode.CLIENT_INVALID_PARAMS, 'response_url is not allowed');
-      }
-
-      // Dispatch OCPP command
-      const callbackService = getCommandCallbackService();
-      const commandId = callbackService.generateCommandId();
-      callbackService.registerCommand(
-        commandId,
-        body.response_url,
-        partner.partnerId,
-        'CANCEL_RESERVATION',
+      // Fail closed: we have no per-partner ownership mapping for
+      // reservations. The reservations table has no partner_id column, and
+      // RESERVE_NOW does not pre-create a row, so a lookup by the integer
+      // OCPP reservation_id alone would let partner A cancel partner B's
+      // (or worse, a local operator's) reservation by guessing the
+      // integer. Until a partner-ownership table is added, reject every
+      // OCPI CANCEL_RESERVATION. Honest synchronous response so the
+      // partner can degrade gracefully.
+      logger.warn(
+        { partnerId: partner.partnerId, reservationId: body.reservation_id },
+        'CANCEL_RESERVATION rejected: per-partner reservation ownership not tracked',
       );
-      await callbackService.dispatchOcppCommand(
-        commandId,
-        reservation.stationId,
-        'CancelReservation',
-        { reservationId: reservation.reservationId },
-      );
-
-      const response: OcpiCommandResponse = { result: 'ACCEPTED', timeout: COMMAND_TIMEOUT };
+      const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
       return ocpiSuccess(response);
     },
   );
@@ -522,7 +512,7 @@ function registerCpoCommandRoutes(app: FastifyInstance, version: OcpiVersion): v
       }
 
       // Resolve location and EVSE
-      const siteId = await resolveSiteId(body.location_id);
+      const siteId = await resolveSiteId(body.location_id, partner.partnerId);
       if (siteId == null) {
         const response: OcpiCommandResponse = { result: 'REJECTED', timeout: COMMAND_TIMEOUT };
         return ocpiSuccess(response);

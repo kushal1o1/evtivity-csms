@@ -146,7 +146,36 @@ export async function pullLocations(partnerId: string): Promise<SyncResult> {
     // instead of doing a separate SELECT+INSERT/UPDATE per row. A 1000-row
     // pull dropped from ~2000 DB round-trips to ~1000.
     let count = 0;
-    for (const location of locations) {
+    let skipped = 0;
+    for (const item of locations as unknown[]) {
+      // Defensive validation: a malformed partner payload missing required
+      // fields would otherwise crash the entire pull halfway through. Skip
+      // and log each bad row so the rest of the page still lands.
+      if (item == null || typeof item !== 'object') {
+        skipped++;
+        continue;
+      }
+      const candidate = item as Record<string, unknown>;
+      const coords = candidate['coordinates'] as
+        | { latitude?: unknown; longitude?: unknown }
+        | undefined;
+      if (
+        typeof candidate['id'] !== 'string' ||
+        typeof candidate['country_code'] !== 'string' ||
+        typeof candidate['party_id'] !== 'string' ||
+        coords == null ||
+        typeof coords !== 'object' ||
+        coords.latitude == null ||
+        coords.longitude == null
+      ) {
+        logger.warn(
+          { partnerId, locationId: candidate['id'] },
+          'Skipping malformed Location from partner pull',
+        );
+        skipped++;
+        continue;
+      }
+      const location = candidate as unknown as OcpiLocation;
       const evseCount = String(Array.isArray(location.evses) ? location.evses.length : 0);
       await db
         .insert(ocpiExternalLocations)
@@ -180,6 +209,9 @@ export async function pullLocations(partnerId: string): Promise<SyncResult> {
       count++;
     }
 
+    if (skipped > 0) {
+      logger.warn({ partnerId, skipped }, 'Some locations were skipped due to malformed data');
+    }
     await logSync(partnerId, 'locations', 'pull_full', 'completed', count);
     return { module: 'locations', objectsCount: count, status: 'completed' };
   } catch (err) {
@@ -217,7 +249,27 @@ export async function pullTariffs(partnerId: string): Promise<SyncResult> {
     // Upsert via unique constraint - halves DB round-trips per tariff vs
     // the prior SELECT+INSERT/UPDATE pattern.
     let count = 0;
-    for (const tariff of tariffs) {
+    let skipped = 0;
+    for (const item of tariffs as unknown[]) {
+      if (item == null || typeof item !== 'object') {
+        skipped++;
+        continue;
+      }
+      const candidate = item as Record<string, unknown>;
+      if (
+        typeof candidate['id'] !== 'string' ||
+        typeof candidate['country_code'] !== 'string' ||
+        typeof candidate['party_id'] !== 'string' ||
+        typeof candidate['currency'] !== 'string'
+      ) {
+        logger.warn(
+          { partnerId, tariffId: candidate['id'] },
+          'Skipping malformed Tariff from partner pull',
+        );
+        skipped++;
+        continue;
+      }
+      const tariff = candidate as unknown as OcpiTariff;
       await db
         .insert(ocpiExternalTariffs)
         .values({
@@ -244,6 +296,9 @@ export async function pullTariffs(partnerId: string): Promise<SyncResult> {
       count++;
     }
 
+    if (skipped > 0) {
+      logger.warn({ partnerId, skipped }, 'Some tariffs were skipped due to malformed data');
+    }
     await logSync(partnerId, 'tariffs', 'pull_full', 'completed', count);
     return { module: 'tariffs', objectsCount: count, status: 'completed' };
   } catch (err) {
@@ -294,7 +349,26 @@ export async function pullCdrs(partnerId: string): Promise<SyncResult> {
     }
 
     let count = 0;
-    for (const cdr of cdrs) {
+    let skipped = 0;
+    for (const item of cdrs as unknown[]) {
+      if (item == null || typeof item !== 'object') {
+        skipped++;
+        continue;
+      }
+      const candidate = item as Record<string, unknown>;
+      if (
+        typeof candidate['id'] !== 'string' ||
+        typeof candidate['total_energy'] !== 'number' ||
+        typeof candidate['currency'] !== 'string'
+      ) {
+        logger.warn(
+          { partnerId, cdrId: candidate['id'] },
+          'Skipping malformed CDR from partner pull',
+        );
+        skipped++;
+        continue;
+      }
+      const cdr = candidate as unknown as OcpiCdr;
       if (existingIds.has(cdr.id)) {
         // CDRs are immutable, skip if already exists
         continue;
@@ -315,6 +389,9 @@ export async function pullCdrs(partnerId: string): Promise<SyncResult> {
       count++;
     }
 
+    if (skipped > 0) {
+      logger.warn({ partnerId, skipped }, 'Some CDRs were skipped due to malformed data');
+    }
     await logSync(partnerId, 'cdrs', 'pull_full', 'completed', count);
     return { module: 'cdrs', objectsCount: count, status: 'completed' };
   } catch (err) {

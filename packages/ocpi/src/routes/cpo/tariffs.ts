@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { desc, gte, lte, sql } from 'drizzle-orm';
 import { db, ocpiTariffMappings } from '@evtivity/database';
-import { ocpiSuccess } from '../../lib/ocpi-response.js';
+import { ocpiSuccess, ocpiError, OcpiStatusCode } from '../../lib/ocpi-response.js';
 import { parsePaginationParams, setPaginationHeaders } from '../../lib/ocpi-pagination.js';
 import { ocpiAuthenticate } from '../../middleware/ocpi-auth.js';
 import type { OcpiVersion, OcpiTariff } from '../../types/ocpi.js';
@@ -15,9 +15,21 @@ function registerCpoTariffRoutes(app: FastifyInstance, version: OcpiVersion): vo
     `/ocpi/${version}/cpo/tariffs`,
     { onRequest: [ocpiAuthenticate] },
     async (request, reply) => {
+      // Per-partner isolation. ocpi_tariff_mappings.partner_id is nullable:
+      // null = global (visible to all partners), non-null = scoped to that
+      // partner. Without this filter every partner sees every other
+      // partner's negotiated tariffs, leaking commercial terms across
+      // networks. Mirrors the sessions/CDRs endpoints.
+      const partner = request.ocpiPartner;
+      if (partner?.partnerId == null) {
+        return ocpiError(OcpiStatusCode.CLIENT_ERROR, 'Not authenticated');
+      }
+
       const { offset, limit, dateFrom, dateTo } = parsePaginationParams(request);
 
-      const conditions = [];
+      const conditions = [
+        sql`(${ocpiTariffMappings.partnerId} IS NULL OR ${ocpiTariffMappings.partnerId} = ${partner.partnerId})`,
+      ];
       if (dateFrom != null) {
         conditions.push(gte(ocpiTariffMappings.updatedAt, dateFrom));
       }
@@ -25,7 +37,7 @@ function registerCpoTariffRoutes(app: FastifyInstance, version: OcpiVersion): vo
         conditions.push(lte(ocpiTariffMappings.updatedAt, dateTo));
       }
 
-      const where = conditions.length > 0 ? sql.join(conditions, sql` AND `) : undefined;
+      const where = sql.join(conditions, sql` AND `);
 
       const [rows, countRows] = await Promise.all([
         db
