@@ -38,7 +38,7 @@ import {
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
 import { paginationQuery } from '../lib/pagination.js';
 import type { PaginatedResponse } from '../lib/pagination.js';
-import { queueReport } from '../services/report.service.js';
+import { queueReport, computeNextRunAtInTz } from '../services/report.service.js';
 import { getUserSiteIds } from '../lib/site-access.js';
 import { authorize } from '../middleware/rbac.js';
 
@@ -430,7 +430,11 @@ export function reportRoutes(app: FastifyInstance): void {
         return;
       }
 
-      const nextRunAt = computeInitialNextRunAt(body.frequency, body.dayOfWeek, body.dayOfMonth);
+      const nextRunAt = await computeNextRunAtInTz(
+        body.frequency,
+        body.dayOfWeek ?? null,
+        body.dayOfMonth ?? null,
+      );
 
       const [row] = await db
         .insert(reportSchedules)
@@ -512,10 +516,10 @@ export function reportRoutes(app: FastifyInstance): void {
       if (body.isEnabled != null) updates['isEnabled'] = body.isEnabled;
 
       if (body.frequency != null) {
-        updates['nextRunAt'] = computeInitialNextRunAt(
+        updates['nextRunAt'] = await computeNextRunAtInTz(
           body.frequency,
-          body.dayOfWeek,
-          body.dayOfMonth,
+          body.dayOfWeek ?? null,
+          body.dayOfMonth ?? null,
         );
       }
 
@@ -617,40 +621,4 @@ export function reportRoutes(app: FastifyInstance): void {
       return { id: reportId, status: 'pending' };
     },
   );
-}
-
-function computeInitialNextRunAt(frequency: string, dayOfWeek?: number, dayOfMonth?: number): Date {
-  const now = new Date();
-
-  if (frequency === 'daily') {
-    const next = new Date(now);
-    next.setDate(next.getDate() + 1);
-    next.setHours(6, 0, 0, 0);
-    return next;
-  }
-
-  if (frequency === 'weekly') {
-    const dow = dayOfWeek ?? 1;
-    const next = new Date(now);
-    const currentDow = next.getDay();
-    const daysUntil = (dow - currentDow + 7) % 7 || 7;
-    next.setDate(next.getDate() + daysUntil);
-    next.setHours(6, 0, 0, 0);
-    return next;
-  }
-
-  if (frequency === 'monthly') {
-    const dom = dayOfMonth ?? 1;
-    const next = new Date(now);
-    next.setMonth(next.getMonth() + 1);
-    const maxDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-    next.setDate(Math.min(dom, maxDay));
-    next.setHours(6, 0, 0, 0);
-    return next;
-  }
-
-  const next = new Date(now);
-  next.setDate(next.getDate() + 1);
-  next.setHours(6, 0, 0, 0);
-  return next;
 }

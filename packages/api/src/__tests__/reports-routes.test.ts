@@ -90,6 +90,7 @@ vi.mock('drizzle-orm', () => ({
 
 vi.mock('../services/report.service.js', () => ({
   queueReport: vi.fn(() => Promise.resolve('report-123')),
+  computeNextRunAtInTz: vi.fn(() => Promise.resolve(new Date('2026-01-02T06:00:00Z'))),
 }));
 
 vi.mock('../middleware/rbac.js', () => ({

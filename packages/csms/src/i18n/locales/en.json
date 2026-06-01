@@ -2916,10 +2916,6 @@
     "change": "Change"
   },
   "maintenance": {
-    "title": "Maintenance Windows",
-    "statusFilter": "Status",
-    "siteFilter": "Site",
-    "colSite": "Site",
     "colType": "Type",
     "colStatus": "Status",
     "colStart": "Start",
@@ -2985,10 +2981,14 @@
     "scopeLabel": "Scope",
     "showStations": "Show stations ({{count}})",
     "hideStations": "Hide stations",
-    "removeFromEvent": "Remove",
-    "removeActiveHint": "Removing a station here sends ChangeAvailability(Operative) and clears its maintenance display immediately.",
-    "stationRemovedToast": "Station removed from maintenance event",
-    "stationRemoveFailed": "Failed to remove station",
-    "lastStationHint": "This is the only affected station — use Cancel above to end the maintenance event."
+    "editingActive": "Editing active maintenance",
+    "editingScheduled": "Editing scheduled maintenance",
+    "editTimezoneHint": "Times in {{timezone}}",
+    "endsAtLabel": "Ends at",
+    "reasonPlaceholder": "Optional notes about this window",
+    "searchStations": "Search stations",
+    "updatedToast": "Maintenance event updated",
+    "updateFailed": "Failed to update maintenance event",
+    "removesAllStationsHint": "At least one station must remain in the event. Re-select a station, or cancel the event entirely."
   }
 }

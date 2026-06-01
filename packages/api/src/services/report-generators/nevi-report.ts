@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import ExcelJS from 'exceljs';
-import { sql, eq, and, gte, lte } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import {
   db,
   chargingStations,
@@ -12,14 +12,23 @@ import {
   chargingSessions,
   paymentRecords,
   neviStationData,
+  getSystemTimezone,
 } from '@evtivity/database';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+// Quarter boundaries are expressed as YYYY-MM-DD strings (operator-local
+// calendar dates) and as ISO instants at UTC midnight for those calendar dates.
+// The SQL queries compare against the strings using `AT TIME ZONE ${tz}`, which
+// projects each session/log timestamp into the operator's local day before
+// comparing to the bound. The Date instants are kept only so existing call
+// sites that pass dates to JS code (date-pickers etc.) still work; the SQL
+// layer never trusts the Date directly because Date.UTC misclassifies sessions
+// near the quarter edge for operators outside UTC.
 interface QuarterDates {
-  start: Date;
-  end: Date;
-  months: Array<{ month: number; year: number; start: Date; end: Date }>;
+  startDate: string;
+  endDate: string;
+  months: Array<{ month: number; year: number; startDate: string; endDate: string }>;
 }
 
 interface StationLocationRow {
@@ -103,6 +112,10 @@ interface CapitalCostsRow {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
 function getQuarterDates(quarter: number, year: number): QuarterDates {
   const quarterMonths: Record<number, [number, number, number]> = {
     1: [0, 1, 2],
@@ -116,19 +129,23 @@ function getQuarterDates(quarter: number, year: number): QuarterDates {
     throw new Error(`Invalid quarter: ${String(quarter)}`);
   }
 
-  const start = new Date(Date.UTC(year, months[0], 1));
+  const startMonth = months[0];
   const endMonth = months[2];
+  // Last calendar day of the quarter is the 0th day of the *next* month, in
+  // any timezone — this is a pure calendar identity (e.g. Q1 → Mar 31).
   const lastDay = new Date(Date.UTC(year, endMonth + 1, 0)).getUTCDate();
-  const end = new Date(Date.UTC(year, endMonth, lastDay, 23, 59, 59, 999));
+
+  const startDate = `${String(year)}-${pad2(startMonth + 1)}-01`;
+  const endDate = `${String(year)}-${pad2(endMonth + 1)}-${pad2(lastDay)}`;
 
   const monthDetails = months.map((m) => {
-    const mStart = new Date(Date.UTC(year, m, 1));
     const mLastDay = new Date(Date.UTC(year, m + 1, 0)).getUTCDate();
-    const mEnd = new Date(Date.UTC(year, m, mLastDay, 23, 59, 59, 999));
-    return { month: m + 1, year, start: mStart, end: mEnd };
+    const mStartDate = `${String(year)}-${pad2(m + 1)}-01`;
+    const mEndDate = `${String(year)}-${pad2(m + 1)}-${pad2(mLastDay)}`;
+    return { month: m + 1, year, startDate: mStartDate, endDate: mEndDate };
   });
 
-  return { start, end, months: monthDetails };
+  return { startDate, endDate, months: monthDetails };
 }
 
 function styleHeaderRow(sheet: ExcelJS.Worksheet): void {
@@ -263,7 +280,11 @@ async function buildStationLocationTab(sheet: ExcelJS.Worksheet): Promise<void> 
 
 // ── Tab 2: Sessions ────────────────────────────────────────────────────────────
 
-async function buildSessionsTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Promise<void> {
+async function buildSessionsTab(
+  sheet: ExcelJS.Worksheet,
+  dates: QuarterDates,
+  tz: string,
+): Promise<void> {
   sheet.columns = [
     { header: 'Station ID', key: 'stationId' },
     { header: 'EVSE ID', key: 'evseId' },
@@ -275,6 +296,10 @@ async function buildSessionsTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): 
     { header: 'Error Code', key: 'errorCode' },
   ];
 
+  // Pull paymentSource via correlated subquery so the main join is 1:1.
+  // A direct leftJoin duplicates session rows whenever there is a pre-auth
+  // plus capture (the normal Stripe flow) or any refund — over-counting
+  // sessions to NEVI auditors.
   const sessionRows = await db
     .select({
       stationOcppId: chargingStations.stationId,
@@ -285,14 +310,15 @@ async function buildSessionsTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): 
       sessionId: chargingSessions.id,
       status: chargingSessions.status,
       stoppedReason: chargingSessions.stoppedReason,
-      paymentSource: paymentRecords.paymentSource,
+      paymentSource: sql<
+        string | null
+      >`(SELECT pr.payment_source FROM ${paymentRecords} pr WHERE pr.session_id = ${chargingSessions.id} ORDER BY pr.created_at DESC LIMIT 1)`,
     })
     .from(chargingSessions)
     .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
     .leftJoin(evses, eq(chargingSessions.evseId, evses.id))
-    .leftJoin(paymentRecords, eq(paymentRecords.sessionId, chargingSessions.id))
     .where(
-      and(gte(chargingSessions.startedAt, dates.start), lte(chargingSessions.startedAt, dates.end)),
+      sql`(${chargingSessions.startedAt} AT TIME ZONE ${tz})::date BETWEEN ${dates.startDate}::date AND ${dates.endDate}::date`,
     );
 
   const sessionIds = (sessionRows as SessionRow[]).map((r) => r.sessionId);
@@ -341,7 +367,11 @@ async function buildSessionsTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): 
 
 // ── Tab 3: Uptime ──────────────────────────────────────────────────────────────
 
-async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Promise<void> {
+async function buildUptimeTab(
+  sheet: ExcelJS.Worksheet,
+  dates: QuarterDates,
+  tz: string,
+): Promise<void> {
   sheet.columns = [
     { header: 'Station ID', key: 'stationId' },
     { header: 'EVSE ID', key: 'evseId' },
@@ -352,13 +382,19 @@ async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
   ];
 
   for (const monthInfo of dates.months) {
-    const monthStart = monthInfo.start.toISOString();
-    const monthEnd = monthInfo.end.toISOString();
-    const minutesInMonth = (monthInfo.end.getTime() - monthInfo.start.getTime() + 1) / 60000;
-    const monthLabel = `${String(monthInfo.year)}-${String(monthInfo.month).padStart(2, '0')}`;
+    // Each month boundary is the operator-local midnight of the first/last
+    // calendar day, projected back into a UTC timestamptz via AT TIME ZONE.
+    // Using Date.UTC bounds skewed the window by the operator's offset and
+    // misclassified outages near month boundaries.
+    const monthLabel = `${String(monthInfo.year)}-${pad2(monthInfo.month)}`;
 
     const rows = await db.execute(sql`
-      WITH port_transitions AS (
+      WITH bounds AS (
+        SELECT
+          (${monthInfo.startDate}::date::timestamp AT TIME ZONE ${tz}) AS month_start,
+          ((${monthInfo.endDate}::date + INTERVAL '1 day')::timestamp AT TIME ZONE ${tz}) AS month_end
+      ),
+      port_transitions AS (
         SELECT
           psl.station_id,
           psl.evse_id,
@@ -368,19 +404,19 @@ async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
             PARTITION BY psl.station_id, psl.evse_id
             ORDER BY psl.timestamp
           ) AS next_timestamp
-        FROM port_status_log psl
-        WHERE psl.timestamp <= ${monthEnd}::timestamptz
+        FROM port_status_log psl, bounds
+        WHERE psl.timestamp <= bounds.month_end
       ),
       outage_segments AS (
         SELECT
           pt.station_id,
           pt.evse_id,
-          GREATEST(pt.timestamp, ${monthStart}::timestamptz) AS seg_start,
-          LEAST(COALESCE(pt.next_timestamp, ${monthEnd}::timestamptz), ${monthEnd}::timestamptz) AS seg_end
-        FROM port_transitions pt
+          GREATEST(pt.timestamp, bounds.month_start) AS seg_start,
+          LEAST(COALESCE(pt.next_timestamp, bounds.month_end), bounds.month_end) AS seg_end
+        FROM port_transitions pt, bounds
         WHERE pt.new_status IN ('faulted', 'unavailable')
-          AND pt.timestamp < ${monthEnd}::timestamptz
-          AND COALESCE(pt.next_timestamp, ${monthEnd}::timestamptz) > ${monthStart}::timestamptz
+          AND pt.timestamp < bounds.month_end
+          AND COALESCE(pt.next_timestamp, bounds.month_end) > bounds.month_start
       ),
       outage_per_port AS (
         SELECT
@@ -394,11 +430,11 @@ async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
         SELECT
           ned.station_id,
           ned.evse_id,
-          GREATEST(ned.started_at, ${monthStart}::timestamptz) AS seg_start,
-          LEAST(COALESCE(ned.ended_at, ${monthEnd}::timestamptz), ${monthEnd}::timestamptz) AS seg_end
-        FROM nevi_excluded_downtime ned
-        WHERE ned.started_at < ${monthEnd}::timestamptz
-          AND COALESCE(ned.ended_at, ${monthEnd}::timestamptz) > ${monthStart}::timestamptz
+          GREATEST(ned.started_at, bounds.month_start) AS seg_start,
+          LEAST(COALESCE(ned.ended_at, bounds.month_end), bounds.month_end) AS seg_end
+        FROM nevi_excluded_downtime ned, bounds
+        WHERE ned.started_at < bounds.month_end
+          AND COALESCE(ned.ended_at, bounds.month_end) > bounds.month_start
       ),
       excluded_per_port AS (
         SELECT
@@ -417,7 +453,7 @@ async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
         ${monthInfo.month} AS month_number,
         COALESCE(opp.outage_minutes, 0) AS outage_minutes,
         COALESCE(epp.excluded_minutes, 0) AS excluded_minutes,
-        ${minutesInMonth} AS minutes_in_month
+        (SELECT EXTRACT(EPOCH FROM (month_end - month_start)) / 60 FROM bounds) AS minutes_in_month
       FROM all_ports ap
       INNER JOIN charging_stations cs ON cs.id = ap.station_id
       LEFT JOIN outage_per_port opp
@@ -453,7 +489,11 @@ async function buildUptimeTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
 
 // ── Tab 4: Outage ──────────────────────────────────────────────────────────────
 
-async function buildOutageTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Promise<void> {
+async function buildOutageTab(
+  sheet: ExcelJS.Worksheet,
+  dates: QuarterDates,
+  tz: string,
+): Promise<void> {
   sheet.columns = [
     { header: 'Station ID', key: 'stationId' },
     { header: 'EVSE ID', key: 'evseId' },
@@ -463,11 +503,16 @@ async function buildOutageTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
     { header: 'Status', key: 'status' },
   ];
 
-  const startIso = dates.start.toISOString();
-  const endIso = dates.end.toISOString();
-
+  // Quarter bounds derived from the operator-local calendar dates, same
+  // pattern as buildUptimeTab. Filtering on local-day boundaries keeps
+  // outage-event attribution aligned with the operator's reporting period.
   const rows = await db.execute(sql`
-    WITH transitions AS (
+    WITH bounds AS (
+      SELECT
+        (${dates.startDate}::date::timestamp AT TIME ZONE ${tz}) AS period_start,
+        ((${dates.endDate}::date + INTERVAL '1 day')::timestamp AT TIME ZONE ${tz}) AS period_end
+    ),
+    transitions AS (
       SELECT
         cs.station_id AS station_id,
         psl.evse_id,
@@ -479,8 +524,9 @@ async function buildOutageTab(sheet: ExcelJS.Worksheet, dates: QuarterDates): Pr
         ) AS next_timestamp
       FROM port_status_log psl
       INNER JOIN charging_stations cs ON cs.id = psl.station_id
-      WHERE psl.timestamp >= ${startIso}::timestamptz
-        AND psl.timestamp <= ${endIso}::timestamptz
+      CROSS JOIN bounds
+      WHERE psl.timestamp >= bounds.period_start
+        AND psl.timestamp <= bounds.period_end
     )
     SELECT
       station_id,
@@ -697,6 +743,10 @@ export async function generateNeviReport(
   }
 
   const dates = getQuarterDates(quarter, year);
+  // The quarter spans the operator's local calendar quarter, not UTC's. NEVI
+  // reporting under CFR Part 680 uses the operator's local time zone for
+  // session/outage attribution.
+  const tz = await getSystemTimezone();
   const workbook = new ExcelJS.Workbook();
 
   const stationLocationSheet = workbook.addWorksheet('Station Location');
@@ -711,9 +761,9 @@ export async function generateNeviReport(
 
   await Promise.all([
     buildStationLocationTab(stationLocationSheet),
-    buildSessionsTab(sessionsSheet, dates),
-    buildUptimeTab(uptimeSheet, dates),
-    buildOutageTab(outageSheet, dates),
+    buildSessionsTab(sessionsSheet, dates, tz),
+    buildUptimeTab(uptimeSheet, dates, tz),
+    buildOutageTab(outageSheet, dates, tz),
     buildMaintenanceCostTab(maintenanceCostSheet),
     buildOperatorIdentityTab(operatorIdentitySheet),
     buildOperatorProgramsTab(operatorProgramsSheet),

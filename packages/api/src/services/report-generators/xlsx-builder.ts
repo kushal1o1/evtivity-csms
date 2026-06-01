@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import ExcelJS from 'exceljs';
+import { neutraliseSpreadsheetFormula } from '@evtivity/lib';
 
 // ExcelJS's published `Column` interface omits `eachCell`, but the runtime
 // objects in `sheet.columns` do expose it (see exceljs/lib/doc/column.js).
@@ -14,6 +15,11 @@ type ColumnWithEachCell = Partial<ExcelJS.Column> & {
     cb: (cell: ExcelJS.Cell, rowNumber: number) => void,
   ) => void;
 };
+
+function neutraliseCell(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return neutraliseSpreadsheetFormula(value);
+}
 
 /**
  * Build an XLSX workbook from multiple tables (sheets).
@@ -40,9 +46,13 @@ export async function buildXlsx(
     });
 
     for (const row of table.rows) {
-      // Skip empty separator rows
-      if (row.length === 0) continue;
-      sheet.addRow(row);
+      // Preserve empty separator rows so the XLSX output mirrors the CSV
+      // structure when the same generator outputs to both formats.
+      if (row.length === 0) {
+        sheet.addRow([]);
+        continue;
+      }
+      sheet.addRow(row.map(neutraliseCell));
     }
 
     // Auto-fit column widths.

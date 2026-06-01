@@ -28,7 +28,6 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
-  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -83,12 +82,6 @@ const navItems = [
     labelKey: 'nav.reservations' as const,
     icon: CalendarClock,
     requiredPermission: 'reservations:read',
-  },
-  {
-    to: '/maintenance',
-    labelKey: 'nav.maintenance' as const,
-    icon: Wrench,
-    requiredPermission: 'maintenance:read',
   },
   // Customers
   {

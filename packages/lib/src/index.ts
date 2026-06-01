@@ -28,7 +28,7 @@ export { formatDateTime, formatDate, formatRelativeTime, isValidTimezone } from 
 
 export { encryptString, decryptString } from './encryption.js';
 
-export { csvEscape, buildCsv } from './csv-escape.js';
+export { csvEscape, buildCsv, neutraliseSpreadsheetFormula } from './csv-escape.js';
 
 export { verifyRecaptcha } from './recaptcha.js';
 export type { RecaptchaResult } from './recaptcha.js';

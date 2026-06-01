@@ -2882,10 +2882,6 @@
     "change": "Änderung"
   },
   "maintenance": {
-    "title": "Wartungsfenster",
-    "statusFilter": "Status",
-    "siteFilter": "Standort",
-    "colSite": "Standort",
     "colType": "Typ",
     "colStatus": "Status",
     "colStart": "Beginn",
@@ -2951,10 +2947,14 @@
     "scopeLabel": "Umfang",
     "showStations": "Stationen anzeigen ({{count}})",
     "hideStations": "Stationen ausblenden",
-    "removeFromEvent": "Entfernen",
-    "removeActiveHint": "Entfernen sendet sofort ChangeAvailability(Operative) und löscht die Wartungsanzeige.",
-    "stationRemovedToast": "Station aus dem Wartungsereignis entfernt",
-    "stationRemoveFailed": "Station konnte nicht entfernt werden",
-    "lastStationHint": "Dies ist die einzige betroffene Station. Klicken Sie oben auf Abbrechen, um das Wartungsereignis zu beenden."
+    "editingActive": "Aktive Wartung bearbeiten",
+    "editingScheduled": "Geplante Wartung bearbeiten",
+    "editTimezoneHint": "Zeiten in {{timezone}}",
+    "endsAtLabel": "Endet um",
+    "reasonPlaceholder": "Optionale Notizen zu diesem Fenster",
+    "searchStations": "Stationen suchen",
+    "updatedToast": "Wartungsereignis aktualisiert",
+    "updateFailed": "Wartungsereignis konnte nicht aktualisiert werden",
+    "removesAllStationsHint": "Mindestens eine Station muss im Ereignis verbleiben. Wählen Sie eine Station erneut aus, oder brechen Sie das Ereignis ab."
   }
 }

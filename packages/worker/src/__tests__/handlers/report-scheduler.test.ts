@@ -22,6 +22,7 @@ vi.mock('@evtivity/database', () => ({
 
 vi.mock('@evtivity/api/src/services/report.service.js', () => ({
   queueReport: vi.fn().mockResolvedValue('report-id-123'),
+  computeNextRunAtInTz: vi.fn().mockResolvedValue(new Date('2026-01-02T06:00:00Z')),
 }));
 
 vi.mock('@evtivity/lib', () => ({

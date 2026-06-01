@@ -567,7 +567,7 @@ export async function exitMaintenance(
   await publishStateChange(event.siteId, event.id);
 }
 
-export interface UpdateScheduledEventInput {
+export interface UpdateEventInput {
   plannedStartAt?: Date;
   plannedEndAt?: Date;
   affectedStationIds?: string[] | null;
@@ -576,9 +576,22 @@ export interface UpdateScheduledEventInput {
   reason?: string | null;
 }
 
-export async function updateScheduledEvent(
+// Active events are mid-flight: the start time is in the past, the stations
+// have already been put into Unavailable, and the session/reservation policy
+// has already been applied at activation time. Only fields that can be
+// changed without re-running the activation side effects are editable.
+// Adding or removing stations on an active event goes through the dedicated
+// add-stations / remove-stations service functions instead, because those
+// require ChangeAvailability and message-slot side effects.
+const ACTIVE_EDITABLE_FIELDS = new Set<keyof UpdateEventInput>([
+  'plannedEndAt',
+  'customMessage',
+  'reason',
+]);
+
+export async function updateEvent(
   eventId: string,
-  changes: UpdateScheduledEventInput,
+  changes: UpdateEventInput,
   actor: MaintenanceActor,
   logger?: FastifyBaseLogger,
 ): Promise<MaintenanceEventRow> {
@@ -586,8 +599,25 @@ export async function updateScheduledEvent(
   if (before == null) {
     throw new AppError('Maintenance event not found', 404, 'MAINTENANCE_NOT_FOUND');
   }
-  if (before.status !== 'scheduled') {
-    throw new AppError('Only scheduled events can be edited', 409, 'MAINTENANCE_ALREADY_ACTIVE');
+  if (before.status !== 'scheduled' && before.status !== 'active') {
+    throw new AppError(
+      'Only scheduled or active events can be edited',
+      409,
+      'MAINTENANCE_ALREADY_ACTIVE',
+    );
+  }
+
+  if (before.status === 'active') {
+    for (const key of Object.keys(changes) as Array<keyof UpdateEventInput>) {
+      if (changes[key] === undefined) continue;
+      if (!ACTIVE_EDITABLE_FIELDS.has(key)) {
+        throw new AppError(
+          `Field '${key}' cannot be changed once the event is active`,
+          409,
+          'MAINTENANCE_ALREADY_ACTIVE',
+        );
+      }
+    }
   }
 
   const start = changes.plannedStartAt ?? before.plannedStartAt;
@@ -596,7 +626,10 @@ export async function updateScheduledEvent(
     throw new AppError('Maintenance end must be after start', 400, 'MAINTENANCE_INVALID_RANGE');
   }
 
-  if (changes.plannedStartAt !== undefined || changes.plannedEndAt !== undefined) {
+  if (
+    before.status === 'scheduled' &&
+    (changes.plannedStartAt !== undefined || changes.plannedEndAt !== undefined)
+  ) {
     const overlaps = await findOverlappingScheduledEvents(before.siteId, start, end, eventId);
     if (overlaps.length > 0) {
       throw new AppError(
@@ -607,11 +640,13 @@ export async function updateScheduledEvent(
     }
   }
 
-  const updateSet: Record<string, unknown> = {
-    plannedStartAt: start,
-    plannedEndAt: end,
-    updatedAt: new Date(),
-  };
+  const updateSet: Record<string, unknown> = { updatedAt: new Date() };
+  if (before.status === 'scheduled') {
+    updateSet['plannedStartAt'] = start;
+  }
+  if (changes.plannedEndAt !== undefined) {
+    updateSet['plannedEndAt'] = end;
+  }
   if (changes.affectedStationIds !== undefined) {
     updateSet['affectedStationIds'] = changes.affectedStationIds;
   }
@@ -625,13 +660,23 @@ export async function updateScheduledEvent(
     updateSet['reason'] = changes.reason;
   }
 
+  // Tight status guard: the field-whitelist branch above keyed off
+  // `before.status`. If the cron flipped scheduled→active between
+  // loadEventById and this UPDATE, a permissive WHERE (status IN (...))
+  // would let immutable fields like plannedStartAt or affectedStationIds
+  // get written to an active event with no OCPP side effects. Requiring
+  // status to still match the loaded value forces a 409 retry instead.
   const [updated] = await db
     .update(maintenanceEvents)
     .set(updateSet)
-    .where(and(eq(maintenanceEvents.id, eventId), eq(maintenanceEvents.status, 'scheduled')))
+    .where(and(eq(maintenanceEvents.id, eventId), eq(maintenanceEvents.status, before.status)))
     .returning();
   if (updated == null) {
-    throw new AppError('Only scheduled events can be edited', 409, 'MAINTENANCE_ALREADY_ACTIVE');
+    throw new AppError(
+      'Maintenance event status changed during edit — refresh and try again',
+      409,
+      'MAINTENANCE_ALREADY_ACTIVE',
+    );
   }
   const after = rowFromDb(updated);
 
@@ -648,6 +693,250 @@ export async function updateScheduledEvent(
     db,
     logger,
   );
+
+  // When a scheduled event's window changes, eagerly cancel any reservations
+  // that now fall inside the new window. Without this step, drivers with a
+  // booking inside the widened window would only be notified at activation,
+  // sometimes hours later. cancelOverlappingReservations is idempotent
+  // (filters by reservation status), so this is safe to call even when the
+  // window shifted in a way that doesn't introduce new conflicts.
+  if (
+    before.status === 'scheduled' &&
+    (changes.plannedStartAt !== undefined || changes.plannedEndAt !== undefined)
+  ) {
+    const stations = await loadSiteStations(after.siteId, after.affectedStationIds);
+    const stationIds = stations.map((s) => s.id);
+    const cancelled = await cancelOverlappingReservations(after, stationIds, logger);
+    if (cancelled > 0) {
+      await db
+        .update(maintenanceEvents)
+        .set({
+          reservationsCancelledCount: sql`${maintenanceEvents.reservationsCancelledCount} + ${cancelled}`,
+        })
+        .where(eq(maintenanceEvents.id, after.id));
+      await writeAudit(
+        { table: maintenanceEventAuditLog, idColumn: 'maintenance_event_id' },
+        {
+          entityId: after.id,
+          entityIdSnapshot: after.id,
+          action: 'reservations_cancelled',
+          ...auditActorFromActor(actor),
+          notes: `Cancelled ${String(cancelled)} reservation(s) after window change`,
+        },
+        db,
+        logger,
+      );
+    }
+  }
+
+  invalidateMaintenanceCheckCache();
+  await publishStateChange(after.siteId, after.id);
+  return after;
+}
+
+/**
+ * Add one or more stations to a scheduled or active maintenance event.
+ *
+ * For scheduled events this is a pure DB update. For active events the new
+ * stations are immediately taken offline: ChangeAvailability(Inoperative) is
+ * sent, slot 9005 is pushed, overlapping reservations are cancelled, and
+ * (when policy=stop_graceful) active sessions are stopped — mirroring the
+ * activation path so a late-added station ends up in the same state as one
+ * that was on the list at activation time.
+ *
+ * When the event's affected_station_ids was null/empty ("all stations"),
+ * the new station list is materialized first so the explicit list reflects
+ * the intent going forward.
+ */
+export async function addStationsToMaintenance(
+  eventId: string,
+  stationIdsToAdd: string[],
+  actor: MaintenanceActor,
+  logger?: FastifyBaseLogger,
+): Promise<MaintenanceEventRow> {
+  const before = await loadEventById(eventId);
+  if (before == null) {
+    throw new AppError('Maintenance event not found', 404, 'MAINTENANCE_NOT_FOUND');
+  }
+  if (stationIdsToAdd.length === 0) return before;
+  if (before.status !== 'scheduled' && before.status !== 'active') {
+    throw new AppError(
+      'Only scheduled or active events can be edited',
+      409,
+      'MAINTENANCE_ALREADY_ACTIVE',
+    );
+  }
+
+  const ownedStations = await db
+    .select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(
+      and(
+        eq(chargingStations.siteId, before.siteId),
+        inArray(chargingStations.id, stationIdsToAdd),
+      ),
+    );
+  if (ownedStations.length !== stationIdsToAdd.length) {
+    throw new AppError('One or more stations do not belong to this site', 400, 'STATION_NOT_FOUND');
+  }
+
+  let currentList: string[];
+  if (before.affectedStationIds == null || before.affectedStationIds.length === 0) {
+    const allSiteStations = await db
+      .select({ id: chargingStations.id })
+      .from(chargingStations)
+      .where(eq(chargingStations.siteId, before.siteId));
+    currentList = allSiteStations.map((s) => s.id);
+  } else {
+    currentList = before.affectedStationIds;
+  }
+
+  const existingSet = new Set(currentList);
+  const trulyNew = stationIdsToAdd.filter((id) => !existingSet.has(id));
+  if (trulyNew.length === 0) return before;
+
+  const nextList = [...currentList, ...trulyNew];
+
+  // DB UPDATE first, side effects second. If the event transitioned to
+  // completed/cancelled between loadEventById and this UPDATE, a permissive
+  // status guard would still match and the side effects (ChangeAvailability,
+  // slot push, reservation cancel, session stop) would orphan: stations would
+  // be left Inoperative with no event listing them, so exitMaintenance/
+  // cancelEvent could never Operative them back. Tightening to
+  // eq(status, before.status) forces a 409 retry in that case so no OCPP
+  // command goes out for a station that's not in a committed event row.
+  const [updated] = await db
+    .update(maintenanceEvents)
+    .set({ affectedStationIds: nextList, updatedAt: new Date() })
+    .where(and(eq(maintenanceEvents.id, eventId), eq(maintenanceEvents.status, before.status)))
+    .returning();
+  if (updated == null) {
+    throw new AppError(
+      'Maintenance event status changed during edit — refresh and try again',
+      409,
+      'MAINTENANCE_ALREADY_ACTIVE',
+    );
+  }
+  const after = rowFromDb(updated);
+
+  let extraSessionsStopped = 0;
+  let extraReservationsCancelled = 0;
+  if (after.status === 'active') {
+    const newStations = await db
+      .select({
+        id: chargingStations.id,
+        stationId: chargingStations.stationId,
+        ocppProtocol: chargingStations.ocppProtocol,
+      })
+      .from(chargingStations)
+      .where(inArray(chargingStations.id, trulyNew));
+
+    const [site] = await db
+      .select({ name: sites.name })
+      .from(sites)
+      .where(eq(sites.id, after.siteId));
+    const siteName = site?.name ?? '';
+    const message = await renderMaintenanceMessage(client, after, siteName);
+
+    await Promise.all(
+      newStations.map(async (station) => {
+        try {
+          await sendOcppCommandAndWait(
+            station.stationId,
+            'ChangeAvailability',
+            { operationalStatus: 'Inoperative', evse: { id: 0 } },
+            station.ocppProtocol ?? undefined,
+          );
+        } catch (err) {
+          logger?.warn(
+            { err, stationId: station.stationId },
+            'ChangeAvailability(Inoperative) failed when adding station to active event',
+          );
+        }
+        try {
+          await pushStationMessageSlot(
+            station.stationId,
+            station.ocppProtocol,
+            STATION_MESSAGE_SLOT_UNAVAILABLE,
+            'Unavailable',
+            message,
+          );
+        } catch (err) {
+          logger?.warn(
+            { err, stationId: station.stationId },
+            'slot push failed when adding station to active event',
+          );
+        }
+      }),
+    );
+
+    const newStationDbIds = newStations.map((s) => s.id);
+    const [reservationsCancelled, sessionsStopped] = await Promise.all([
+      cancelOverlappingReservations(after, newStationDbIds, logger),
+      after.activeSessionPolicy === 'stop_graceful' && newStations.length > 0
+        ? stopActiveSessionsForStations(after, newStations, logger)
+        : Promise.resolve(0),
+    ]);
+    extraReservationsCancelled = reservationsCancelled;
+    extraSessionsStopped = sessionsStopped;
+
+    if (extraReservationsCancelled > 0 || extraSessionsStopped > 0) {
+      const counterSet: Record<string, unknown> = {};
+      if (extraReservationsCancelled > 0) {
+        counterSet['reservationsCancelledCount'] =
+          sql`${maintenanceEvents.reservationsCancelledCount} + ${extraReservationsCancelled}`;
+      }
+      if (extraSessionsStopped > 0) {
+        counterSet['sessionsStoppedCount'] =
+          sql`${maintenanceEvents.sessionsStoppedCount} + ${extraSessionsStopped}`;
+      }
+      await db.update(maintenanceEvents).set(counterSet).where(eq(maintenanceEvents.id, eventId));
+    }
+  }
+
+  const auditActorBase = auditActorFromActor(actor);
+  await writeAudit(
+    { table: maintenanceEventAuditLog, idColumn: 'maintenance_event_id' },
+    {
+      entityId: after.id,
+      entityIdSnapshot: after.id,
+      action: 'updated',
+      ...auditActorBase,
+      before,
+      after,
+      notes: `Added ${String(trulyNew.length)} station(s) to event`,
+    },
+    db,
+    logger,
+  );
+  if (extraReservationsCancelled > 0) {
+    await writeAudit(
+      { table: maintenanceEventAuditLog, idColumn: 'maintenance_event_id' },
+      {
+        entityId: after.id,
+        entityIdSnapshot: after.id,
+        action: 'reservations_cancelled',
+        ...auditActorBase,
+        notes: `Cancelled ${String(extraReservationsCancelled)} reservation(s) on added station(s)`,
+      },
+      db,
+      logger,
+    );
+  }
+  if (extraSessionsStopped > 0) {
+    await writeAudit(
+      { table: maintenanceEventAuditLog, idColumn: 'maintenance_event_id' },
+      {
+        entityId: after.id,
+        entityIdSnapshot: after.id,
+        action: 'sessions_stopped',
+        ...auditActorBase,
+        notes: `Stopped ${String(extraSessionsStopped)} session(s) on added station(s)`,
+      },
+      db,
+      logger,
+    );
+  }
 
   invalidateMaintenanceCheckCache();
   await publishStateChange(after.siteId, after.id);
@@ -749,19 +1038,20 @@ export async function removeStationsFromMaintenance(
     );
   }
 
+  // Tight status guard: the `before.status === 'active'` branch above gates
+  // whether the Operative side effects ran. If status flipped between load
+  // and UPDATE, the cron's enterMaintenance/cancelEvent would have already
+  // acted on the old list, and a permissive WHERE here would silently shrink
+  // the committed list, stranding the removed stations Inoperative without
+  // an event to ever Operative them again.
   const [updated] = await db
     .update(maintenanceEvents)
     .set({ affectedStationIds: nextList, updatedAt: new Date() })
-    .where(
-      and(
-        eq(maintenanceEvents.id, eventId),
-        inArray(maintenanceEvents.status, ['scheduled', 'active']),
-      ),
-    )
+    .where(and(eq(maintenanceEvents.id, eventId), eq(maintenanceEvents.status, before.status)))
     .returning();
   if (updated == null) {
     throw new AppError(
-      'Only scheduled or active events can be edited',
+      'Maintenance event status changed during edit — refresh and try again',
       409,
       'MAINTENANCE_ALREADY_ACTIVE',
     );

@@ -2908,10 +2908,6 @@
     "change": "变更"
   },
   "maintenance": {
-    "title": "维护窗口",
-    "statusFilter": "状态",
-    "siteFilter": "站点",
-    "colSite": "站点",
     "colType": "类型",
     "colStatus": "状态",
     "colStart": "开始",
@@ -2977,10 +2973,14 @@
     "scopeLabel": "范围",
     "showStations": "显示充电桩（{{count}}）",
     "hideStations": "隐藏充电桩",
-    "removeFromEvent": "移除",
-    "removeActiveHint": "移除会立即发送 ChangeAvailability(Operative) 并清除维护显示。",
-    "stationRemovedToast": "已从维护事件中移除充电桩",
-    "stationRemoveFailed": "移除充电桩失败",
-    "lastStationHint": "这是唯一受影响的充电桩 — 使用上方的取消按钮结束维护事件。"
+    "editingActive": "正在编辑活动维护",
+    "editingScheduled": "正在编辑计划维护",
+    "editTimezoneHint": "时间显示为 {{timezone}}",
+    "endsAtLabel": "结束时间",
+    "reasonPlaceholder": "本次维护窗口的可选备注",
+    "searchStations": "搜索充电桩",
+    "updatedToast": "维护事件已更新",
+    "updateFailed": "更新维护事件失败",
+    "removesAllStationsHint": "事件中至少需要保留一个充电桩。请重新选择一个充电桩，或者直接取消整个事件。"
   }
 }

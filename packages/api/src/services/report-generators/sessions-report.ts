@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { sql, and, gte, lte, eq, count } from 'drizzle-orm';
+import { sql, and, eq, count } from 'drizzle-orm';
 import {
   db,
   chargingSessions,
@@ -9,11 +9,12 @@ import {
   sites,
   drivers,
   paymentRecords,
-  settings,
+  getSystemTimezone,
 } from '@evtivity/database';
 import { buildCsv } from './csv-builder.js';
 import { buildXlsx } from './xlsx-builder.js';
 import { PdfReportBuilder } from './pdf-builder.js';
+import { formatCents } from './currency.js';
 import type { ReportGeneratorResult } from '../report.service.js';
 
 interface Filters {
@@ -24,38 +25,42 @@ interface Filters {
   status?: string | undefined;
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function parseFilters(raw: Record<string, unknown>): Filters {
+  const dateFromRaw = typeof raw['dateFrom'] === 'string' ? raw['dateFrom'] : undefined;
+  const dateToRaw = typeof raw['dateTo'] === 'string' ? raw['dateTo'] : undefined;
   return {
-    dateFrom: typeof raw['dateFrom'] === 'string' ? raw['dateFrom'] : undefined,
-    dateTo: typeof raw['dateTo'] === 'string' ? raw['dateTo'] : undefined,
+    // Drop malformed dates so the generator doesn't bind Invalid Date into SQL
+    // (which silently returns zero rows on Postgres). A 400 from the route is
+    // the right surface for explicit input errors; scheduled re-runs that
+    // somehow inherit a bad string just degrade to no-filter instead of empty.
+    dateFrom: dateFromRaw != null && ISO_DATE.test(dateFromRaw) ? dateFromRaw : undefined,
+    dateTo: dateToRaw != null && ISO_DATE.test(dateToRaw) ? dateToRaw : undefined,
     siteId: typeof raw['siteId'] === 'string' ? raw['siteId'] : undefined,
     stationId: typeof raw['stationId'] === 'string' ? raw['stationId'] : undefined,
     status: typeof raw['status'] === 'string' ? raw['status'] : undefined,
   };
 }
 
-async function getTimezone(): Promise<string> {
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, 'system.timezone'));
-  return typeof row?.value === 'string' ? row.value : 'America/New_York';
-}
-
-function buildConditions(filters: Filters) {
+function buildConditions(filters: Filters, tz: string) {
   const conditions = [];
-  if (filters.dateFrom) {
-    conditions.push(gte(chargingSessions.startedAt, new Date(filters.dateFrom)));
+  // Compare startedAt projected into the system timezone so YYYY-MM-DD
+  // filters mean "the operator's local day" instead of UTC midnight.
+  if (filters.dateFrom != null) {
+    conditions.push(
+      sql`(${chargingSessions.startedAt} AT TIME ZONE ${tz})::date >= ${filters.dateFrom}::date`,
+    );
   }
-  if (filters.dateTo) {
-    const to = new Date(filters.dateTo);
-    to.setHours(23, 59, 59, 999);
-    conditions.push(lte(chargingSessions.startedAt, to));
+  if (filters.dateTo != null) {
+    conditions.push(
+      sql`(${chargingSessions.startedAt} AT TIME ZONE ${tz})::date <= ${filters.dateTo}::date`,
+    );
   }
-  if (filters.stationId) {
+  if (filters.stationId != null) {
     conditions.push(eq(chargingSessions.stationId, filters.stationId));
   }
-  if (filters.status) {
+  if (filters.status != null) {
     conditions.push(sql`${chargingSessions.status} = ${filters.status}`);
   }
   return conditions;
@@ -74,6 +79,7 @@ interface SessionRow {
   durationMinutes: number;
   energyKwh: number;
   costCents: number;
+  currency: string;
   stoppedReason: string;
   paymentSource: string;
 }
@@ -83,13 +89,24 @@ interface FailedSessionSummary {
   count: number;
 }
 
-async function querySessionLog(filters: Filters, tz: string): Promise<SessionRow[]> {
-  const conditions = buildConditions(filters);
+const SESSION_LIMIT = 10000;
 
-  if (filters.siteId) {
+interface SessionLogResult {
+  rows: SessionRow[];
+  truncated: boolean;
+}
+
+async function querySessionLog(filters: Filters, tz: string): Promise<SessionLogResult> {
+  const conditions = buildConditions(filters, tz);
+
+  if (filters.siteId != null) {
     conditions.push(eq(chargingStations.siteId, filters.siteId));
   }
 
+  // Pull the most-recent paymentRecord per session in a correlated subquery so
+  // the main join is 1:1. A direct leftJoin duplicates sessions whenever the
+  // session has both a pre-auth and a capture (the normal Stripe flow), or any
+  // refund.
   const rows = await db
     .select({
       sessionId: chargingSessions.id,
@@ -105,19 +122,30 @@ async function querySessionLog(filters: Filters, tz: string): Promise<SessionRow
       durationMinutes: sql<number>`coalesce(extract(epoch from (${chargingSessions.endedAt} - ${chargingSessions.startedAt})) / 60, 0)`,
       energyKwh: sql<number>`coalesce(${chargingSessions.energyDeliveredWh}::numeric / 1000, 0)`,
       costCents: sql<number>`coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents}, 0)`,
+      currency: sql<string>`coalesce(${chargingSessions.currency}, 'USD')`,
       stoppedReason: sql<string>`coalesce(${chargingSessions.stoppedReason}, '')`,
-      paymentSource: sql<string>`coalesce(${paymentRecords.paymentSource}, '')`,
+      paymentSource: sql<string>`coalesce((
+        SELECT pr.payment_source
+        FROM ${paymentRecords} pr
+        WHERE pr.session_id = ${chargingSessions.id}
+        ORDER BY pr.created_at DESC
+        LIMIT 1
+      ), '')`,
     })
     .from(chargingSessions)
     .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
     .leftJoin(sites, eq(chargingStations.siteId, sites.id))
     .leftJoin(drivers, eq(chargingSessions.driverId, drivers.id))
-    .leftJoin(paymentRecords, eq(paymentRecords.sessionId, chargingSessions.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${chargingSessions.startedAt} desc`)
-    .limit(10000);
+    // LIMIT+1 lets us flag truncation without a second count(*) on what may be
+    // a multi-million-row sessions table.
+    .limit(SESSION_LIMIT + 1);
 
-  return rows.map((r) => ({
+  const truncated = rows.length > SESSION_LIMIT;
+  const trimmed = truncated ? rows.slice(0, SESSION_LIMIT) : rows;
+
+  const mapped = trimmed.map((r) => ({
     sessionId: r.sessionId,
     transactionId: r.transactionId,
     stationName: r.stationName,
@@ -130,14 +158,34 @@ async function querySessionLog(filters: Filters, tz: string): Promise<SessionRow
     durationMinutes: Math.round(r.durationMinutes * 10) / 10,
     energyKwh: Math.round(r.energyKwh * 100) / 100,
     costCents: r.costCents,
+    currency: r.currency,
     stoppedReason: r.stoppedReason,
     paymentSource: r.paymentSource,
   }));
+
+  return { rows: mapped, truncated };
 }
 
-async function queryFailedSessions(filters: Filters): Promise<FailedSessionSummary[]> {
-  const conditions = buildConditions(filters);
+async function queryFailedSessions(filters: Filters, tz: string): Promise<FailedSessionSummary[]> {
+  const conditions = buildConditions(filters, tz);
   conditions.push(sql`${chargingSessions.status} in ('faulted', 'invalid')`);
+
+  // The failed-session breakdown has to honour the same siteId filter the
+  // main session log applies; otherwise picking siteA filters the rows but
+  // leaves the summary cross-site.
+  if (filters.siteId != null) {
+    const rows = await db
+      .select({
+        reason: sql<string>`coalesce(${chargingSessions.stoppedReason}, 'Unknown')`,
+        count: count(),
+      })
+      .from(chargingSessions)
+      .innerJoin(chargingStations, eq(chargingSessions.stationId, chargingStations.id))
+      .where(and(...conditions, eq(chargingStations.siteId, filters.siteId)))
+      .groupBy(sql`1`)
+      .orderBy(sql`2 desc`);
+    return rows;
+  }
 
   const rows = await db
     .select({
@@ -152,21 +200,21 @@ async function queryFailedSessions(filters: Filters): Promise<FailedSessionSumma
   return rows;
 }
 
-function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 export async function generateSessionsReport(
   rawFilters: Record<string, unknown>,
   format: string,
 ): Promise<ReportGeneratorResult> {
   const filters = parseFilters(rawFilters);
-  const tz = await getTimezone();
+  const tz = await getSystemTimezone();
 
-  const [sessions, failedSummary] = await Promise.all([
+  const [logResult, failedSummary] = await Promise.all([
     querySessionLog(filters, tz),
-    queryFailedSessions(filters),
+    queryFailedSessions(filters, tz),
   ]);
+  const sessions = logResult.rows;
+  const truncationNote = logResult.truncated
+    ? `Showing first ${String(SESSION_LIMIT)} sessions; narrow the date range to see the rest.`
+    : null;
 
   const dateLabel = [filters.dateFrom, filters.dateTo].filter(Boolean).join(' to ') || 'All time';
 
@@ -182,7 +230,7 @@ export async function generateSessionsReport(
       'Ended',
       'Duration (min)',
       'Energy (kWh)',
-      'Cost ($)',
+      'Cost',
       'Stopped Reason',
       'Payment Source',
     ];
@@ -197,7 +245,7 @@ export async function generateSessionsReport(
       s.endedAt,
       s.durationMinutes,
       s.energyKwh,
-      formatCents(s.costCents),
+      formatCents(s.costCents, s.currency),
       s.stoppedReason,
       s.paymentSource,
     ]);
@@ -209,6 +257,10 @@ export async function generateSessionsReport(
       for (const f of failedSummary) {
         rows.push([f.reason, f.count]);
       }
+    }
+    if (truncationNote != null) {
+      rows.push([]);
+      rows.push([truncationNote]);
     }
 
     const csv = buildCsv(headers, rows);
@@ -231,7 +283,7 @@ export async function generateSessionsReport(
           'Ended',
           'Duration (min)',
           'Energy (kWh)',
-          'Cost ($)',
+          'Cost',
           'Stopped Reason',
           'Payment Source',
         ],
@@ -246,7 +298,7 @@ export async function generateSessionsReport(
           s.endedAt,
           s.durationMinutes,
           s.energyKwh,
-          formatCents(s.costCents),
+          formatCents(s.costCents, s.currency),
           s.stoppedReason,
           s.paymentSource,
         ]),
@@ -260,6 +312,13 @@ export async function generateSessionsReport(
         rows: failedSummary.map((f) => [f.reason, f.count]),
       });
     }
+    if (truncationNote != null) {
+      tables.push({
+        name: 'Note',
+        headers: ['Result truncated'],
+        rows: [[truncationNote]],
+      });
+    }
 
     const data = await buildXlsx(tables);
     return { data, fileName: `sessions-report-${String(Date.now())}.xlsx` };
@@ -270,6 +329,9 @@ export async function generateSessionsReport(
   pdf.addTitle('Sessions Report');
   pdf.addSubtitle(`Period: ${dateLabel}`);
   pdf.addSummaryRow('Total Sessions:', String(sessions.length));
+  if (truncationNote != null) {
+    pdf.addSubtitle(truncationNote);
+  }
 
   pdf.addTable(
     ['Txn ID', 'Station', 'Site', 'Driver', 'Status', 'Duration', 'kWh', 'Cost'],
@@ -283,7 +345,7 @@ export async function generateSessionsReport(
         s.status,
         `${String(s.durationMinutes)}m`,
         parseFloat(String(s.energyKwh)).toFixed(1),
-        formatCents(s.costCents),
+        formatCents(s.costCents, s.currency),
       ]),
   );
 

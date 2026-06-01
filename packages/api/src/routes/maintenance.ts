@@ -30,7 +30,8 @@ import { getUserSiteIds } from '../lib/site-access.js';
 import {
   createEvent,
   cancelEvent,
-  updateScheduledEvent,
+  updateEvent,
+  addStationsToMaintenance,
   removeStationsFromMaintenance,
 } from '../services/maintenance.service.js';
 
@@ -364,7 +365,7 @@ export function maintenanceRoutes(app: FastifyInstance): void {
       onRequest: [authorize('maintenance:write')],
       schema: {
         tags: ['Maintenance'],
-        summary: 'Edit a scheduled maintenance event',
+        summary: 'Edit a scheduled or active maintenance event',
         operationId: 'updateSiteMaintenanceEvent',
         security: [{ bearerAuth: [] }],
         params: zodSchema(eventIdParams),
@@ -425,7 +426,7 @@ export function maintenanceRoutes(app: FastifyInstance): void {
       }
 
       try {
-        return await updateScheduledEvent(
+        return await updateEvent(
           id,
           {
             ...(body.plannedStartAt !== undefined
@@ -504,6 +505,76 @@ export function maintenanceRoutes(app: FastifyInstance): void {
         if (err instanceof AppError && err.statusCode === 404) {
           await reply.status(404).send({ error: err.message, code: err.code });
           return;
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.post(
+    '/sites/:siteId/maintenance/events/:id/add-stations',
+    {
+      onRequest: [authorize('maintenance:write')],
+      schema: {
+        tags: ['Maintenance'],
+        summary: 'Add one or more stations to a scheduled or active event',
+        operationId: 'addMaintenanceStations',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(eventIdParams),
+        body: zodSchema(
+          z.object({
+            stationIds: z
+              .array(z.string())
+              .min(1)
+              .describe('Internal station IDs to add to the event'),
+          }),
+        ),
+        response: {
+          200: itemResponse(maintenanceItem),
+          400: errorWith('Bad request', [ERROR_CODES.STATION_NOT_FOUND]),
+          404: errorWith('Not found', [
+            ERROR_CODES.SITE_NOT_FOUND,
+            ERROR_CODES.MAINTENANCE_NOT_FOUND,
+          ]),
+          409: errorWith('Conflict', [ERROR_CODES.MAINTENANCE_ALREADY_ACTIVE]),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { siteId, id } = request.params as z.infer<typeof eventIdParams>;
+      const body = request.body as { stationIds: string[] };
+      const { userId } = request.user as { userId: string };
+      if (!(await checkSiteAccess(siteId, userId))) {
+        await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
+        return;
+      }
+      if (!(await eventBelongsToSite(id, siteId))) {
+        await reply
+          .status(404)
+          .send({ error: 'Maintenance event not found', code: 'MAINTENANCE_NOT_FOUND' });
+        return;
+      }
+      try {
+        return await addStationsToMaintenance(
+          id,
+          body.stationIds,
+          { type: 'operator', userId },
+          request.log,
+        );
+      } catch (err) {
+        if (err instanceof AppError) {
+          if (err.statusCode === 400) {
+            await reply.status(400).send({ error: err.message, code: err.code });
+            return;
+          }
+          if (err.statusCode === 404) {
+            await reply.status(404).send({ error: err.message, code: err.code });
+            return;
+          }
+          if (err.statusCode === 409) {
+            await reply.status(409).send({ error: err.message, code: err.code });
+            return;
+          }
         }
         throw err;
       }
@@ -770,63 +841,6 @@ export function maintenanceRoutes(app: FastifyInstance): void {
           })),
         };
       });
-    },
-  );
-}
-
-export function maintenanceCrossSiteRoutes(app: FastifyInstance): void {
-  app.get(
-    '/maintenance/events',
-    {
-      onRequest: [authorize('maintenance:read')],
-      schema: {
-        tags: ['Maintenance'],
-        summary: 'List maintenance events across all accessible sites',
-        operationId: 'listMaintenanceEvents',
-        security: [{ bearerAuth: [] }],
-        querystring: zodSchema(listQuery.extend({ siteId: z.string().optional() })),
-        response: { 200: paginatedResponse(maintenanceItem) },
-      },
-    },
-    async (request) => {
-      const q = request.query as z.infer<typeof listQuery> & { siteId?: string };
-      const { userId } = request.user as { userId: string };
-      const siteIds = await getUserSiteIds(userId);
-
-      const conditions = [];
-      if (siteIds != null) {
-        if (siteIds.length === 0) return { data: [], total: 0 };
-        conditions.push(inArray(maintenanceEvents.siteId, siteIds));
-      }
-      if (q.siteId != null) conditions.push(eq(maintenanceEvents.siteId, q.siteId));
-      if (q.status != null) conditions.push(eq(maintenanceEvents.status, q.status));
-
-      const offset = (q.page - 1) * q.limit;
-
-      const whereClause = conditions.length === 0 ? undefined : and(...conditions);
-      const [data, totalRow] = await Promise.all([
-        whereClause == null
-          ? db
-              .select()
-              .from(maintenanceEvents)
-              .orderBy(desc(maintenanceEvents.plannedStartAt))
-              .limit(q.limit)
-              .offset(offset)
-          : db
-              .select()
-              .from(maintenanceEvents)
-              .where(whereClause)
-              .orderBy(desc(maintenanceEvents.plannedStartAt))
-              .limit(q.limit)
-              .offset(offset),
-        whereClause == null
-          ? db.select({ c: sql<number>`count(*)` }).from(maintenanceEvents)
-          : db
-              .select({ c: sql<number>`count(*)` })
-              .from(maintenanceEvents)
-              .where(whereClause),
-      ]);
-      return { data, total: totalRow[0]?.c ?? 0 };
     },
   );
 }

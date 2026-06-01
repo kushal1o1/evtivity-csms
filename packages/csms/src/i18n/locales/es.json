@@ -2913,10 +2913,6 @@
     "change": "Cambio"
   },
   "maintenance": {
-    "title": "Ventanas de mantenimiento",
-    "statusFilter": "Estado",
-    "siteFilter": "Sitio",
-    "colSite": "Sitio",
     "colType": "Tipo",
     "colStatus": "Estado",
     "colStart": "Inicio",
@@ -2982,10 +2978,14 @@
     "scopeLabel": "Alcance",
     "showStations": "Mostrar estaciones ({{count}})",
     "hideStations": "Ocultar estaciones",
-    "removeFromEvent": "Quitar",
-    "removeActiveHint": "Al quitar se envía ChangeAvailability(Operative) y se borra la pantalla de mantenimiento.",
-    "stationRemovedToast": "Estación quitada del evento de mantenimiento",
-    "stationRemoveFailed": "No se pudo quitar la estación",
-    "lastStationHint": "Esta es la única estación afectada — usa Cancelar arriba para finalizar el evento."
+    "editingActive": "Editando mantenimiento activo",
+    "editingScheduled": "Editando mantenimiento programado",
+    "editTimezoneHint": "Horas en {{timezone}}",
+    "endsAtLabel": "Termina a las",
+    "reasonPlaceholder": "Notas opcionales sobre esta ventana",
+    "searchStations": "Buscar estaciones",
+    "updatedToast": "Evento de mantenimiento actualizado",
+    "updateFailed": "No se pudo actualizar el evento de mantenimiento",
+    "removesAllStationsHint": "Al menos una estación debe permanecer en el evento. Vuelve a seleccionar una estación, o cancela el evento por completo."
   }
 }

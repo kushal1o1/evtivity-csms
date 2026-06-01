@@ -2897,10 +2897,6 @@
     "change": "變更"
   },
   "maintenance": {
-    "title": "維護時段",
-    "statusFilter": "狀態",
-    "siteFilter": "站點",
-    "colSite": "站點",
     "colType": "類型",
     "colStatus": "狀態",
     "colStart": "開始",
@@ -2966,10 +2962,14 @@
     "scopeLabel": "範圍",
     "showStations": "顯示充電樁（{{count}}）",
     "hideStations": "隱藏充電樁",
-    "removeFromEvent": "移除",
-    "removeActiveHint": "移除會立即傳送 ChangeAvailability(Operative) 並清除維護顯示。",
-    "stationRemovedToast": "已從維護事件中移除充電樁",
-    "stationRemoveFailed": "移除充電樁失敗",
-    "lastStationHint": "這是唯一受影響的充電樁 — 使用上方的取消按鈕結束維護事件。"
+    "editingActive": "正在編輯進行中的維護",
+    "editingScheduled": "正在編輯排程維護",
+    "editTimezoneHint": "時間顯示為 {{timezone}}",
+    "endsAtLabel": "結束時間",
+    "reasonPlaceholder": "本次維護視窗的選填備註",
+    "searchStations": "搜尋充電樁",
+    "updatedToast": "維護事件已更新",
+    "updateFailed": "更新維護事件失敗",
+    "removesAllStationsHint": "事件中至少需要保留一個充電樁。請重新選擇一個充電樁，或者直接取消整個事件。"
   }
 }

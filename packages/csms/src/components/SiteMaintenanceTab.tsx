@@ -90,6 +90,7 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
 
   const [createOpen, setCreateOpen] = useState(false);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   const [mode, setMode] = useState<'immediate' | 'one_off'>('immediate');
   const [startsAt, setStartsAt] = useState<string>(() => {
@@ -147,28 +148,6 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
   });
   const previewStations: StationPreviewRow[] = previewData ?? [];
 
-  const visibleStations = useMemo(() => {
-    const needle = stationSearch.trim().toLowerCase();
-    return previewStations.filter((s) => {
-      if (needle.length > 0) {
-        const haystack = `${s.stationId} ${s.model ?? ''}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      switch (stationFilter) {
-        case 'charging':
-          return s.hasActiveSession;
-        case 'reserved':
-          return s.upcomingReservationCount > 0;
-        case 'idle':
-          return !s.hasActiveSession && s.upcomingReservationCount === 0 && s.isOnline;
-        case 'offline':
-          return !s.isOnline;
-        default:
-          return true;
-      }
-    });
-  }, [previewStations, stationSearch, stationFilter]);
-
   const effectiveSelected = selectAllStations
     ? new Set(previewStations.map((s) => s.id))
     : selectedStationIds;
@@ -179,26 +158,6 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
     0,
   );
   const requiresAck = totalSessions > 0 || totalReservations > 0;
-
-  const visibleIds = visibleStations.map((s) => s.id);
-  const visibleSelectedCount = visibleIds.filter((id) => effectiveSelected.has(id)).length;
-  const allVisibleSelected = visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
-
-  function toggleVisible(checked: boolean): void {
-    if (selectAllStations) setSelectAllStations(false);
-    setSelectedStationIds((prev) => {
-      const next = new Set(prev);
-      if (checked) {
-        if (selectAllStations) {
-          for (const s of previewStations) next.add(s.id);
-        }
-        for (const id of visibleIds) next.add(id);
-      } else {
-        for (const id of visibleIds) next.delete(id);
-      }
-      return next;
-    });
-  }
 
   const { data: allSiteStationsData } = useQuery({
     queryKey: ['sites', siteId, 'stations-for-maintenance'],
@@ -289,18 +248,44 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
     },
   });
 
-  const removeStationsMutation = useMutation({
-    mutationFn: ({ eventId, stationIds }: { eventId: string; stationIds: string[] }) =>
-      api.post(`/v1/sites/${siteId}/maintenance/events/${eventId}/remove-stations`, {
-        stationIds,
-      }),
+  const editEventMutation = useMutation({
+    mutationFn: async ({
+      eventId,
+      metadata,
+      stationsToAdd,
+      stationsToRemove,
+    }: {
+      eventId: string;
+      metadata: Record<string, unknown>;
+      stationsToAdd: string[];
+      stationsToRemove: string[];
+    }) => {
+      // Order matters: metadata first (so a window-extension's eager-cancel
+      // sees the new window), then add (Inoperative the new stations), then
+      // remove (Operative the released stations). Sequential to surface a
+      // single error if any leg fails.
+      if (Object.keys(metadata).length > 0) {
+        await api.patch(`/v1/sites/${siteId}/maintenance/events/${eventId}`, metadata);
+      }
+      if (stationsToAdd.length > 0) {
+        await api.post(`/v1/sites/${siteId}/maintenance/events/${eventId}/add-stations`, {
+          stationIds: stationsToAdd,
+        });
+      }
+      if (stationsToRemove.length > 0) {
+        await api.post(`/v1/sites/${siteId}/maintenance/events/${eventId}/remove-stations`, {
+          stationIds: stationsToRemove,
+        });
+      }
+    },
     onSuccess: () => {
-      toast({ title: t('maintenance.stationRemovedToast'), variant: 'success' });
+      toast({ title: t('maintenance.updatedToast'), variant: 'success' });
+      setEditingEventId(null);
       void queryClient.invalidateQueries({ queryKey: ['maintenance'] });
     },
     onError: (err: unknown) => {
       toast({
-        title: t('maintenance.stationRemoveFailed'),
+        title: t('maintenance.updateFailed'),
         description: getErrorMessage(err, t),
         variant: 'destructive',
       });
@@ -335,6 +320,22 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
           {status?.current != null ? (
             (() => {
               const cur = status.current;
+              if (editingEventId === cur.id) {
+                return (
+                  <EditEventForm
+                    event={cur}
+                    siteId={siteId}
+                    timezone={timezone}
+                    isPending={editEventMutation.isPending}
+                    onCancel={() => {
+                      setEditingEventId(null);
+                    }}
+                    onSave={(payload) => {
+                      editEventMutation.mutate({ eventId: cur.id, ...payload });
+                    }}
+                  />
+                );
+              }
               const stationCount = cur.affectedStationIds?.length ?? 0;
               const isAllStations = cur.affectedStationIds == null || stationCount === 0;
               return (
@@ -342,25 +343,36 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1">
                       <p className="font-semibold text-sm">{t('maintenance.activeNow')}</p>
-                      <p className="text-xs">
+                      <p className="text-sm">
                         {t('maintenance.endsAt', {
                           time: formatDateTime(cur.plannedEndAt, timezone),
                         })}
                       </p>
                     </div>
                     {canWrite && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setConfirmCancelId(cur.id);
-                        }}
-                      >
-                        {t('maintenance.endNow')}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingEventId(cur.id);
+                          }}
+                        >
+                          {t('common.edit')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setConfirmCancelId(cur.id);
+                          }}
+                        >
+                          {t('maintenance.endNow')}
+                        </Button>
+                      </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="font-medium">{t('maintenance.scopeLabel')}:</span>{' '}
                       {isAllStations
@@ -389,24 +401,16 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                     )}
                   </div>
                   {cur.reason != null && cur.reason.length > 0 && (
-                    <p className="text-xs">
+                    <p className="text-sm">
                       <span className="font-medium">{t('maintenance.reason')}:</span> {cur.reason}
                     </p>
                   )}
                   {cur.customMessage != null && cur.customMessage.length > 0 && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2">
                       {cur.customMessage}
                     </p>
                   )}
-                  <EventStationList
-                    event={cur}
-                    stations={resolveEventStations(cur)}
-                    canWrite={canWrite}
-                    removePending={removeStationsMutation.isPending}
-                    onRemove={(stationId) => {
-                      removeStationsMutation.mutate({ eventId: cur.id, stationIds: [stationId] });
-                    }}
-                  />
+                  <EventStationList event={cur} stations={resolveEventStations(cur)} />
                 </div>
               );
             })()
@@ -419,6 +423,24 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
               <p className="text-sm font-medium">{t('maintenance.upcoming')}</p>
               <ul className="space-y-2">
                 {status?.upcoming.map((u) => {
+                  if (editingEventId === u.id) {
+                    return (
+                      <li key={u.id} className="rounded-md border p-3">
+                        <EditEventForm
+                          event={u}
+                          siteId={siteId}
+                          timezone={timezone}
+                          isPending={editEventMutation.isPending}
+                          onCancel={() => {
+                            setEditingEventId(null);
+                          }}
+                          onSave={(payload) => {
+                            editEventMutation.mutate({ eventId: u.id, ...payload });
+                          }}
+                        />
+                      </li>
+                    );
+                  }
                   const stationCount = u.affectedStationIds?.length ?? 0;
                   const isAllStations = u.affectedStationIds == null || stationCount === 0;
                   const durationMinutes = Math.max(
@@ -441,18 +463,29 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                           </div>
                         </div>
                         {canWrite && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setConfirmCancelId(u.id);
-                            }}
-                          >
-                            {t('common.cancel')}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingEventId(u.id);
+                              }}
+                            >
+                              {t('common.edit')}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setConfirmCancelId(u.id);
+                              }}
+                            >
+                              {t('common.cancel')}
+                            </Button>
+                          </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                         <div>
                           <span className="font-medium">{t('maintenance.scopeLabel')}:</span>{' '}
                           {isAllStations
@@ -473,27 +506,16 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                         </div>
                       </div>
                       {u.reason != null && u.reason.length > 0 && (
-                        <p className="text-xs">
+                        <p className="text-sm">
                           <span className="font-medium">{t('maintenance.reason')}:</span> {u.reason}
                         </p>
                       )}
                       {u.customMessage != null && u.customMessage.length > 0 && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">
+                        <p className="text-sm text-muted-foreground line-clamp-2">
                           {u.customMessage}
                         </p>
                       )}
-                      <EventStationList
-                        event={u}
-                        stations={resolveEventStations(u)}
-                        canWrite={canWrite}
-                        removePending={removeStationsMutation.isPending}
-                        onRemove={(stationId) => {
-                          removeStationsMutation.mutate({
-                            eventId: u.id,
-                            stationIds: [stationId],
-                          });
-                        }}
-                      />
+                      <EventStationList event={u} stations={resolveEventStations(u)} />
                     </li>
                   );
                 })}
@@ -539,31 +561,44 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                   </div>
                 </div>
 
-                {mode === 'one_off' && (
+                {mode === 'one_off' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="m-starts">{t('maintenance.start')}</Label>
+                      <Input
+                        id="m-starts"
+                        type="datetime-local"
+                        value={startsAt}
+                        onChange={(e) => {
+                          setStartsAt(e.target.value);
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="m-ends">{t('maintenance.end')}</Label>
+                      <Input
+                        id="m-ends"
+                        type="datetime-local"
+                        value={endsAt}
+                        onChange={(e) => {
+                          setEndsAt(e.target.value);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
                   <div className="space-y-2">
-                    <Label htmlFor="m-starts">{t('maintenance.start')}</Label>
+                    <Label htmlFor="m-ends">{t('maintenance.end')}</Label>
                     <Input
-                      id="m-starts"
+                      id="m-ends"
                       type="datetime-local"
-                      value={startsAt}
+                      value={endsAt}
                       onChange={(e) => {
-                        setStartsAt(e.target.value);
+                        setEndsAt(e.target.value);
                       }}
                     />
                   </div>
                 )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="m-ends">{t('maintenance.end')}</Label>
-                  <Input
-                    id="m-ends"
-                    type="datetime-local"
-                    value={endsAt}
-                    onChange={(e) => {
-                      setEndsAt(e.target.value);
-                    }}
-                  />
-                </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="m-policy">{t('maintenance.sessionPolicy')}</Label>
@@ -606,165 +641,28 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label>{t('maintenance.affectedStations')}</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {t('maintenance.selectedCount', {
-                      count: effectiveSelected.size,
-                      total: previewStations.length,
-                    })}
-                  </span>
-                </div>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selectAllStations}
-                    onChange={(e) => {
-                      setSelectAllStations(e.target.checked);
-                      if (e.target.checked) setSelectedStationIds(new Set());
-                    }}
-                  />
-                  <span className="font-medium">{t('maintenance.allStations')}</span>
-                </label>
-
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-                  <Input
-                    placeholder={t('maintenance.stationSearchPlaceholder')}
-                    value={stationSearch}
-                    onChange={(e) => {
-                      setStationSearch(e.target.value);
-                    }}
-                    aria-label={t('maintenance.stationSearchPlaceholder')}
-                  />
-                  <Select
-                    className="h-9 w-auto"
-                    aria-label={t('maintenance.stationFilterLabel')}
-                    value={stationFilter}
-                    onChange={(e) => {
-                      setStationFilter(e.target.value as StationFilter);
-                    }}
-                  >
-                    <option value="all">{t('common.all')}</option>
-                    <option value="charging">{t('maintenance.filterCharging')}</option>
-                    <option value="reserved">{t('maintenance.filterReserved')}</option>
-                    <option value="idle">{t('maintenance.filterIdle')}</option>
-                    <option value="offline">{t('maintenance.filterOffline')}</option>
-                  </Select>
-                </div>
-
-                <div className="rounded-md border">
-                  <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      disabled={selectAllStations || visibleIds.length === 0}
-                      onChange={(e) => {
-                        toggleVisible(e.target.checked);
-                      }}
-                      aria-label={t('maintenance.toggleVisible')}
-                    />
-                    <span className="text-muted-foreground">
-                      {t('maintenance.toggleVisibleHint', {
-                        visible: visibleIds.length,
-                        selected: visibleSelectedCount,
-                      })}
-                    </span>
-                  </div>
-                  <div className="h-72 overflow-y-auto">
-                    {!previewRangeValid ? (
-                      <p className="p-3 text-xs text-muted-foreground">
-                        {t('maintenance.previewRangeInvalid')}
-                      </p>
-                    ) : previewLoading ? (
-                      <p className="p-3 text-xs text-muted-foreground">
-                        {t('maintenance.previewLoading')}
-                      </p>
-                    ) : visibleStations.length === 0 ? (
-                      <p className="p-3 text-xs text-muted-foreground">
-                        {t('maintenance.previewEmpty')}
-                      </p>
-                    ) : (
-                      <table className="w-full text-sm">
-                        <tbody>
-                          {visibleStations.map((s) => {
-                            const isChecked = effectiveSelected.has(s.id);
-                            return (
-                              <tr key={s.id} className="border-b last:border-b-0">
-                                <td className="p-2 align-top">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    disabled={selectAllStations}
-                                    onChange={(e) => {
-                                      setSelectedStationIds((prev) => {
-                                        const next = new Set(prev);
-                                        if (e.target.checked) next.add(s.id);
-                                        else next.delete(s.id);
-                                        return next;
-                                      });
-                                    }}
-                                    aria-label={s.stationId}
-                                  />
-                                </td>
-                                <td className="p-2 align-top">
-                                  <div className="font-medium">{s.stationId}</div>
-                                  {s.model != null && (
-                                    <div className="text-xs text-muted-foreground">{s.model}</div>
-                                  )}
-                                </td>
-                                <td className="p-2 align-top text-right">
-                                  <div className="flex flex-wrap justify-end gap-1">
-                                    {s.isOnline ? (
-                                      <Badge variant="success">{t('status.online')}</Badge>
-                                    ) : (
-                                      <Badge variant="destructive">{t('status.offline')}</Badge>
-                                    )}
-                                    {s.hasActiveSession && (
-                                      <Badge variant="warning">
-                                        {t('maintenance.chargingBadge')}
-                                      </Badge>
-                                    )}
-                                    {s.upcomingReservationCount > 0 && (
-                                      <Badge variant="outline">
-                                        {t('maintenance.reservationsBadge', {
-                                          count: s.upcomingReservationCount,
-                                        })}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-
-                {previewRangeValid && requiresAck && (
-                  <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs space-y-1">
-                    <p>
-                      {t('maintenance.previewSummary', {
-                        sessions: totalSessions,
-                        reservations: totalReservations,
-                      })}
-                    </p>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={acknowledged}
-                        onChange={(e) => {
-                          setAcknowledged(e.target.checked);
-                        }}
-                      />
-                      {t('maintenance.acknowledge')}
-                    </label>
-                  </div>
-                )}
-              </div>
+              <MaintenanceStationSelector
+                previewStations={previewStations}
+                previewLoading={previewLoading}
+                previewRangeValid={previewRangeValid}
+                selectAllStations={selectAllStations}
+                onSelectAllChange={setSelectAllStations}
+                selectedStationIds={selectedStationIds}
+                onSelectedChange={setSelectedStationIds}
+                effectiveSelected={effectiveSelected}
+                stationSearch={stationSearch}
+                onSearchChange={setStationSearch}
+                stationFilter={stationFilter}
+                onFilterChange={setStationFilter}
+                inputIdPrefix="create-station"
+                impactPreview={{
+                  totalSessions,
+                  totalReservations,
+                  acknowledged,
+                  onAcknowledgeChange: setAcknowledged,
+                  requiresAck,
+                }}
+              />
             </div>
 
             <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
@@ -875,18 +773,9 @@ export function SiteMaintenanceTab({ siteId, timezone }: Props): React.JSX.Eleme
 interface EventStationListProps {
   event: MaintenanceEvent;
   stations: Array<{ id: string; stationId: string }>;
-  canWrite: boolean;
-  removePending: boolean;
-  onRemove: (stationId: string) => void;
 }
 
-function EventStationList({
-  event,
-  stations,
-  canWrite,
-  removePending,
-  onRemove,
-}: EventStationListProps): React.JSX.Element | null {
+function EventStationList({ stations }: EventStationListProps): React.JSX.Element | null {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (stations.length === 0) return null;
@@ -894,7 +783,7 @@ function EventStationList({
     <div className="space-y-1">
       <button
         type="button"
-        className="text-xs font-medium text-primary hover:underline"
+        className="text-sm font-medium text-primary hover:underline"
         onClick={() => {
           setExpanded((v) => !v);
         }}
@@ -904,33 +793,619 @@ function EventStationList({
           : t('maintenance.showStations', { count: stations.length })}
       </button>
       {expanded && (
-        <>
-          <ul className="max-h-40 overflow-y-auto rounded border bg-muted/30 text-xs divide-y">
-            {stations.map((s) => (
-              <li key={s.id} className="flex items-center justify-between px-2 py-1.5">
-                <span className="font-medium">{s.stationId}</span>
-                {canWrite && stations.length > 1 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={removePending}
-                    onClick={() => {
-                      onRemove(s.id);
+        <ul className="max-h-40 overflow-y-auto rounded border bg-muted/30 text-sm divide-y">
+          {stations.map((s) => (
+            <li key={s.id} className="px-2 py-1.5 font-medium">
+              {s.stationId}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface EditEventFormProps {
+  event: MaintenanceEvent;
+  siteId: string;
+  timezone: string;
+  isPending: boolean;
+  onCancel: () => void;
+  onSave: (payload: {
+    metadata: Record<string, unknown>;
+    stationsToAdd: string[];
+    stationsToRemove: string[];
+  }) => void;
+}
+
+function EditEventForm({
+  event,
+  siteId,
+  timezone,
+  isPending,
+  onCancel,
+  onSave,
+}: EditEventFormProps): React.JSX.Element {
+  const { t } = useTranslation();
+  const isActive = event.status === 'active';
+
+  const [reason, setReason] = useState(event.reason ?? '');
+  const [customMessage, setCustomMessage] = useState(event.customMessage ?? '');
+  const [endsAt, setEndsAt] = useState(() => toDatetimeLocal(new Date(event.plannedEndAt)));
+  const [startsAt, setStartsAt] = useState(() => toDatetimeLocal(new Date(event.plannedStartAt)));
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [stationSearch, setStationSearch] = useState('');
+  const [stationFilter, setStationFilter] = useState<StationFilter>('all');
+  const [selectAllStations, setSelectAllStations] = useState(
+    event.affectedStationIds == null || event.affectedStationIds.length === 0,
+  );
+  const [selectedStationIds, setSelectedStationIds] = useState<Set<string>>(
+    () => new Set(event.affectedStationIds ?? []),
+  );
+
+  const start = isActive ? new Date(event.plannedStartAt) : new Date(startsAt);
+  const end = new Date(endsAt);
+  const rangeValid =
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime()) &&
+    end.getTime() > start.getTime();
+
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  const { data: previewData, isLoading: previewLoading } = useQuery({
+    queryKey: ['maintenance', 'station-preview', siteId, startIso, endIso],
+    queryFn: () =>
+      api.get<StationPreviewRow[]>(
+        `/v1/sites/${siteId}/maintenance/station-preview?startAt=${encodeURIComponent(startIso)}&endAt=${encodeURIComponent(endIso)}`,
+      ),
+    enabled: rangeValid,
+  });
+  const previewStations: StationPreviewRow[] = previewData ?? [];
+
+  const effectiveSelected = selectAllStations
+    ? new Set(previewStations.map((s) => s.id))
+    : selectedStationIds;
+
+  // Original affected set, materialized when the event was created with
+  // "all stations" scope. Used to compute the add/remove diff on save.
+  const originalAffectedIds = useMemo(() => {
+    if (event.affectedStationIds != null && event.affectedStationIds.length > 0) {
+      return new Set(event.affectedStationIds);
+    }
+    return new Set(previewStations.map((s) => s.id));
+  }, [event.affectedStationIds, previewStations]);
+
+  // Newly checked stations contribute to impact (sessions stopped /
+  // reservations cancelled at save time). Already-affected stations had
+  // their impact applied at activation, so don't double-count.
+  const newlyAdded = useMemo(() => {
+    const next = new Set<string>();
+    for (const id of effectiveSelected) {
+      if (!originalAffectedIds.has(id)) next.add(id);
+    }
+    return next;
+  }, [effectiveSelected, originalAffectedIds]);
+
+  const newImpactStations = previewStations.filter((s) => newlyAdded.has(s.id));
+  const totalSessions = newImpactStations.filter((s) => s.hasActiveSession).length;
+  const totalReservations = newImpactStations.reduce(
+    (sum, s) => sum + s.upcomingReservationCount,
+    0,
+  );
+  const requiresAck = totalSessions > 0 || totalReservations > 0;
+
+  function buildPayload(): {
+    metadata: Record<string, unknown>;
+    stationsToAdd: string[];
+    stationsToRemove: string[];
+  } {
+    const metadata: Record<string, unknown> = {};
+    const trimmedReason = reason.trim();
+    const trimmedMessage = customMessage.trim();
+    if ((event.reason ?? '') !== trimmedReason) {
+      metadata['reason'] = trimmedReason.length > 0 ? trimmedReason : null;
+    }
+    if ((event.customMessage ?? '') !== trimmedMessage) {
+      metadata['customMessage'] = trimmedMessage.length > 0 ? trimmedMessage : null;
+    }
+    if (new Date(endsAt).toISOString() !== new Date(event.plannedEndAt).toISOString()) {
+      metadata['plannedEndAt'] = new Date(endsAt).toISOString();
+    }
+    if (!isActive) {
+      if (new Date(startsAt).toISOString() !== new Date(event.plannedStartAt).toISOString()) {
+        metadata['plannedStartAt'] = new Date(startsAt).toISOString();
+      }
+    }
+    const stationsToAdd: string[] = [];
+    const stationsToRemove: string[] = [];
+    for (const id of effectiveSelected) {
+      if (!originalAffectedIds.has(id)) stationsToAdd.push(id);
+    }
+    for (const id of originalAffectedIds) {
+      if (!effectiveSelected.has(id)) stationsToRemove.push(id);
+    }
+    return { metadata, stationsToAdd, stationsToRemove };
+  }
+
+  const stationsRemainingAfter = effectiveSelected.size;
+  const stationsRemoved =
+    originalAffectedIds.size -
+    [...originalAffectedIds].filter((id) => effectiveSelected.has(id)).length;
+  const removesAllStations =
+    originalAffectedIds.size > 0 && stationsRemainingAfter === 0 && stationsRemoved > 0;
+
+  const saveDisabled =
+    isPending ||
+    !rangeValid ||
+    effectiveSelected.size === 0 ||
+    (requiresAck && !acknowledged) ||
+    removesAllStations;
+
+  return (
+    <div className="space-y-4 rounded-md border border-primary/40 bg-primary/5 p-3">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-sm">
+          {isActive ? t('maintenance.editingActive') : t('maintenance.editingScheduled')}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t('maintenance.editTimezoneHint', { timezone })}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          {isActive ? (
+            <div className="space-y-2">
+              <Label htmlFor="edit-end">{t('maintenance.endsAtLabel')}</Label>
+              <Input
+                id="edit-end"
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => {
+                  setEndsAt(e.target.value);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-start">{t('maintenance.start')}</Label>
+                <Input
+                  id="edit-start"
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={(e) => {
+                    setStartsAt(e.target.value);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-end">{t('maintenance.endsAtLabel')}</Label>
+                <Input
+                  id="edit-end"
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(e) => {
+                    setEndsAt(e.target.value);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-policy">{t('maintenance.sessionPolicy')}</Label>
+            <Select
+              id="edit-policy"
+              value={event.activeSessionPolicy}
+              disabled
+              onChange={() => {
+                /* read-only after creation */
+              }}
+            >
+              <option value="ignore">{t('maintenance.policyIgnore')}</option>
+              <option value="stop_graceful">{t('maintenance.policyStop')}</option>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t('maintenance.reservationsAlwaysCancelled')}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-message">{t('maintenance.customMessage')}</Label>
+            <Textarea
+              id="edit-message"
+              value={customMessage}
+              onChange={(e) => {
+                setCustomMessage(e.target.value);
+              }}
+              placeholder={t('maintenance.customMessagePlaceholder')}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-reason">{t('maintenance.reason')}</Label>
+            <Input
+              id="edit-reason"
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+              }}
+              placeholder={t('maintenance.reasonPlaceholder')}
+            />
+          </div>
+        </div>
+
+        <MaintenanceStationSelector
+          previewStations={previewStations}
+          previewLoading={previewLoading}
+          previewRangeValid={rangeValid}
+          selectAllStations={selectAllStations}
+          onSelectAllChange={setSelectAllStations}
+          selectedStationIds={selectedStationIds}
+          onSelectedChange={setSelectedStationIds}
+          effectiveSelected={effectiveSelected}
+          stationSearch={stationSearch}
+          onSearchChange={setStationSearch}
+          stationFilter={stationFilter}
+          onFilterChange={setStationFilter}
+          inputIdPrefix={`edit-station-${event.id}`}
+          impactPreview={{
+            totalSessions,
+            totalReservations,
+            acknowledged,
+            onAcknowledgeChange: setAcknowledged,
+            requiresAck,
+          }}
+        />
+      </div>
+
+      {removesAllStations && (
+        <p className="text-xs text-destructive">{t('maintenance.removesAllStationsHint')}</p>
+      )}
+
+      <div className="flex justify-end gap-2 pt-2 border-t">
+        <Button variant="outline" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button
+          disabled={saveDisabled}
+          onClick={() => {
+            const payload = buildPayload();
+            if (
+              Object.keys(payload.metadata).length === 0 &&
+              payload.stationsToAdd.length === 0 &&
+              payload.stationsToRemove.length === 0
+            ) {
+              onCancel();
+              return;
+            }
+            onSave(payload);
+          }}
+        >
+          {isPending ? t('common.loading') : t('common.save')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface MaintenanceStationFilterToolbarProps {
+  search: string;
+  onSearchChange: (v: string) => void;
+  filter: StationFilter;
+  onFilterChange: (v: StationFilter) => void;
+  searchPlaceholder?: string;
+}
+
+function MaintenanceStationFilterToolbar({
+  search,
+  onSearchChange,
+  filter,
+  onFilterChange,
+  searchPlaceholder,
+}: MaintenanceStationFilterToolbarProps): React.JSX.Element {
+  const { t } = useTranslation();
+  const placeholder = searchPlaceholder ?? t('maintenance.searchStations');
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+      <Input
+        placeholder={placeholder}
+        value={search}
+        onChange={(e) => {
+          onSearchChange(e.target.value);
+        }}
+        aria-label={placeholder}
+      />
+      <Select
+        className="h-9 w-auto"
+        aria-label={t('maintenance.stationFilterLabel')}
+        value={filter}
+        onChange={(e) => {
+          onFilterChange(e.target.value as StationFilter);
+        }}
+      >
+        <option value="all">{t('common.all')}</option>
+        <option value="charging">{t('maintenance.filterCharging')}</option>
+        <option value="reserved">{t('maintenance.filterReserved')}</option>
+        <option value="idle">{t('maintenance.filterIdle')}</option>
+        <option value="offline">{t('maintenance.filterOffline')}</option>
+      </Select>
+    </div>
+  );
+}
+
+interface MaintenanceStationStatusBadgesProps {
+  isOnline?: boolean | undefined;
+  hasActiveSession?: boolean | undefined;
+  upcomingReservationCount?: number | undefined;
+}
+
+function MaintenanceStationStatusBadges({
+  isOnline,
+  hasActiveSession,
+  upcomingReservationCount,
+}: MaintenanceStationStatusBadgesProps): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap justify-end gap-1">
+      {isOnline === true && <Badge variant="success">{t('status.online')}</Badge>}
+      {isOnline === false && <Badge variant="destructive">{t('status.offline')}</Badge>}
+      {hasActiveSession === true && (
+        <Badge variant="warning">{t('maintenance.chargingBadge')}</Badge>
+      )}
+      {upcomingReservationCount != null && upcomingReservationCount > 0 && (
+        <Badge variant="outline">
+          {t('maintenance.reservationsBadge', { count: upcomingReservationCount })}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+interface MaintenanceStationRowProps {
+  id: string;
+  stationId: string;
+  model: string | null;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: (checked: boolean) => void;
+  inputId: string;
+  isOnline?: boolean | undefined;
+  hasActiveSession?: boolean | undefined;
+  upcomingReservationCount?: number | undefined;
+}
+
+function MaintenanceStationRow({
+  stationId,
+  model,
+  checked,
+  disabled,
+  onToggle,
+  inputId,
+  isOnline,
+  hasActiveSession,
+  upcomingReservationCount,
+}: MaintenanceStationRowProps): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2">
+      <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+        <input
+          type="checkbox"
+          id={inputId}
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => {
+            onToggle(e.target.checked);
+          }}
+        />
+        <div className="min-w-0">
+          <div className="font-medium truncate">{stationId}</div>
+          {model != null && <div className="text-xs text-muted-foreground truncate">{model}</div>}
+        </div>
+      </label>
+      <MaintenanceStationStatusBadges
+        isOnline={isOnline}
+        hasActiveSession={hasActiveSession}
+        upcomingReservationCount={upcomingReservationCount}
+      />
+    </div>
+  );
+}
+
+interface MaintenanceStationSelectorProps {
+  previewStations: StationPreviewRow[];
+  previewLoading: boolean;
+  previewRangeValid: boolean;
+  selectAllStations: boolean;
+  onSelectAllChange: (v: boolean) => void;
+  selectedStationIds: Set<string>;
+  onSelectedChange: (next: Set<string>) => void;
+  effectiveSelected: Set<string>;
+  stationSearch: string;
+  onSearchChange: (v: string) => void;
+  stationFilter: StationFilter;
+  onFilterChange: (v: StationFilter) => void;
+  inputIdPrefix: string;
+  impactPreview?: {
+    totalSessions: number;
+    totalReservations: number;
+    acknowledged: boolean;
+    onAcknowledgeChange: (v: boolean) => void;
+    requiresAck: boolean;
+  };
+}
+
+function MaintenanceStationSelector({
+  previewStations,
+  previewLoading,
+  previewRangeValid,
+  selectAllStations,
+  onSelectAllChange,
+  selectedStationIds,
+  onSelectedChange,
+  effectiveSelected,
+  stationSearch,
+  onSearchChange,
+  stationFilter,
+  onFilterChange,
+  inputIdPrefix,
+  impactPreview,
+}: MaintenanceStationSelectorProps): React.JSX.Element {
+  const { t } = useTranslation();
+
+  const visibleStations = useMemo(() => {
+    const needle = stationSearch.trim().toLowerCase();
+    return previewStations.filter((s) => {
+      if (needle.length > 0) {
+        const haystack = `${s.stationId} ${s.model ?? ''}`.toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      switch (stationFilter) {
+        case 'charging':
+          return s.hasActiveSession;
+        case 'reserved':
+          return s.upcomingReservationCount > 0;
+        case 'idle':
+          return !s.hasActiveSession && s.upcomingReservationCount === 0 && s.isOnline;
+        case 'offline':
+          return !s.isOnline;
+        default:
+          return true;
+      }
+    });
+  }, [previewStations, stationSearch, stationFilter]);
+
+  const visibleIds = visibleStations.map((s) => s.id);
+  const visibleSelectedCount = visibleIds.filter((id) => effectiveSelected.has(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
+
+  function toggleVisible(checked: boolean): void {
+    if (selectAllStations) onSelectAllChange(false);
+    const next = new Set(selectedStationIds);
+    if (checked) {
+      if (selectAllStations) {
+        for (const s of previewStations) next.add(s.id);
+      }
+      for (const id of visibleIds) next.add(id);
+    } else {
+      for (const id of visibleIds) next.delete(id);
+    }
+    onSelectedChange(next);
+  }
+
+  function toggleOne(id: string, checked: boolean): void {
+    if (selectAllStations) onSelectAllChange(false);
+    const next = new Set(selectAllStations ? previewStations.map((s) => s.id) : selectedStationIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onSelectedChange(next);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label>{t('maintenance.affectedStations')}</Label>
+        <span className="text-xs text-muted-foreground">
+          {t('maintenance.selectedCount', {
+            count: effectiveSelected.size,
+            total: previewStations.length,
+          })}
+        </span>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={selectAllStations}
+          onChange={(e) => {
+            onSelectAllChange(e.target.checked);
+            if (e.target.checked) onSelectedChange(new Set());
+          }}
+        />
+        <span className="font-medium">{t('maintenance.allStations')}</span>
+      </label>
+
+      <MaintenanceStationFilterToolbar
+        search={stationSearch}
+        onSearchChange={onSearchChange}
+        filter={stationFilter}
+        onFilterChange={onFilterChange}
+        searchPlaceholder={t('maintenance.stationSearchPlaceholder')}
+      />
+
+      <div className="rounded-md border">
+        <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-xs">
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            disabled={selectAllStations || visibleIds.length === 0}
+            onChange={(e) => {
+              toggleVisible(e.target.checked);
+            }}
+            aria-label={t('maintenance.toggleVisible')}
+          />
+          <span className="text-muted-foreground">
+            {t('maintenance.toggleVisibleHint', {
+              visible: visibleIds.length,
+              selected: visibleSelectedCount,
+            })}
+          </span>
+        </div>
+        <div className="h-72 overflow-y-auto">
+          {!previewRangeValid ? (
+            <p className="p-3 text-sm text-muted-foreground">
+              {t('maintenance.previewRangeInvalid')}
+            </p>
+          ) : previewLoading ? (
+            <p className="p-3 text-sm text-muted-foreground">{t('maintenance.previewLoading')}</p>
+          ) : visibleStations.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">{t('maintenance.previewEmpty')}</p>
+          ) : (
+            <ul className="text-sm divide-y">
+              {visibleStations.map((s) => (
+                <li key={s.id}>
+                  <MaintenanceStationRow
+                    id={s.id}
+                    stationId={s.stationId}
+                    model={s.model}
+                    checked={effectiveSelected.has(s.id)}
+                    disabled={selectAllStations}
+                    inputId={`${inputIdPrefix}-${s.id}`}
+                    onToggle={(checked) => {
+                      toggleOne(s.id, checked);
                     }}
-                  >
-                    {t('maintenance.removeFromEvent')}
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {stations.length === 1 && (
-            <p className="text-xs text-muted-foreground">{t('maintenance.lastStationHint')}</p>
+                    isOnline={s.isOnline}
+                    hasActiveSession={s.hasActiveSession}
+                    upcomingReservationCount={s.upcomingReservationCount}
+                  />
+                </li>
+              ))}
+            </ul>
           )}
-          {event.status === 'active' && stations.length > 1 && (
-            <p className="text-xs text-muted-foreground">{t('maintenance.removeActiveHint')}</p>
-          )}
-        </>
+        </div>
+      </div>
+
+      {impactPreview != null && previewRangeValid && impactPreview.requiresAck && (
+        <div className="rounded-md border border-warning/40 bg-warning/10 p-2 text-sm space-y-1">
+          <p>
+            {t('maintenance.previewSummary', {
+              sessions: impactPreview.totalSessions,
+              reservations: impactPreview.totalReservations,
+            })}
+          </p>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={impactPreview.acknowledged}
+              onChange={(e) => {
+                impactPreview.onAcknowledgeChange(e.target.checked);
+              }}
+            />
+            {t('maintenance.acknowledge')}
+          </label>
+        </div>
       )}
     </div>
   );

@@ -52,8 +52,10 @@ describe('csvEscape', () => {
       expect(csvEscape('\tevil')).toBe("'\tevil");
     });
 
-    it('prefixes leading CR with a single quote', () => {
-      expect(csvEscape('\rmalicious')).toBe("'\rmalicious");
+    it('prefixes leading CR with a single quote and wraps in CSV quotes', () => {
+      // Output is also CSV-quoted because the value contains a bare CR after
+      // the formula-prefix step (RFC 4180 quoting rule).
+      expect(csvEscape('\rmalicious')).toBe('"\'\rmalicious"');
     });
 
     it('does not prefix interior formula chars', () => {
@@ -71,7 +73,11 @@ describe('csvEscape', () => {
 });
 
 describe('buildCsv', () => {
-  it('joins header and data rows with newlines', () => {
+  // UTF-8 BOM character emitted at the start of every output so Excel for
+  // Windows detects the encoding. CRLF line terminator per RFC 4180.
+  const BOM = '﻿';
+
+  it('joins header and data rows with BOM + CRLF', () => {
     const out = buildCsv(
       ['a', 'b'],
       [
@@ -79,15 +85,15 @@ describe('buildCsv', () => {
         ['3', '4'],
       ],
     );
-    expect(out).toBe('a,b\n1,2\n3,4');
+    expect(out).toBe(`${BOM}a,b\r\n1,2\r\n3,4`);
   });
 
   it('escapes every cell through csvEscape', () => {
     const out = buildCsv(['name', 'value'], [['=danger', 'safe']]);
-    expect(out).toBe("name,value\n'=danger,safe");
+    expect(out).toBe(`${BOM}name,value\r\n'=danger,safe`);
   });
 
-  it('returns header-only output when rows is empty', () => {
-    expect(buildCsv(['a'], [])).toBe('a');
+  it('returns BOM + header-only output when rows is empty', () => {
+    expect(buildCsv(['a'], [])).toBe(`${BOM}a`);
   });
 });
