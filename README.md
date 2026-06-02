@@ -14,6 +14,15 @@
   <img src="https://img.shields.io/badge/OCPI-2.2.1%20%7C%202.3.0-4ade80.svg" alt="OCPI" />
 </p>
 
+<p align="center">
+  <strong>English</strong> ·
+  <a href="README.de.md">Deutsch</a> ·
+  <a href="README.es.md">Español</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.zh.md">简体中文</a> ·
+  <a href="README.zh-TW.md">繁體中文</a>
+</p>
+
 An OCPP 1.6 and 2.1 compliant Charging Station Management System for managing EV charging infrastructure. Handles real-time WebSocket communication with charging stations, OCPI 2.2.1/2.3.0 roaming, ISO 15118 Plug and Charge, a REST API for operators, and two React frontends for operators and drivers.
 
 EVtivity integrates AI across the operator experience. A chatbot assistant answers natural-language questions about stations, sessions, revenue, and operations by calling API endpoints as tools. A support AI assistant drafts replies for customer support cases by gathering full case context. Both support multiple LLM providers (Anthropic, OpenAI, Gemini) with configurable parameters at system and per-user levels, respond in the operator's preferred language, and enforce security guardrails that prevent leaking sensitive data.
@@ -62,28 +71,29 @@ graph TB
 
 ### OCPP Compliance
 
-| Feature             | Description                                                                |
-| ------------------- | -------------------------------------------------------------------------- |
-| Protocol Support    | OCPP 1.6 and 2.1 with simultaneous multi-version operation                 |
-| Security Profiles   | SP0 through SP3, including mTLS client certificate authentication          |
-| Remote Control      | Start/stop sessions, reset, unlock connector, set charging profile         |
-| Local Authorization | Per-station authorization lists with operator-managed push sync            |
-| Reservations        | EVSE-level reservation with expiry monitoring and driver notification      |
-| Display Messages    | Push pricing info and custom text to station screens via SetDisplayMessage |
-| Plug and Charge     | ISO 15118 PKI with Hubject OPCP and manual certificate provider support    |
+| Feature             | Description                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Protocol Support    | OCPP 1.6 and 2.1 with simultaneous multi-version operation                                                                                                                |
+| Security Profiles   | SP0 through SP3, including mTLS client certificate authentication                                                                                                         |
+| Remote Control      | Start/stop sessions, reset, unlock connector, set charging profile                                                                                                        |
+| Local Authorization | Per-station authorization lists with operator-managed push sync                                                                                                           |
+| Reservations        | EVSE-level reservation with expiry monitoring and driver notification                                                                                                     |
+| Station Messages    | Eight state-specific templates (available, occupied, reserved, charging, suspended, discharging, faulted, unavailable) rendered to station displays via SetDisplayMessage |
+| Plug and Charge     | ISO 15118 PKI with Hubject OPCP and manual certificate provider support                                                                                                   |
 
 ### Station Management
 
-| Feature              | Description                                                                      |
-| -------------------- | -------------------------------------------------------------------------------- |
-| Multi-site Hierarchy | Sites, stations, EVSEs, and connectors with per-operator site access control     |
-| Real-time Monitoring | Live connector status, session activity, and meter values via server-sent events |
-| Station Images       | Upload, tag, and publish images per station with driver-visible flag             |
-| Firmware Management  | Network-wide firmware campaigns with per-station scheduling and status tracking  |
-| Configuration        | Configuration templates with station drift detection and bulk apply              |
-| Station Metrics      | NEVI uptime compliance, ChargeX KPIs, utilization rate, and fault rate reporting |
-| Popular Times        | Session frequency heatmap by day and hour per station                            |
-| Remote Diagnostics   | Trigger status notifications, retrieve diagnostics, clear fault states           |
+| Feature              | Description                                                                                                                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Multi-site Hierarchy | Sites, stations, EVSEs, and connectors with per-operator site access control                                                                                                                                               |
+| Real-time Monitoring | Live connector status, session activity, and meter values via server-sent events                                                                                                                                           |
+| Station Images       | Upload, tag, and publish images per station with driver-visible flag                                                                                                                                                       |
+| Firmware Management  | Network-wide firmware campaigns with per-station scheduling and status tracking                                                                                                                                            |
+| Configuration        | Configuration templates with station drift detection and bulk apply                                                                                                                                                        |
+| Station Metrics      | NEVI uptime compliance, ChargeX KPIs, utilization rate, and fault rate reporting                                                                                                                                           |
+| Popular Times        | Session frequency heatmap by day and hour per station                                                                                                                                                                      |
+| Remote Diagnostics   | Trigger status notifications, retrieve diagnostics, clear fault states                                                                                                                                                     |
+| Per-site Maintenance | Schedule one-off or immediate maintenance windows that take stations offline, cancel overlapping reservations, optionally stop active sessions with driver notification, and surface a Maintenance badge on the sites list |
 
 ### Smart Charging
 
@@ -196,17 +206,18 @@ graph TB
 
 ### Deployment and Operations
 
-| Feature            | Description                                                                       |
-| ------------------ | --------------------------------------------------------------------------------- |
-| Deployment Options | Docker Compose, Kubernetes Helm chart (Istio/Envoy Gateway), and AWS CDK (ECS)    |
-| Horizontal Scaling | Stateless services with Redis-backed OCPP connection registry across pods         |
-| Auto-scaling       | Kubernetes HPA for API and OCPP with WebSocket-aware scale-down stabilization     |
-| Rate Limiting      | Configurable global and per-endpoint rate limiting with separate auth rate limits |
-| Observability      | Prometheus metrics, Grafana dashboards, Loki log aggregation                      |
-| Multi-language UI  | 6 languages: English (US/UK), Spanish, Korean, Simplified and Traditional Chinese |
-| Responsive Filters | Filter controls collapse into dropdown on tablet and mobile for all list pages    |
-| Server-down Page   | Friendly error page with retry when API is unreachable, on both CSMS and Portal   |
-| Release Management | Automated version bumping across all packages and Helm chart via release script   |
+| Feature             | Description                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment Options  | Docker Compose, Kubernetes Helm chart (Istio/Envoy Gateway), and AWS CDK (ECS)                                                      |
+| Horizontal Scaling  | Stateless services with Redis-backed OCPP connection registry across pods                                                           |
+| Auto-scaling        | Kubernetes HPA for API and OCPP with WebSocket-aware scale-down stabilization                                                       |
+| Rate Limiting       | Configurable global and per-endpoint rate limiting with separate auth rate limits                                                   |
+| Observability       | Prometheus metrics, Grafana dashboards, Loki log aggregation                                                                        |
+| Conformance Testing | Built-in OCTT 1.6 and 2.1 conformance test runner for CSMS and Charging Station SUT with dashboard reporting and per-module results |
+| Multi-language UI   | 6 languages: English, German, Spanish, Korean, Simplified and Traditional Chinese                                                   |
+| Responsive Filters  | Filter controls collapse into dropdown on tablet and mobile for all list pages                                                      |
+| Server-down Page    | Friendly error page with retry when API is unreachable, on both CSMS and Portal                                                     |
+| Release Management  | Automated version bumping across all packages and Helm chart via release script                                                     |
 
 ## Services
 
