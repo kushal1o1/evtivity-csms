@@ -38,7 +38,7 @@ import { useAuth, useHasAnyPermission, hasPermissionCheck } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useEventStream } from '@/hooks/use-event-stream';
 import { api } from '@/lib/api';
-import { SETTINGS_PERMISSIONS } from '@evtivity/lib';
+import { SETTINGS_PERMISSIONS } from '@evtivity/lib/permissions';
 
 const SETTINGS_NAV_PERMISSIONS = SETTINGS_PERMISSIONS.filter((p) => p.endsWith(':read'));
 

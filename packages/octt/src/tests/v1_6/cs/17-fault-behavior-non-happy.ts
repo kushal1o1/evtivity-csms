@@ -22,6 +22,11 @@ export const TC_041_CS: CsTestCase = {
       return {};
     });
 
+    // Precondition: put the connector into fault state. The test header
+    // ('Charge Point is in fault state') assumes this has already happened;
+    // explicitly injecting the fault keeps the test self-contained.
+    await ctx.station.injectFault(1, 'OtherError');
+
     // Step 1: StatusNotification Faulted
     const sn = await ctx.server.waitForMessage('StatusNotification', 30_000);
     steps.push({

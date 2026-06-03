@@ -89,14 +89,6 @@ export function formatDistance(
   return `${miles.toFixed(0)} Miles`;
 }
 
-/** @deprecated Use formatDistance instead */
-export function formatMiles(
-  energyWh: string | number | null | undefined,
-  efficiencyMiPerKwh: number,
-): string {
-  return formatDistance(energyWh, efficiencyMiPerKwh, 'miles');
-}
-
 export function formatMonthYear(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase();
 }

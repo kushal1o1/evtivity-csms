@@ -803,6 +803,7 @@ export class StationSimulator {
       return;
     }
 
+    const wasCablePlugged = ctx.cablePlugged;
     ctx.cablePlugged = true;
     this.cancelConnectionTimeoutTimer(evseId);
     this.cancelEvConnectTimeoutTimer(evseId);
@@ -810,14 +811,15 @@ export class StationSimulator {
     const status = this.is16 ? 'Preparing' : 'Occupied';
     const currentStatus = this.evseConnectorStatus.get(evseId);
     this.evseConnectorStatus.set(evseId, status);
-    // Send StatusNotification when the status actually changes, OR when there
-    // is no active transaction (post-stop "re-plug" refresh). The post-stop
-    // case matters because the CSMS-side connectors.status is overlaid with
-    // chargingState=EVConnected from the Ended event, and the user expects
-    // clicking Plug In on the Simulate tab to reset that visible state. The
-    // duplicate-skip is still needed for the 1.6 authorize-then-plugIn path
-    // where Preparing has already been announced.
-    if (currentStatus !== status || ctx.transactionId == null) {
+    // Send StatusNotification when the status actually changes, OR for the
+    // post-stop "re-plug" refresh -- the cable was already plugged before
+    // the user clicked Plug In and there is no active transaction. That
+    // refresh clears the CSMS-side `chargingState=EVConnected` overlay
+    // from the prior TransactionEvent Ended. The 1.6 authorize-then-plugIn
+    // path (cable was NOT yet plugged) skips the duplicate so Preparing is
+    // announced exactly once.
+    const isPostStopRePlug = wasCablePlugged && ctx.transactionId == null;
+    if (currentStatus !== status || isPostStopRePlug) {
       try {
         await this.sendStatusNotification(evseId, connectorId, status);
       } catch {

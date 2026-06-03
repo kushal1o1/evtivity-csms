@@ -17,6 +17,7 @@ COPY packages/ocpi-simulator/package.json packages/ocpi-simulator/
 RUN npm ci --ignore-scripts --workspace=packages/csms
 
 COPY packages/csms/ packages/csms/
+COPY packages/lib/ packages/lib/
 COPY tsconfig.base.json ./
 
 ARG VITE_CSMS_AUTO_LOGIN=""
