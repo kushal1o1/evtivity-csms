@@ -1137,6 +1137,18 @@ export class StationSimulator {
       gen.resetSession();
     }
 
+    // Reset transaction-limit state BEFORE sending the Started event. The
+    // CSMS response to Started can carry a transactionLimit / totalCost; the
+    // simulator defers processing via setTimeout(0). If the reset ran after
+    // that processing it would silently wipe the freshly-installed limits,
+    // and CostLimitReached / EnergyLimitReached / TimeLimitReached would
+    // never fire even though the CSMS responses were correct.
+    this.evseTransactionLimits.delete(evseId);
+    this.evseTotalCost.delete(evseId);
+    this.evseLimitReached.delete(evseId);
+    this.evseLastDriverLimits.delete(evseId);
+    this.evseLastLocalCost.delete(evseId);
+
     // Consume any reservation on this EVSE
     let consumedReservationId: number | undefined;
     for (const [id, r] of this.reservations) {
@@ -1236,15 +1248,12 @@ export class StationSimulator {
       `[${this.config.stationId}] Transaction started: ${txId} on EVSE ${String(evseId)}`,
     );
 
-    // Start meter loop
+    // Start meter loop. Transaction-limit state was reset above, before the
+    // Started event, so the deferred Started-response processing can install
+    // limits without being clobbered.
     this.evseIdle.set(evseId, false);
     this.evseMeterTick.set(evseId, 0);
     this.evseTransactionStartTime.set(evseId, Date.now());
-    this.evseTransactionLimits.delete(evseId);
-    this.evseTotalCost.delete(evseId);
-    this.evseLimitReached.delete(evseId);
-    this.evseLastDriverLimits.delete(evseId);
-    this.evseLastLocalCost.delete(evseId);
     this.startMeterLoop(evseId);
 
     // Update context

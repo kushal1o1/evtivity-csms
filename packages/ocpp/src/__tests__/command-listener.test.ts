@@ -1,9 +1,9 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import pino from 'pino';
-import type { PubSubClient, Subscription } from '@evtivity/lib';
+import type { PubSubClient, Subscription, DomainEvent } from '@evtivity/lib';
 import { CommandListener } from '../server/command-listener.js';
 
 vi.mock('../protocol/message-types.js', () => ({
@@ -16,14 +16,17 @@ const logger = pino({ level: 'silent' });
 
 describe('CommandListener', () => {
   let dispatcher: {
-    sendCommand: ReturnType<typeof vi.fn>;
-    sendVersionAwareCommand: ReturnType<typeof vi.fn>;
+    sendCommand: Mock;
+    sendVersionAwareCommand: Mock;
   };
-  let eventBus: { publish: ReturnType<typeof vi.fn>; subscribe: ReturnType<typeof vi.fn> };
+  let eventBus: {
+    publish: Mock<(event: DomainEvent) => Promise<void>>;
+    subscribe: Mock;
+  };
   let pubsub: PubSubClient;
   let subscribeHandler: ((payload: string) => void) | null;
-  let mockUnsubscribe: ReturnType<typeof vi.fn>;
-  let mockPublish: ReturnType<typeof vi.fn>;
+  let mockUnsubscribe: Mock<() => Promise<void>>;
+  let mockPublish: Mock<(channel: string, payload: string) => Promise<void>>;
 
   beforeEach(() => {
     subscribeHandler = null;

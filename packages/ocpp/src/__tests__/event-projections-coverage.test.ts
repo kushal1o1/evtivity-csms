@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import type { EventBus, DomainEvent, PubSubClient } from '@evtivity/lib';
 
 // SQL mock: a function that handles tagged template calls and returns configurable results
@@ -306,7 +306,7 @@ describe('Event projections - coverage expansion', () => {
         makeDomainEvent('station.Connected', 'CS-NOSITE', { ocppProtocol: 'ocpp2.1' }),
       );
 
-      const ocpiCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
+      const ocpiCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls.filter(
         (c: unknown[]) => c[0] === 'ocpi_push',
       );
       expect(ocpiCalls.length).toBe(0);
@@ -838,7 +838,7 @@ describe('Event projections - coverage expansion', () => {
 
       // Make the second pubsub.publish call fail (guest notification)
       let pubsubCallCount = 0;
-      (mockPubSub.publish as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      (mockPubSub.publish as Mock<PubSubClient['publish']>).mockImplementation(() => {
         pubsubCallCount++;
         // Fail on the guest session notification (3rd publish call - after csms_events and ocpi_push)
         if (pubsubCallCount >= 3) {
@@ -1253,7 +1253,7 @@ describe('Event projections - coverage expansion', () => {
       await setup();
 
       let callCount = 0;
-      (mockPubSub.publish as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      (mockPubSub.publish as Mock<PubSubClient['publish']>).mockImplementation(() => {
         callCount++;
         if (callCount === 2) {
           return Promise.reject(new Error('pubsub down'));
@@ -1569,12 +1569,12 @@ describe('Event projections - coverage expansion', () => {
 
       // Note: The first handler has already run before the MeterValues handler,
       // so we just check CostUpdated was not published
-      const costUpdateCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
-        (c: unknown[]) => {
-          if (typeof c[1] !== 'string') return false;
-          return c[1].includes('CostUpdated');
-        },
-      );
+      const costUpdateCalls = (
+        mockPubSub.publish as Mock<PubSubClient['publish']>
+      ).mock.calls.filter((c: unknown[]) => {
+        if (typeof c[1] !== 'string') return false;
+        return c[1].includes('CostUpdated');
+      });
       expect(costUpdateCalls.length).toBe(0);
     });
   });
@@ -1637,7 +1637,7 @@ describe('Event projections - coverage expansion', () => {
     it('handles CostUpdated pubsub failure gracefully', async () => {
       await setup();
 
-      (mockPubSub.publish as ReturnType<typeof vi.fn>).mockImplementation(
+      (mockPubSub.publish as Mock<PubSubClient['publish']>).mockImplementation(
         (_channel: string, payload: string) => {
           if (typeof payload === 'string' && payload.includes('CostUpdated')) {
             return Promise.reject(new Error('pubsub error'));
@@ -1977,7 +1977,9 @@ describe('Event projections - coverage expansion', () => {
     it('catches pubsub.publish errors in notifyChange without blocking', async () => {
       await setup();
 
-      (mockPubSub.publish as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('pubsub dead'));
+      (mockPubSub.publish as Mock<PubSubClient['publish']>).mockRejectedValue(
+        new Error('pubsub dead'),
+      );
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
@@ -2026,12 +2028,14 @@ describe('Event projections - coverage expansion', () => {
       mockIsRoamingEnabled.mockResolvedValue(true);
       await setup();
 
-      (mockPubSub.publish as ReturnType<typeof vi.fn>).mockImplementation((channel: string) => {
-        if (channel === 'ocpi_push') {
-          return Promise.reject(new Error('ocpi push failed'));
-        }
-        return Promise.resolve(undefined);
-      });
+      (mockPubSub.publish as Mock<PubSubClient['publish']>).mockImplementation(
+        (channel: string) => {
+          if (channel === 'ocpi_push') {
+            return Promise.reject(new Error('ocpi push failed'));
+          }
+          return Promise.resolve(undefined);
+        },
+      );
 
       setupSqlResults(
         [{ id: 'sta_000000000001' }], // resolveStationId
@@ -2552,23 +2556,20 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // Verify RequestStopTransaction was published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
-      const stopCmd = publishCalls.find((c: unknown[]) => c[0] === 'ocpp_commands');
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
+      const stopCmd = publishCalls.find((c) => c[0] === 'ocpp_commands');
       expect(stopCmd).toBeDefined();
-      const stopPayload = JSON.parse(stopCmd![1] as string);
+      const stopPayload = JSON.parse(stopCmd![1]);
       expect(stopPayload.action).toBe('RequestStopTransaction');
       expect(stopPayload.stationId).toBe('CS-001');
       expect(stopPayload.payload.transactionId).toBe('tx-decline');
 
       // Verify payment failure SSE event was published
       const sseEvent = publishCalls.find(
-        (c: unknown[]) =>
-          c[0] === 'csms_events' &&
-          typeof c[1] === 'string' &&
-          c[1].includes('payment.preAuthFailed'),
+        (c) => c[0] === 'csms_events' && c[1].includes('payment.preAuthFailed'),
       );
       expect(sseEvent).toBeDefined();
-      const ssePayload = JSON.parse(sseEvent![1] as string);
+      const ssePayload = JSON.parse(sseEvent![1]);
       expect(ssePayload.type).toBe('payment.preAuthFailed');
       expect(ssePayload.sessionId).toBe('session-1');
       expect(ssePayload.reason).toBe('card_declined');
@@ -2812,7 +2813,7 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // No RequestStopTransaction should be published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
       const stopCmd = publishCalls.find(
         (c: unknown[]) =>
           c[0] === 'ocpp_commands' &&
@@ -2908,7 +2909,7 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // Verify RequestStopTransaction was published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
       const stopCmd = publishCalls.find(
         (c: unknown[]) =>
           c[0] === 'ocpp_commands' &&
@@ -3003,7 +3004,7 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // No RequestStopTransaction should be published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
       const stopCmd = publishCalls.find(
         (c: unknown[]) =>
           c[0] === 'ocpp_commands' &&
@@ -3055,7 +3056,7 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // Verify RequestStopTransaction was published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
       const stopCmd = publishCalls.find(
         (c: unknown[]) =>
           c[0] === 'ocpp_commands' &&
@@ -3107,7 +3108,7 @@ describe('Event projections - coverage expansion', () => {
       );
 
       // No RequestStopTransaction should be published
-      const publishCalls = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls;
+      const publishCalls = (mockPubSub.publish as Mock<PubSubClient['publish']>).mock.calls;
       const stopCmd = publishCalls.find(
         (c: unknown[]) =>
           c[0] === 'ocpp_commands' &&

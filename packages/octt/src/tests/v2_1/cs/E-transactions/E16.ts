@@ -33,7 +33,6 @@ function createLimitHandler(
     match: (action: string, payload: Record<string, unknown>, callIndex: number) => boolean;
     response: Record<string, unknown>;
   }>,
-  dbgTag?: string,
 ): (action: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>> {
   let callIndex = 0;
   return async (action: string, payload: Record<string, unknown>) => {
@@ -45,22 +44,12 @@ function createLimitHandler(
     if (action === 'Authorize') return { idTokenInfo: { status: 'Accepted' } };
     if (action === 'TransactionEvent') {
       callIndex++;
-      const dbgEvent = payload['eventType'] as string | undefined;
-      const dbgTrigger = payload['triggerReason'] as string | undefined;
-      let matched = false;
-      let respOut: Record<string, unknown> = {};
       for (const entry of limitSchedule) {
         if (entry.match(action, payload, callIndex)) {
-          matched = true;
-          respOut = entry.response;
-          break;
+          return entry.response;
         }
       }
-
-      console.error(
-        `[E16-DBG${dbgTag != null ? `:${dbgTag}` : ''}] call#${callIndex} event=${dbgEvent} trig=${dbgTrigger} matched=${matched} resp=${JSON.stringify(respOut)}`,
-      );
-      return respOut;
+      return {};
     }
     return {};
   };
@@ -201,26 +190,23 @@ export const TC_E_101_CS: CsTestCase = {
     // Handler: return maxCost 45.30 on Started, then totalCost exceeding maxCost on periodic
     let periodicCount = 0;
     ctx.server.setMessageHandler(
-      createLimitHandler(
-        [
-          {
-            match: (_a, p) => (p['eventType'] as string) === 'Started',
-            response: { transactionLimit: { maxCost: 45.3 } },
+      createLimitHandler([
+        {
+          match: (_a, p) => (p['eventType'] as string) === 'Started',
+          response: { transactionLimit: { maxCost: 45.3 } },
+        },
+        {
+          match: (_a, p) => {
+            if ((p['triggerReason'] as string) === 'MeterValuePeriodic') {
+              periodicCount++;
+              // On third periodic, send totalCost that exceeds maxCost
+              return periodicCount >= 3;
+            }
+            return false;
           },
-          {
-            match: (_a, p) => {
-              if ((p['triggerReason'] as string) === 'MeterValuePeriodic') {
-                periodicCount++;
-                // On third periodic, send totalCost that exceeds maxCost
-                return periodicCount >= 3;
-              }
-              return false;
-            },
-            response: { totalCost: 50.0 },
-          },
-        ],
-        'E_101',
-      ),
+          response: { totalCost: 50.0 },
+        },
+      ]),
     );
 
     await startChargingFast(ctx, 1, 'OCTT-TOKEN-001');
