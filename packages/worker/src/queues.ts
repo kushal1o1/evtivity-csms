@@ -10,7 +10,6 @@ export const QUEUE_NAMES = {
   GUEST_SESSION_EVENTS: 'guest-session-events',
   RESERVATIONS: 'reservations',
   OCTT: 'octt',
-  DEAD_LETTER: 'dead-letter',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -26,19 +25,9 @@ export function createQueues(redisUrl: string): {
   guestSessionQueue: Queue;
   reservationQueue: Queue;
   octtQueue: Queue;
-  deadLetterQueue: Queue;
 } {
-  const deadLetterQueue = new Queue(QUEUE_NAMES.DEAD_LETTER, {
-    connection: createBullMQConnection(redisUrl),
-    defaultJobOptions: {
-      removeOnComplete: false,
-      removeOnFail: false,
-    },
-  });
-
   // Each queue needs its own connection for BullMQ blocking commands
   return {
-    deadLetterQueue,
     cronQueue: new Queue(QUEUE_NAMES.CRON_JOBS, {
       connection: createBullMQConnection(redisUrl),
       defaultJobOptions: {

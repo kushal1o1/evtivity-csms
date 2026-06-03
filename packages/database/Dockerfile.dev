@@ -28,4 +28,4 @@ RUN npx tsc -b --force packages/lib
 # idempotent (ON CONFLICT DO NOTHING) so re-running on every compose up is
 # safe -- without it a fresh `docker compose up -d` leaves the DB without an
 # admin user and the operator cannot log in.
-CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate && node ../../scripts/verify-migrations-applied.mjs && npm run seed:admin && npm run seed:driver"]
+CMD ["sh", "-c", "cd packages/database && npm run migrate && npm run seed:admin && npm run seed:driver"]

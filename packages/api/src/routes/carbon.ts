@@ -3,14 +3,8 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { eq, and, sql, gte, lte, asc, desc, inArray } from 'drizzle-orm';
-import {
-  db,
-  carbonIntensityFactors,
-  chargingSessions,
-  chargingStations,
-  sites,
-} from '@evtivity/database';
+import { eq, and, sql, asc } from 'drizzle-orm';
+import { db, carbonIntensityFactors } from '@evtivity/database';
 import { zodSchema } from '../lib/zod-schema.js';
 import { arrayResponse, itemResponse, errorWith } from '../lib/response-schemas.js';
 import { ERROR_CODES } from '../lib/error-codes.generated.js';
@@ -100,6 +94,37 @@ const reportQuery = z.object({
 });
 
 const TREES_KG_CO2_PER_YEAR = 21.77;
+
+// Shared WHERE-clause builder for the carbon report + CSV export. Both
+// endpoints aggregate against the same predicate set against
+// charging_sessions cs / charging_stations st, so duplicating the fragment
+// list would let the two drift apart silently.
+function buildCarbonWhereClause(opts: {
+  from?: string | undefined;
+  to?: string | undefined;
+  siteId?: string | undefined;
+  userSiteIds: string[] | null;
+}): ReturnType<typeof sql.join> {
+  const fragments = [sql`cs.status = 'completed' AND cs.co2_avoided_kg IS NOT NULL`];
+  if (opts.from != null) {
+    fragments.push(sql`cs.ended_at >= ${opts.from}::timestamptz`);
+  }
+  if (opts.to != null) {
+    fragments.push(sql`cs.ended_at <= ${`${opts.to}T23:59:59.999Z`}::timestamptz`);
+  }
+  if (opts.siteId != null) {
+    fragments.push(sql`st.site_id = ${opts.siteId}`);
+  }
+  if (opts.userSiteIds != null) {
+    fragments.push(
+      sql`st.site_id IN (${sql.join(
+        opts.userSiteIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`,
+    );
+  }
+  return sql.join(fragments, sql` AND `);
+}
 
 export function carbonRoutes(app: FastifyInstance): void {
   // GET /carbon/factors - list all carbon intensity factors
@@ -205,29 +230,11 @@ export function carbonRoutes(app: FastifyInstance): void {
         };
       }
 
-      // Build the WHERE clause via parameterized sql fragments. The prior
-      // sql.raw() string-interpolated siteId, from, to into the query
-      // verbatim. siteId was a bare z.string() with no format check, so a
-      // crafted query value could break out of the literal and inject SQL.
-      const fragments = [sql`cs.status = 'completed' AND cs.co2_avoided_kg IS NOT NULL`];
-      if (from != null) {
-        fragments.push(sql`cs.ended_at >= ${from}::timestamptz`);
-      }
-      if (to != null) {
-        fragments.push(sql`cs.ended_at <= ${`${to}T23:59:59.999Z`}::timestamptz`);
-      }
-      if (siteId != null) {
-        fragments.push(sql`st.site_id = ${siteId}`);
-      }
-      if (userSiteIds != null) {
-        fragments.push(
-          sql`st.site_id IN (${sql.join(
-            userSiteIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        );
-      }
-      const whereClause = sql.join(fragments, sql` AND `);
+      // Parameterized fragments via buildCarbonWhereClause prevent the
+      // SQL injection that the prior sql.raw() string-interpolation
+      // approach was vulnerable to (siteId is a bare z.string() with no
+      // format check at the body layer).
+      const whereClause = buildCarbonWhereClause({ from, to, siteId, userSiteIds });
 
       // Monthly summary and site breakdown share the WHERE clause but
       // are independent aggregations - fetch in parallel to halve the
@@ -317,57 +324,39 @@ export function carbonRoutes(app: FastifyInstance): void {
         return 'Month,Site,CO₂ Avoided (kg),Energy (kWh),Sessions';
       }
 
-      const conditions = [eq(chargingSessions.status, 'completed')];
-      if (from != null) conditions.push(gte(chargingSessions.endedAt, new Date(from)));
-      if (to != null)
-        conditions.push(lte(chargingSessions.endedAt, new Date(`${to}T23:59:59.999Z`)));
-      if (siteId != null) conditions.push(eq(chargingStations.siteId, siteId));
-      if (userSiteIds != null) conditions.push(inArray(chargingStations.siteId, userSiteIds));
+      // Aggregate in SQL instead of pulling every session into JS. A
+      // multi-year export could otherwise transfer 100k+ rows and hold
+      // them all in API memory just to group by (month, site).
+      const whereClause = buildCarbonWhereClause({ from, to, siteId, userSiteIds });
 
-      const rows = await db
-        .select({
-          endedAt: chargingSessions.endedAt,
-          siteName: sites.name,
-          co2AvoidedKg: chargingSessions.co2AvoidedKg,
-          energyWh: chargingSessions.energyDeliveredWh,
-        })
-        .from(chargingSessions)
-        .innerJoin(chargingStations, eq(chargingStations.id, chargingSessions.stationId))
-        .innerJoin(sites, eq(sites.id, chargingStations.siteId))
-        .where(and(...conditions))
-        .orderBy(desc(chargingSessions.endedAt));
-
-      const filtered = rows.filter((r) => r.co2AvoidedKg != null);
-
-      const grouped = new Map<string, { co2: number; energy: number; count: number }>();
-      for (const row of filtered) {
-        const month =
-          row.endedAt != null ? new Date(row.endedAt).toISOString().slice(0, 7) : 'unknown';
-        const site = row.siteName;
-        const key = `${month}|${site}`;
-        const existing = grouped.get(key) ?? { co2: 0, energy: 0, count: 0 };
-        existing.co2 += Number(row.co2AvoidedKg ?? 0);
-        existing.energy += Number(row.energyWh ?? 0);
-        existing.count += 1;
-        grouped.set(key, existing);
-      }
+      const groupedRows = await db.execute(sql`
+        SELECT to_char(cs.ended_at, 'YYYY-MM') AS month,
+               s.name AS site_name,
+               COALESCE(SUM(cs.co2_avoided_kg::numeric), 0) AS co2_kg,
+               COALESCE(SUM(cs.energy_delivered_wh::numeric), 0) AS energy_wh,
+               COUNT(*)::int AS session_count
+        FROM charging_sessions cs
+        JOIN charging_stations st ON st.id = cs.station_id
+        JOIN sites s ON s.id = st.site_id
+        WHERE ${whereClause}
+        GROUP BY month, s.name
+        ORDER BY month, s.name
+      `);
 
       // Use the shared buildCsv helper so formula-trigger characters at
       // the start of a site name (=, +, -, @, tab, CR) get prefixed with
       // a single quote. Without this, a malicious site name like
       // "=cmd|'/c calc'!A0" executes when an operator opens the export
       // in Excel/Sheets.
-      const rowsForCsv: unknown[][] = [];
-      for (const [key, data] of grouped) {
-        const [month, site] = key.split('|');
-        rowsForCsv.push([
-          month ?? '',
-          site ?? '',
-          data.co2.toFixed(2),
-          (data.energy / 1000).toFixed(2),
-          data.count,
-        ]);
-      }
+      const rowsForCsv: unknown[][] = (groupedRows as unknown as Record<string, unknown>[]).map(
+        (r) => [
+          r.month as string,
+          r.site_name as string,
+          Number(r.co2_kg).toFixed(2),
+          (Number(r.energy_wh) / 1000).toFixed(2),
+          Number(r.session_count),
+        ],
+      );
 
       void reply.header('Content-Type', 'text/csv');
       void reply.header('Content-Disposition', 'attachment; filename="sustainability-report.csv"');

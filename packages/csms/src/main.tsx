@@ -6,10 +6,9 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import './i18n';
 import { App } from './App';
-import { applyTheme, type Theme } from './lib/theme';
+import { applyTheme, resolveInitialTheme } from './lib/theme';
 
-const savedTheme: Theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
-applyTheme(savedTheme);
+applyTheme(resolveInitialTheme());
 
 const root = document.getElementById('root');
 if (root == null) {

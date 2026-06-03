@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { api, ApiError } from '@/lib/api';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -35,6 +36,7 @@ interface VehicleLookup {
 export function AccountVehicles(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
@@ -91,6 +93,14 @@ export function AccountVehicles(): React.JSX.Element {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['portal-vehicles'] });
       await queryClient.invalidateQueries({ queryKey: ['portal-vehicle-efficiency'] });
+    },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('vehicles.deleteFailed'))
+          : t('vehicles.deleteFailed');
+      toast({ variant: 'destructive', title: message });
+      setPendingDeleteId(null);
     },
   });
 

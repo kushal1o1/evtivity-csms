@@ -3,6 +3,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,7 @@ Tabs.displayName = 'Tabs';
 
 const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, children, ...props }, ref) => {
+    const { t } = useTranslation();
     const scrollRef = useRef<HTMLDivElement>(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
@@ -70,7 +72,7 @@ const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
         {canScrollLeft && (
           <button
             type="button"
-            aria-label="Scroll tabs left"
+            aria-label={t('common.scrollLeft')}
             onClick={() => {
               scroll('left');
             }}
@@ -89,7 +91,7 @@ const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
         {canScrollRight && (
           <button
             type="button"
-            aria-label="Scroll tabs right"
+            aria-label={t('common.scrollRight')}
             onClick={() => {
               scroll('right');
             }}

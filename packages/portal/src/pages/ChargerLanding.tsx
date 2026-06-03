@@ -18,13 +18,14 @@ import type { PricingInfo } from '@/components/PricingDisplay';
 import { EvPlugAnimation } from '@/components/EvPlugAnimation';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { connectorStatusVariant, connectorStatusClassName } from '@/lib/connector-status';
 import {
-  checkGuestConnectorStatus,
-  isCableDetected,
-  formatConnectorType,
-} from '@/lib/charger-utils';
+  connectorStatusVariant,
+  connectorStatusClassName,
+  isStartable,
+} from '@/lib/connector-status';
+import { checkGuestConnectorStatus, formatConnectorType } from '@/lib/charger-utils';
 import { useStationEvents } from '@/hooks/use-station-events';
+import { useCableCheck } from '@/hooks/use-cable-check';
 
 interface ChargerInfo {
   stationId: string;
@@ -104,8 +105,7 @@ export function ChargerLanding(): React.JSX.Element {
 
   const [freeStartLoading, setFreeStartLoading] = useState(false);
   const [freeStartError, setFreeStartError] = useState('');
-  const [showEvWarning, setShowEvWarning] = useState(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const { isCheckingStatus, showEvWarning, setShowEvWarning, runWithCableCheck } = useCableCheck();
 
   async function handleFreeStart(): Promise<void> {
     if (stationId == null || evseId == null) return;
@@ -131,52 +131,22 @@ export function ChargerLanding(): React.JSX.Element {
 
   async function handleFreeStartCheck(): Promise<void> {
     if (stationId == null || evseId == null) return;
-    setFreeStartError('');
-    setIsCheckingStatus(true);
-    try {
-      const result = await checkGuestConnectorStatus(stationId, evseId);
-      setIsCheckingStatus(false);
-
-      if (result.error != null) {
-        setFreeStartError(result.error);
-        return;
-      }
-
-      if (!isCableDetected(result.connectorStatus)) {
-        setShowEvWarning(true);
-        return;
-      }
-
-      await handleFreeStart();
-    } catch {
-      setIsCheckingStatus(false);
-      setFreeStartError(t('charger.statusCheckFailed'));
-    }
+    await runWithCableCheck(
+      () => checkGuestConnectorStatus(stationId, evseId),
+      () => handleFreeStart(),
+      setFreeStartError,
+    );
   }
 
   async function handlePaidCheck(): Promise<void> {
     if (stationId == null || evseId == null) return;
-    setFreeStartError('');
-    setIsCheckingStatus(true);
-    try {
-      const result = await checkGuestConnectorStatus(stationId, evseId);
-      setIsCheckingStatus(false);
-
-      if (result.error != null) {
-        setFreeStartError(result.error);
-        return;
-      }
-
-      if (!isCableDetected(result.connectorStatus)) {
-        setShowEvWarning(true);
-        return;
-      }
-
-      void navigate(`/charge/${stationId}/${evseId}/checkout`);
-    } catch {
-      setIsCheckingStatus(false);
-      setFreeStartError(t('charger.statusCheckFailed'));
-    }
+    await runWithCableCheck(
+      () => checkGuestConnectorStatus(stationId, evseId),
+      () => {
+        void navigate(`/charge/${stationId}/${evseId}/checkout`);
+      },
+      setFreeStartError,
+    );
   }
 
   const isFreeForGuest = guestConfig?.isFree === true;
@@ -205,19 +175,13 @@ export function ChargerLanding(): React.JSX.Element {
   }
 
   const connectorStatus = charger.evse.connectors[0]?.status ?? 'unavailable';
-  // 'finishing' (OCPP 1.6) means cable is still plugged after a previous stop;
-  // real stations accept a new RemoteStart from this state without an unplug
-  // cycle. The OCPP 2.1 equivalent is 'occupied' which is already in the set.
-  const startableStatuses = ['available', 'occupied', 'preparing', 'ev_connected', 'finishing'];
   // Reserved connectors are never available for guest checkout, even when
   // their status flips to `preparing`/`occupied` after the reservation
   // holder plugs in. The portal-authenticated flow (ChargerDetail) handles
   // the reservation-holder case; guests must always be blocked.
   const isReserved = charger.evse.reservationExpiresAt != null;
   const isAvailable =
-    charger.maintenance?.active !== true &&
-    startableStatuses.includes(connectorStatus) &&
-    !isReserved;
+    charger.maintenance?.active !== true && isStartable(connectorStatus) && !isReserved;
   const maxPower = charger.evse.connectors.reduce((max, c) => Math.max(max, c.maxPowerKw ?? 0), 0);
   const maxCurrent = charger.evse.connectors.reduce(
     (max, c) => Math.max(max, c.maxCurrentAmps ?? 0),
@@ -313,7 +277,11 @@ export function ChargerLanding(): React.JSX.Element {
           )}
 
           {/* Actions */}
-          {isReserved ? (
+          {guestConfig == null ? (
+            <p className="pt-2 text-center text-sm text-muted-foreground">
+              {t('charger.loadingInfo')}
+            </p>
+          ) : isReserved ? (
             <p className="pt-2 text-center text-sm text-destructive font-medium">
               {t('charger.connectorReserved')}
             </p>

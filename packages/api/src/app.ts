@@ -476,8 +476,20 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
         ]);
         const raw = request.body as Record<string, unknown>;
         const sanitized: Record<string, unknown> = {};
+        // PATCH/PUT /v1/settings/<key> carries the secret in `value`. Per
+        // Principle 12 the runtime encrypts <key>Enc at rest, but the
+        // access log captured the plaintext request body. Operators with
+        // access-log read could read each others' newly-set SMTP passwords,
+        // Stripe keys, etc. for the retention window. Redact `value` on
+        // any settings PATCH/PUT so the access log keeps the audit trail
+        // (who/when/what-key) without the secret material.
+        const redactValue = pathOnly.startsWith('/v1/settings/');
         for (const [k, v] of Object.entries(raw)) {
-          sanitized[k] = SENSITIVE_KEYS.has(k) ? '[REDACTED]' : v;
+          if (SENSITIVE_KEYS.has(k) || (redactValue && k === 'value')) {
+            sanitized[k] = '[REDACTED]';
+          } else {
+            sanitized[k] = v;
+          }
         }
         metadata = sanitized;
       }

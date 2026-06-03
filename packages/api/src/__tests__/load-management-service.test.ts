@@ -204,9 +204,9 @@ describe('computePriorityAllocation', () => {
 
     const s1 = result.find((r) => r.stationId === 'CS-001');
     const s2 = result.find((r) => r.stationId === 'CS-002');
-    // Equal share = 50 each. CS-001 capped at 20, surplus (30) redistributed to CS-002
+    // Equal share = 50 each. CS-001 caps at 20, leaving 80 for CS-002 which is under its cap.
     expect(s1?.allocatedKw).toBe(20);
-    expect(s2?.allocatedKw).toBe(30);
+    expect(s2?.allocatedKw).toBe(80);
   });
 
   it('filters out offline and inactive stations', () => {

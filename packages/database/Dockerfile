@@ -19,8 +19,12 @@ RUN npm ci --ignore-scripts && npm rebuild argon2
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages/lib/ packages/lib/
 COPY packages/database/ packages/database/
+# verify-migrations-applied.mjs and check-migrations.mjs are referenced by
+# `npm run migrate` from packages/database; without scripts/ in the image the
+# migrate-job container fails on a missing script.
+COPY scripts/ scripts/
 LABEL org.opencontainers.image.source="https://github.com/EVtivity/evtivity-csms-helm"
 LABEL org.opencontainers.image.license="LicenseRef-EVtivity-EULA"
 LABEL org.opencontainers.image.vendor="EVtivity"
 
-CMD ["sh", "-c", "cd packages/database && npx drizzle-kit migrate"]
+CMD ["sh", "-c", "cd packages/database && npm run migrate"]

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Check, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -202,6 +203,7 @@ function Toast({
   onMouseEnter,
   onMouseLeave,
 }: ToastProps): React.JSX.Element {
+  const { t } = useTranslation();
   const icon = VARIANT_ICONS[variant];
 
   return (
@@ -238,7 +240,7 @@ function Toast({
         type="button"
         className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
         onClick={onDismiss}
-        aria-label="Dismiss"
+        aria-label={t('common.dismiss')}
       >
         <X className="h-4 w-4" />
       </button>

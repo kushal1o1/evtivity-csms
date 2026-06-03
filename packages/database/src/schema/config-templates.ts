@@ -89,5 +89,6 @@ export const configTemplatePushStations = pgTable(
   (table) => [
     index('idx_config_template_push_stations_push').on(table.pushId),
     index('idx_config_template_push_stations_station').on(table.stationId),
+    index('idx_config_template_push_stations_status').on(table.status),
   ],
 );

@@ -162,7 +162,9 @@
     "failedSave": "儲存支付方式失敗",
     "stripeNotConfigured": "支付處理暫不可用。",
     "confirmRemoveTitle": "刪除支付方式",
-    "confirmRemoveDescription": "確定要刪除此支付方式嗎？您需要重新新增才能使用它進行充電。"
+    "confirmRemoveDescription": "確定要刪除此支付方式嗎？您需要重新新增才能使用它進行充電。",
+    "removeFailed": "刪除支付方式失敗，請重試。",
+    "setDefaultFailed": "設定預設支付方式失敗，請重試。"
   },
   "profile": {
     "title": "個人資料",
@@ -427,6 +429,8 @@
     "submitCase": "提交工單",
     "linkedSession": "關聯會話",
     "caseCreated": "工單建立成功",
+    "sendFailed": "傳送訊息失敗，請重試。",
+    "downloadFailed": "下載附件失敗，請重試。",
     "station": "充電站",
     "categories": {
       "billing_dispute": "帳單爭議",
@@ -760,7 +764,8 @@
     "confirmDeleteDesc": "此車輛將從您的帳戶中移除。在您新增其他車輛之前，里程估算將使用預設效率。",
     "noVehicles": "未新增車輛。",
     "helper": "用於根據用電量估算里程。",
-    "addFailed": "新增車輛失敗，請重試。"
+    "addFailed": "新增車輛失敗，請重試。",
+    "deleteFailed": "刪除車輛失敗，請重試。"
   },
   "notifications": {
     "title": "通知",
@@ -776,6 +781,7 @@
     "confirmRemoveDescription": "此充電站將從您的收藏列表中刪除。",
     "added": "充電站已新增到收藏。",
     "removed": "充電站已從收藏中刪除。",
+    "removeFailed": "移除收藏失敗，請重試。",
     "connectors": "{{available}}/{{total}} 可用"
   },
   "charts": {

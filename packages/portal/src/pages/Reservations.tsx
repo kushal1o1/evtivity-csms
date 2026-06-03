@@ -10,8 +10,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { formatCents, formatDate } from '@/lib/utils';
 import { useDriverTimezone } from '@/lib/timezone';
 
 interface Reservation {
@@ -33,10 +34,7 @@ interface PortalFeatures {
   supportEnabled: boolean;
   reservationCancellationFeeCents: number;
   reservationCancellationWindowMinutes: number;
-}
-
-function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+  currency: string;
 }
 
 function statusVariant(
@@ -63,6 +61,7 @@ export function Reservations(): React.JSX.Element {
   const navigate = useNavigate();
   const timezone = useDriverTimezone();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   // Holds the reservation pending cancel confirmation; null means dialog
   // closed. Storing the whole reservation rather than just id so the dialog
   // can render the station/time in the body without a re-lookup.
@@ -94,6 +93,14 @@ export function Reservations(): React.JSX.Element {
     mutationFn: (id: string) => api.delete(`/v1/portal/reservations/${id}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['portal-reservations'] });
+      setPendingCancel(null);
+    },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('reservations.cancelFailed'))
+          : t('reservations.cancelFailed');
+      toast({ variant: 'destructive', title: message });
       setPendingCancel(null);
     },
   });
@@ -190,7 +197,7 @@ export function Reservations(): React.JSX.Element {
                     }),
                 feeWillApply(pendingCancel) && features != null
                   ? t('reservations.cancellationFeeWarning', {
-                      fee: formatCents(features.reservationCancellationFeeCents),
+                      fee: formatCents(features.reservationCancellationFeeCents, features.currency),
                     })
                   : '',
               ]

@@ -1,6 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
+import { sql } from 'drizzle-orm';
 import { db } from './config.js';
 import { carbonIntensityFactors } from './schema/carbon.js';
 
@@ -441,22 +442,22 @@ const EMBER_COUNTRY_FACTORS: CarbonFactor[] = [
 const ALL_FACTORS = [...EPA_EGRID_FACTORS, ...EMBER_COUNTRY_FACTORS];
 
 export async function seedCarbonIntensityFactors(): Promise<number> {
-  let inserted = 0;
-  for (const factor of ALL_FACTORS) {
-    await db
-      .insert(carbonIntensityFactors)
-      .values(factor)
-      .onConflictDoUpdate({
-        target: carbonIntensityFactors.regionCode,
-        set: {
-          regionName: factor.regionName,
-          countryCode: factor.countryCode,
-          carbonIntensityKgPerKwh: factor.carbonIntensityKgPerKwh,
-          source: factor.source,
-          updatedAt: new Date(),
-        },
-      });
-    inserted++;
-  }
-  return inserted;
+  // Single batched upsert. Previously this looped 60 sequential INSERTs
+  // which costs ~600ms of round-trips during seed; one VALUES list cuts
+  // that to a single round-trip while keeping the idempotent ON CONFLICT
+  // contract that lets seed reruns refresh the factors in place.
+  await db
+    .insert(carbonIntensityFactors)
+    .values(ALL_FACTORS)
+    .onConflictDoUpdate({
+      target: carbonIntensityFactors.regionCode,
+      set: {
+        regionName: sql`EXCLUDED.region_name`,
+        countryCode: sql`EXCLUDED.country_code`,
+        carbonIntensityKgPerKwh: sql`EXCLUDED.carbon_intensity_kg_per_kwh`,
+        source: sql`EXCLUDED.source`,
+        updatedAt: new Date(),
+      },
+    });
+  return ALL_FACTORS.length;
 }

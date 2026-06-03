@@ -8,6 +8,11 @@ const ID_LENGTH = 12;
 
 const nanoid = customAlphabet(ALPHABET, ID_LENGTH);
 
+// Keep this map in lockstep with packages/database/src/lib/id.ts. The database
+// version is consumed by Drizzle schema $defaultFn callbacks; this version is
+// consumed by application code that mints ids outside of insert paths (tests,
+// raw-SQL helpers, service-layer factories). Drift between the two means
+// generateId('css') from app code silently fails or produces the wrong prefix.
 export const ID_PREFIXES = {
   role: 'rol',
   user: 'usr',
@@ -31,6 +36,25 @@ export const ID_PREFIXES = {
   firmwareCampaign: 'fwc',
   configTemplate: 'ctm',
   configTemplatePush: 'ctp',
+  userSiteAssignment: 'usa',
+  fleetReservation: 'frs',
+  cssStation: 'css',
+  cssEvse: 'cev',
+  cssTransaction: 'ctx',
+  cssConfigVar: 'ccv',
+  cssChargingProfile: 'ccp',
+  cssLocalAuth: 'cla',
+  cssCertificate: 'ccr',
+  cssDisplayMessage: 'cdm',
+  cssReservation: 'crv',
+  cssVariableMonitor: 'cvm',
+  cssCustomerData: 'ccd',
+  cssOfflineMessage: 'com',
+  cssAuthCache: 'cac',
+  cpTemplate: 'cpt',
+  cpPush: 'cpp',
+  panel: 'pnl',
+  circuit: 'cir',
   maintenanceEvent: 'mne',
 } as const;
 

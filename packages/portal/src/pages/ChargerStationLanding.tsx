@@ -12,7 +12,11 @@ import { Badge } from '@/components/ui/badge';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
 import { api } from '@/lib/api';
 import { cn, formatDate } from '@/lib/utils';
-import { connectorStatusVariant, connectorStatusClassName } from '@/lib/connector-status';
+import {
+  connectorStatusVariant,
+  connectorStatusClassName,
+  isStartable,
+} from '@/lib/connector-status';
 import { formatConnectorType } from '@/lib/charger-utils';
 import { useStationEvents } from '@/hooks/use-station-events';
 
@@ -156,17 +160,17 @@ export function ChargerStationLanding(): React.JSX.Element {
               >
                 {station.evses.map((evse) => {
                   const connectorStatus = evse.connectors[0]?.status ?? 'unavailable';
-                  const startableStatuses = [
-                    'available',
-                    'occupied',
-                    'preparing',
-                    'ev_connected',
-                    'finishing',
-                  ];
                   const maintenanceBlocks = station.maintenance?.active === true;
+                  // Block reserved EVSEs even after the holder plugs in: the
+                  // connector flips to `preparing`/`occupied`, both of which
+                  // are startable -- without this guests could start against
+                  // the holder's plug. Authenticated drivers use ChargerDetail
+                  // which knows their identity and can let the holder through.
+                  const isReserved = evse.reservationExpiresAt != null;
                   const isAvailable =
                     !maintenanceBlocks &&
-                    startableStatuses.includes(connectorStatus) &&
+                    !isReserved &&
+                    isStartable(connectorStatus) &&
                     station.isOnline;
 
                   const connectorTypes = [

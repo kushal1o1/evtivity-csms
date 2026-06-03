@@ -20,16 +20,16 @@ interface NotificationsResponse {
   total: number;
 }
 
-function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${String(seconds)}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${String(minutes)}m ago`;
+function relativeTime(dateStr: string, locale: string): string {
+  const diffSeconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (diffSeconds < 60) return formatter.format(-diffSeconds, 'second');
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return formatter.format(-minutes, 'minute');
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${String(hours)}h ago`;
+  if (hours < 24) return formatter.format(-hours, 'hour');
   const days = Math.floor(hours / 24);
-  return `${String(days)}d ago`;
+  return formatter.format(-days, 'day');
 }
 
 interface NotificationDrawerProps {
@@ -41,7 +41,7 @@ export function NotificationDrawer({
   open,
   onClose,
 }: NotificationDrawerProps): React.JSX.Element | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -85,7 +85,9 @@ export function NotificationDrawer({
             {notifications.map((n) => (
               <div key={n.id} className="border-b pb-3 last:border-b-0">
                 <p className="text-sm">{n.subject ?? 'n/a'}</p>
-                <p className="text-xs text-muted-foreground">{relativeTime(n.createdAt)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {relativeTime(n.createdAt, i18n.language)}
+                </p>
               </div>
             ))}
           </div>

@@ -87,7 +87,7 @@ async function start(): Promise<void> {
   // Pass registry to connection manager for station ownership tracking
   server.getConnectionManager().setRegistry(registry, instanceId);
 
-  registerProjections(server.getEventBus(), DATABASE_URL, pubsub, {
+  registerProjections(server.getEventBus(), pubsub, {
     registry,
     instanceId,
   });

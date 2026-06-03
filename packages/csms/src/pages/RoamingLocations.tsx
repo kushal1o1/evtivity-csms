@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/components/ui/toast';
 import {
   Table,
   TableBody,
@@ -30,6 +31,7 @@ interface LocationPublishInfo {
 export function RoamingLocations(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: locations, isLoading } = useQuery({
     queryKey: ['ocpi-locations'],
@@ -41,6 +43,13 @@ export function RoamingLocations(): React.JSX.Element {
       api.put(`/v1/ocpi/locations/${data.siteId}`, { isPublished: data.isPublished }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ocpi-locations'] });
+    },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('common.requestFailed'))
+          : t('common.requestFailed');
+      toast({ variant: 'destructive', title: message });
     },
   });
 

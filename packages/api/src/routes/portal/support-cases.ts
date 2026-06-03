@@ -597,7 +597,10 @@ export function portalSupportCaseRoutes(app: FastifyInstance): void {
         response: {
           200: itemResponse(attachmentItem),
           400: errorWith('Attachment metadata invalid', [ERROR_CODES.VALIDATION_ERROR]),
-          404: errorWith('Support case not found', [ERROR_CODES.SUPPORT_CASE_NOT_FOUND]),
+          404: errorWith('Support case or message not found', [
+            ERROR_CODES.SUPPORT_CASE_NOT_FOUND,
+            ERROR_CODES.MESSAGE_NOT_FOUND,
+          ]),
         },
       },
     },

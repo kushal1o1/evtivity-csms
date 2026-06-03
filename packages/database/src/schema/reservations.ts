@@ -70,6 +70,7 @@ export const reservations = pgTable(
     index('idx_reservations_status').on(table.status),
     index('idx_reservations_driver_id').on(table.driverId),
     index('idx_reservations_token_id').on(table.tokenId),
+    index('idx_reservations_expires_at').on(table.expiresAt),
   ],
 );
 

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { SystemInfoDialog } from '@/components/SystemInfoDialog';
 import { api } from '@/lib/api';
 import { useQrIcon } from '@/hooks/use-qr-icon';
-import { useAuth } from '@/lib/auth';
+import { useAuth, hasPermissionCheck } from '@/lib/auth';
 import { CompanySettings } from '@/components/settings/CompanySettings';
 import { MarketingSettings } from '@/components/settings/MarketingSettings';
 import { ContentSettings } from '@/components/settings/ContentSettings';
@@ -48,15 +48,6 @@ const TAB_PERMISSIONS: Record<string, string> = {
   conformance: 'settings.conformance:read',
   history: 'audit:read',
 };
-
-function hasPerm(userPermissions: string[], required: string): boolean {
-  if (userPermissions.includes(required)) return true;
-  if (required.endsWith(':read')) {
-    const writeVersion = required.replace(':read', ':write');
-    if (userPermissions.includes(writeVersion)) return true;
-  }
-  return false;
-}
 
 function formatSettingValue(value: unknown): string {
   if (value === null || value === undefined) return '∅';
@@ -95,7 +86,7 @@ export function Settings(): React.JSX.Element {
 
   const visibleTabs = useMemo(() => {
     return Object.entries(TAB_PERMISSIONS)
-      .filter(([, perm]) => hasPerm(permissions, perm))
+      .filter(([, perm]) => hasPermissionCheck(permissions, perm))
       .map(([tab]) => tab);
   }, [permissions]);
 

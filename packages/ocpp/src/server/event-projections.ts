@@ -11,6 +11,7 @@ type JSONValue = Parameters<postgres.Sql['json']>[0];
 const asJson = (v: unknown): JSONValue => v as JSONValue;
 import { config } from '../lib/config.js';
 import {
+  client,
   isRoamingEnabled,
   getIdlingGracePeriodMinutes,
   isSplitBillingEnabled,
@@ -130,13 +131,12 @@ export interface ProjectionOptions {
 
 export function registerProjections(
   eventBus: EventBus,
-  databaseUrl: string,
   pubsub: PubSubClient,
   options?: ProjectionOptions,
 ): void {
   const registry = options?.registry ?? null;
   const instanceId = options?.instanceId ?? null;
-  const sql = postgres(databaseUrl);
+  const sql = client;
   const logger = createLogger('event-projections');
 
   // Write a `session_failed` reservation audit row when a charging session

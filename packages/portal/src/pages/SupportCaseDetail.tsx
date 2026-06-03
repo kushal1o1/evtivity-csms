@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import { useDriverTimezone } from '@/lib/timezone';
@@ -58,6 +59,7 @@ export function SupportCaseDetail(): React.JSX.Element {
   const navigate = useNavigate();
   const timezone = useDriverTimezone();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [messageBody, setMessageBody] = useState('');
 
   const { data: caseDetail, isLoading } = useQuery({
@@ -73,6 +75,13 @@ export function SupportCaseDetail(): React.JSX.Element {
       void queryClient.invalidateQueries({ queryKey: ['portal-support-case', id] });
       setMessageBody('');
     },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('supportCases.sendFailed'))
+          : t('supportCases.sendFailed');
+      toast({ variant: 'destructive', title: message });
+    },
   });
 
   function handleSendMessage(e: React.SyntheticEvent): void {
@@ -82,10 +91,18 @@ export function SupportCaseDetail(): React.JSX.Element {
   }
 
   async function handleDownload(attachment: Attachment): Promise<void> {
-    const { downloadUrl } = await api.get<{ downloadUrl: string }>(
-      `/v1/portal/support-cases/${id ?? ''}/messages/${String(attachment.messageId)}/attachments/${String(attachment.id)}/download-url`,
-    );
-    window.open(downloadUrl, '_blank');
+    try {
+      const { downloadUrl } = await api.get<{ downloadUrl: string }>(
+        `/v1/portal/support-cases/${id ?? ''}/messages/${String(attachment.messageId)}/attachments/${String(attachment.id)}/download-url`,
+      );
+      window.open(downloadUrl, '_blank');
+    } catch (err) {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('supportCases.downloadFailed'))
+          : t('supportCases.downloadFailed');
+      toast({ variant: 'destructive', title: message });
+    }
   }
 
   if (isLoading) {

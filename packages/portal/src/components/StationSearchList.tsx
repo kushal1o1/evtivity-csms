@@ -117,6 +117,44 @@ function maxCurrentLabel(conns: ConnectorSummary[]): string | null {
   return `${String(max)}A`;
 }
 
+// Connector-summary row reused by both the nearby and search station cards.
+// Renders the plug-type list, max power badge, optional max current, and an
+// available/total chip.
+function ConnectorsRow({
+  connectors,
+  availableCount,
+  showCurrent,
+  availableLabel,
+}: {
+  connectors: ConnectorSummary[];
+  availableCount: number;
+  showCurrent: boolean;
+  availableLabel: string;
+}): React.JSX.Element | null {
+  if (connectors.length === 0) return null;
+  const power = maxPowerLabel(connectors);
+  const current = maxCurrentLabel(connectors);
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-xs flex items-center gap-1">
+        <Plug className="h-3 w-3 text-muted-foreground" />
+        {summarizeConnectors(connectors)}
+      </span>
+      {power != null && (
+        <Badge variant="secondary" className="text-xs px-1.5 py-0">
+          {power}
+        </Badge>
+      )}
+      {showCurrent && current != null && (
+        <span className="text-xs text-muted-foreground">{current}</span>
+      )}
+      <Badge variant={availableCount > 0 ? 'success' : 'outline'} className="text-xs px-1.5 py-0">
+        {String(availableCount)}/{String(connectors.length)} {availableLabel}
+      </Badge>
+    </div>
+  );
+}
+
 type SearchTab = 'local' | 'roaming';
 
 interface StationSearchListProps {
@@ -144,9 +182,23 @@ export function StationSearchList({
   const { t } = useTranslation();
   const [tab, setTab] = useState<SearchTab>('local');
   const [query, setQuery] = useState('');
+  // Debounced copy of `query` so the input feels responsive locally but we
+  // only hit /chargers/search after the user stops typing for 250ms.
+  // Without this every keystroke past 2 chars (e.g. "Tesl" -> "Tesla") fires
+  // a fresh request because the queryKey changes.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(getStoredLocation);
   const [locationDenied, setLocationDenied] = useState(false);
   const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   useEffect(() => {
     if (location != null) return;
@@ -193,17 +245,19 @@ export function StationSearchList({
   });
 
   const { data: results } = useQuery({
-    queryKey: ['charger-search', query],
+    queryKey: ['charger-search', debouncedQuery],
     queryFn: () =>
-      api.get<SearchResult[]>(`/v1/portal/chargers/search?q=${encodeURIComponent(query)}`),
-    enabled: tab === 'local' && query.length >= 2,
+      api.get<SearchResult[]>(`/v1/portal/chargers/search?q=${encodeURIComponent(debouncedQuery)}`),
+    enabled: tab === 'local' && debouncedQuery.length >= 2,
   });
 
   const { data: roamingResults } = useQuery({
-    queryKey: ['roaming-search', query],
+    queryKey: ['roaming-search', debouncedQuery],
     queryFn: () =>
-      api.get<RoamingLocation[]>(`/v1/portal/chargers/roaming?q=${encodeURIComponent(query)}`),
-    enabled: roamingEnabled && tab === 'roaming' && query.length >= 2,
+      api.get<RoamingLocation[]>(
+        `/v1/portal/chargers/roaming?q=${encodeURIComponent(debouncedQuery)}`,
+      ),
+    enabled: roamingEnabled && tab === 'roaming' && debouncedQuery.length >= 2,
   });
 
   function handleEnableLocation(): void {
@@ -329,31 +383,12 @@ export function StationSearchList({
                     {station.siteName ?? ''}
                     {station.siteCity != null ? `, ${station.siteCity}` : ''}
                   </p>
-                  {station.connectors.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs flex items-center gap-1">
-                        <Plug className="h-3 w-3 text-muted-foreground" />
-                        {summarizeConnectors(station.connectors)}
-                      </span>
-                      {maxPowerLabel(station.connectors) != null && (
-                        <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                          {maxPowerLabel(station.connectors)}
-                        </Badge>
-                      )}
-                      {maxCurrentLabel(station.connectors) != null && (
-                        <span className="text-xs text-muted-foreground">
-                          {maxCurrentLabel(station.connectors)}
-                        </span>
-                      )}
-                      <Badge
-                        variant={station.availableCount > 0 ? 'success' : 'outline'}
-                        className="text-xs px-1.5 py-0"
-                      >
-                        {String(station.availableCount)}/{String(station.connectors.length)}{' '}
-                        {t('chargerSearch.available')}
-                      </Badge>
-                    </div>
-                  )}
+                  <ConnectorsRow
+                    connectors={station.connectors}
+                    availableCount={station.availableCount}
+                    showCurrent
+                    availableLabel={t('chargerSearch.available')}
+                  />
                 </CardContent>
               </Card>
             ))}
@@ -383,26 +418,12 @@ export function StationSearchList({
                     className={`h-2 w-2 rounded-full ${station.isOnline ? 'bg-success' : 'bg-destructive'}`}
                   />
                 </div>
-                {station.connectors.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs flex items-center gap-1">
-                      <Plug className="h-3 w-3 text-muted-foreground" />
-                      {summarizeConnectors(station.connectors)}
-                    </span>
-                    {maxPowerLabel(station.connectors) != null && (
-                      <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                        {maxPowerLabel(station.connectors)}
-                      </Badge>
-                    )}
-                    <Badge
-                      variant={station.availableCount > 0 ? 'success' : 'outline'}
-                      className="text-xs px-1.5 py-0"
-                    >
-                      {String(station.availableCount)}/{String(station.connectors.length)}{' '}
-                      {t('chargerSearch.available')}
-                    </Badge>
-                  </div>
-                )}
+                <ConnectorsRow
+                  connectors={station.connectors}
+                  availableCount={station.availableCount}
+                  showCurrent={false}
+                  availableLabel={t('chargerSearch.available')}
+                />
               </CardContent>
             </Card>
           ))}

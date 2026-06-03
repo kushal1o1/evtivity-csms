@@ -4,7 +4,7 @@
 import { create } from 'zustand';
 import { api, ApiError } from './api';
 import { loadLanguage } from '../i18n';
-import { applyTheme, type Theme } from './theme';
+import { applyTheme, resolveInitialTheme, type Theme } from './theme';
 
 export class MustResetPasswordError extends Error {
   constructor() {
@@ -88,9 +88,7 @@ function getInitialState(): {
   theme: Theme;
   isAuthenticated: boolean;
 } {
-  const storedTheme = localStorage.getItem('theme');
-  const theme: Theme = storedTheme === 'dark' ? 'dark' : 'light';
-  return { role: null, theme, isAuthenticated: false };
+  return { role: null, theme: resolveInitialTheme(), isAuthenticated: false };
 }
 
 const initial = getInitialState();
@@ -99,7 +97,7 @@ const initial = getInitialState();
  * Check if a user has a specific permission.
  * Write implies read for the same resource.
  */
-function hasPermissionCheck(userPermissions: string[], required: string): boolean {
+export function hasPermissionCheck(userPermissions: string[], required: string): boolean {
   if (userPermissions.includes(required)) return true;
   if (required.endsWith(':read')) {
     const writeVersion = required.replace(':read', ':write');

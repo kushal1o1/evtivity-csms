@@ -38,7 +38,7 @@ describe('Auto-create EVSE/connector on StatusNotification', () => {
 
   beforeEach(() => {
     eventBus = createMockEventBus();
-    registerProjections(eventBus, 'postgres://test:test@localhost:5432/test', mockPubSub);
+    registerProjections(eventBus, mockPubSub);
   });
 
   it('registers a subscriber for ocpp.StatusNotification', () => {

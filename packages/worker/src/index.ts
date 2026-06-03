@@ -32,7 +32,7 @@ async function start(): Promise<void> {
 
   const pubsub = new RedisPubSubClient(REDIS_URL);
   setPubSub(pubsub);
-  const { cronQueue, loadQueue, guestSessionQueue, reservationQueue, octtQueue, deadLetterQueue } =
+  const { cronQueue, loadQueue, guestSessionQueue, reservationQueue, octtQueue } =
     createQueues(REDIS_URL);
 
   // Schedule cron jobs from database
@@ -115,7 +115,6 @@ async function start(): Promise<void> {
     await guestSessionQueue.close();
     await reservationQueue.close();
     await octtQueue.close();
-    await deadLetterQueue.close();
     await pubsub.close();
     log.info('Worker shutdown complete');
     process.exit(0);

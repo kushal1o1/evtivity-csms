@@ -591,7 +591,6 @@ export function computePriorityAllocation(
     while (groupUnallocated.length > 0 && groupRemaining > 0) {
       const share = groupRemaining / groupUnallocated.length;
       const nextRound: StationPowerInfo[] = [];
-      let surplus = 0;
 
       for (const station of groupUnallocated) {
         const cap = station.maxPowerKw > 0 ? station.maxPowerKw : share;
@@ -602,7 +601,6 @@ export function computePriorityAllocation(
             allocatedKw: cap,
             currentDrawKw: station.currentDrawKw,
           });
-          surplus += share - cap;
           groupRemaining -= cap;
         } else {
           nextRound.push(station);
@@ -622,7 +620,6 @@ export function computePriorityAllocation(
         break;
       }
 
-      groupRemaining = surplus;
       groupUnallocated.length = 0;
       groupUnallocated.push(...nextRound);
     }
@@ -944,21 +941,4 @@ export async function runLoadManagementCycle(
       log.error({ err, siteId: site.siteId }, 'Load management cycle failed');
     }
   }
-}
-
-const LOOP_INTERVAL_MS = 10_000;
-
-export function startLoadManagementLoop(log: FastifyBaseLogger): () => void {
-  log.info('Load management control loop started (interval: 10s)');
-
-  const timer = setInterval(() => {
-    void runLoadManagementCycle(log).catch((err: unknown) => {
-      log.error({ err }, 'Load management cycle failed');
-    });
-  }, LOOP_INTERVAL_MS);
-
-  return () => {
-    clearInterval(timer);
-    log.info('Load management control loop stopped');
-  };
 }

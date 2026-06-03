@@ -162,7 +162,9 @@
     "failedSave": "Error al guardar el metodo de pago",
     "stripeNotConfigured": "El procesamiento de pagos no esta disponible en este momento.",
     "confirmRemoveTitle": "Eliminar metodo de pago",
-    "confirmRemoveDescription": "Esta seguro de que desea eliminar este metodo de pago? Tendra que agregarlo de nuevo para usarlo en la carga."
+    "confirmRemoveDescription": "Esta seguro de que desea eliminar este metodo de pago? Tendra que agregarlo de nuevo para usarlo en la carga.",
+    "removeFailed": "No se pudo eliminar el metodo de pago. Intente nuevamente.",
+    "setDefaultFailed": "No se pudo establecer el metodo de pago predeterminado. Intente nuevamente."
   },
   "profile": {
     "title": "Perfil",
@@ -427,6 +429,8 @@
     "submitCase": "Enviar Caso",
     "linkedSession": "Sesion vinculada",
     "caseCreated": "Caso creado con exito",
+    "sendFailed": "No se pudo enviar el mensaje. Intente nuevamente.",
+    "downloadFailed": "No se pudo descargar el archivo adjunto. Intente nuevamente.",
     "station": "Estacion",
     "categories": {
       "billing_dispute": "Disputa de Facturacion",
@@ -760,7 +764,8 @@
     "confirmDeleteDesc": "Este vehículo se eliminará de tu cuenta. Las estimaciones de millas usarán la eficiencia predeterminada hasta que añadas otro vehículo.",
     "noVehicles": "No hay vehiculos agregados.",
     "helper": "Usado para estimar millas del consumo de energia.",
-    "addFailed": "No se pudo agregar el vehiculo. Intente nuevamente."
+    "addFailed": "No se pudo agregar el vehiculo. Intente nuevamente.",
+    "deleteFailed": "No se pudo eliminar el vehiculo. Intente nuevamente."
   },
   "notifications": {
     "title": "Notificaciones",
@@ -776,6 +781,7 @@
     "confirmRemoveDescription": "Esta estacion sera eliminada de tu lista de favoritos.",
     "added": "Estacion agregada a favoritos.",
     "removed": "Estacion eliminada de favoritos.",
+    "removeFailed": "Error al eliminar el favorito. Intentalo de nuevo.",
     "connectors": "{{available}}/{{total}} Disponibles"
   },
   "charts": {

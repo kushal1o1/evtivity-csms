@@ -96,5 +96,6 @@ export const chargingProfilePushStations = pgTable(
   (table) => [
     index('idx_cp_push_stations_push').on(table.pushId),
     index('idx_cp_push_stations_station').on(table.stationId),
+    index('idx_cp_push_stations_status').on(table.status),
   ],
 );

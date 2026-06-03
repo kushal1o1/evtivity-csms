@@ -17,7 +17,8 @@ import { EvPlugAnimation } from '@/components/EvPlugAnimation';
 import { AuthBranding, AuthFooter, useAuthBranding } from '@/components/AuthBranding';
 import { api } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
-import { checkGuestConnectorStatus, isCableDetected } from '@/lib/charger-utils';
+import { checkGuestConnectorStatus } from '@/lib/charger-utils';
+import { useCableCheck } from '@/hooks/use-cable-check';
 
 interface ChargerConfig {
   isFree: boolean;
@@ -40,8 +41,7 @@ function FreeStartForm({
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  const [showEvWarning, setShowEvWarning] = useState(false);
+  const { isCheckingStatus, showEvWarning, setShowEvWarning, runWithCableCheck } = useCableCheck();
 
   async function doStart(): Promise<void> {
     setLoading(true);
@@ -66,27 +66,11 @@ function FreeStartForm({
 
   async function handleSubmit(e: React.SyntheticEvent): Promise<void> {
     e.preventDefault();
-    setError('');
-    setIsCheckingStatus(true);
-    try {
-      const result = await checkGuestConnectorStatus(stationId, evseId);
-      setIsCheckingStatus(false);
-
-      if (result.error != null) {
-        setError(result.error);
-        return;
-      }
-
-      if (!isCableDetected(result.connectorStatus)) {
-        setShowEvWarning(true);
-        return;
-      }
-
-      await doStart();
-    } catch {
-      setIsCheckingStatus(false);
-      setError(t('charger.statusCheckFailed'));
-    }
+    await runWithCableCheck(
+      () => checkGuestConnectorStatus(stationId, evseId),
+      () => doStart(),
+      setError,
+    );
   }
 
   return (
@@ -140,8 +124,7 @@ function CheckoutForm({
   const [emailError, setEmailError] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  const [showEvWarning, setShowEvWarning] = useState(false);
+  const { isCheckingStatus, showEvWarning, setShowEvWarning, runWithCableCheck } = useCableCheck();
 
   async function doCheckoutAndStart(): Promise<void> {
     if (stripe == null || elements == null) return;
@@ -209,27 +192,11 @@ function CheckoutForm({
       return;
     }
     setEmailError('');
-    setError('');
-    setIsCheckingStatus(true);
-    try {
-      const result = await checkGuestConnectorStatus(stationId, evseId);
-      setIsCheckingStatus(false);
-
-      if (result.error != null) {
-        setError(result.error);
-        return;
-      }
-
-      if (!isCableDetected(result.connectorStatus)) {
-        setShowEvWarning(true);
-        return;
-      }
-
-      await doCheckoutAndStart();
-    } catch {
-      setIsCheckingStatus(false);
-      setError(t('charger.statusCheckFailed'));
-    }
+    await runWithCableCheck(
+      () => checkGuestConnectorStatus(stationId, evseId),
+      () => doCheckoutAndStart(),
+      setError,
+    );
   }
 
   return (

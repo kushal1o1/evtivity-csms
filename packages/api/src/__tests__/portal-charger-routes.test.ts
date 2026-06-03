@@ -645,6 +645,7 @@ describe('Portal charger routes - handler logic', () => {
         {
           id: 's1',
           stationId: 'CS-001',
+          stationName: 'Lobby Fast Charger',
           transactionId: 'tx1',
           startedAt: '2024-01-01',
           energyDeliveredWh: 1000,

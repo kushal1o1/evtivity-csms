@@ -26,24 +26,24 @@ import { formatCo2, formatEnergy } from '@/lib/formatting';
 import { CHART_COLORS, getGridColor } from '@/lib/chart-theme';
 
 interface SustainabilityReportData {
-  summary: {
-    totalCo2AvoidedKg: number;
-    totalEnergyWh: number;
-    totalSessions: number;
+  cumulativeTotal: {
+    co2AvoidedKg: number;
+    energyWh: number;
+    sessionCount: number;
     treesEquivalent: number;
   };
-  monthly: {
+  monthlySummary: {
     month: string;
     co2AvoidedKg: number;
     energyWh: number;
-    sessions: number;
+    sessionCount: number;
   }[];
-  sites: {
+  siteBreakdown: {
     siteId: string;
     siteName: string;
     co2AvoidedKg: number;
     energyWh: number;
-    sessions: number;
+    sessionCount: number;
   }[];
 }
 
@@ -96,7 +96,7 @@ export function SustainabilityTab(): React.JSX.Element {
         gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05 },
       },
       xaxis: {
-        categories: (report?.monthly ?? []).map((m) => m.month),
+        categories: (report?.monthlySummary ?? []).map((m) => m.month),
         labels: {
           formatter: (val: string) => {
             const d = new Date(val + '-01');
@@ -117,17 +117,17 @@ export function SustainabilityTab(): React.JSX.Element {
       },
       colors: [CHART_COLORS.success],
     }),
-    [isDark, report?.monthly],
+    [isDark, report?.monthlySummary],
   );
 
   const chartSeries = useMemo(
     () => [
       {
         name: t('sustainability.totalCo2Avoided'),
-        data: (report?.monthly ?? []).map((m) => Math.round(m.co2AvoidedKg * 10) / 10),
+        data: (report?.monthlySummary ?? []).map((m) => Math.round(m.co2AvoidedKg * 10) / 10),
       },
     ],
-    [t, report?.monthly],
+    [t, report?.monthlySummary],
   );
 
   function handleExportCsv(): void {
@@ -217,7 +217,7 @@ export function SustainabilityTab(): React.JSX.Element {
 
       {isLoading && <p className="text-muted-foreground">{t('common.loading')}</p>}
 
-      {report?.summary != null && (
+      {report?.cumulativeTotal != null && (
         <>
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             <Card>
@@ -229,7 +229,7 @@ export function SustainabilityTab(): React.JSX.Element {
               </CardHeader>
               <CardContent>
                 <div className="text-lg sm:text-2xl font-bold text-success">
-                  {formatCo2(report.summary.totalCo2AvoidedKg)}
+                  {formatCo2(report.cumulativeTotal.co2AvoidedKg)}
                 </div>
               </CardContent>
             </Card>
@@ -242,7 +242,7 @@ export function SustainabilityTab(): React.JSX.Element {
               </CardHeader>
               <CardContent>
                 <div className="text-lg sm:text-2xl font-bold">
-                  {formatEnergy(report.summary.totalEnergyWh)}
+                  {formatEnergy(report.cumulativeTotal.energyWh)}
                 </div>
               </CardContent>
             </Card>
@@ -255,7 +255,7 @@ export function SustainabilityTab(): React.JSX.Element {
               </CardHeader>
               <CardContent>
                 <div className="text-lg sm:text-2xl font-bold">
-                  {report.summary.totalSessions.toLocaleString()}
+                  {report.cumulativeTotal.sessionCount.toLocaleString()}
                 </div>
               </CardContent>
             </Card>
@@ -268,7 +268,7 @@ export function SustainabilityTab(): React.JSX.Element {
               </CardHeader>
               <CardContent>
                 <div className="text-lg sm:text-2xl font-bold text-success">
-                  {report.summary.treesEquivalent.toLocaleString()}
+                  {report.cumulativeTotal.treesEquivalent.toLocaleString()}
                 </div>
               </CardContent>
             </Card>
@@ -279,7 +279,7 @@ export function SustainabilityTab(): React.JSX.Element {
               <CardTitle className="text-base">{t('sustainability.monthlyTrend')}</CardTitle>
             </CardHeader>
             <CardContent>
-              {report.monthly.length > 0 ? (
+              {report.monthlySummary.length > 0 ? (
                 <ReactApexChart
                   options={chartOptions}
                   series={chartSeries}
@@ -310,19 +310,19 @@ export function SustainabilityTab(): React.JSX.Element {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {report.sites.map((site) => (
+                    {report.siteBreakdown.map((site) => (
                       <TableRow key={site.siteId}>
                         <TableCell>{site.siteName}</TableCell>
                         <TableCell className="text-right">{formatEnergy(site.energyWh)}</TableCell>
                         <TableCell className="text-right">
-                          {site.sessions.toLocaleString()}
+                          {site.sessionCount.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right text-success">
                           {formatCo2(site.co2AvoidedKg)}
                         </TableCell>
                       </TableRow>
                     ))}
-                    {report.sites.length === 0 && (
+                    {report.siteBreakdown.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground">
                           No data for selected period

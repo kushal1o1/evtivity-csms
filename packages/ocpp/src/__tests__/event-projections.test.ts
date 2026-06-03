@@ -44,6 +44,7 @@ vi.mock('postgres', () => {
 });
 
 vi.mock('@evtivity/database', () => ({
+  client: createSqlMock(),
   isRoamingEnabled: vi.fn().mockResolvedValue(false),
   getIdlingGracePeriodMinutes: vi.fn().mockResolvedValue(0),
   isSplitBillingEnabled: vi.fn().mockResolvedValue(false),
@@ -157,7 +158,7 @@ describe('Event projections', () => {
   // We need to re-import to pick up fresh mocks
   async function setup() {
     const { registerProjections } = await import('../server/event-projections.js');
-    registerProjections(eventBus, 'postgres://test:test@localhost:5432/test', mockPubSub);
+    registerProjections(eventBus, mockPubSub);
   }
 
   describe('station.Connected', () => {

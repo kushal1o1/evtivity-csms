@@ -162,7 +162,9 @@
     "failedSave": "Failed to save payment method",
     "stripeNotConfigured": "Payment processing is not available at this time.",
     "confirmRemoveTitle": "Remove payment method",
-    "confirmRemoveDescription": "Are you sure you want to remove this payment method? You will need to add it again to use it for charging."
+    "confirmRemoveDescription": "Are you sure you want to remove this payment method? You will need to add it again to use it for charging.",
+    "removeFailed": "Failed to remove payment method. Please try again.",
+    "setDefaultFailed": "Failed to set default payment method. Please try again."
   },
   "profile": {
     "title": "Profile",
@@ -427,6 +429,8 @@
     "submitCase": "Submit Case",
     "linkedSession": "Linked session",
     "caseCreated": "Case created successfully",
+    "sendFailed": "Failed to send message. Please try again.",
+    "downloadFailed": "Failed to download attachment. Please try again.",
     "station": "Station",
     "categories": {
       "billing_dispute": "Billing Dispute",
@@ -760,7 +764,8 @@
     "confirmDeleteDesc": "This vehicle will be removed from your account. Mileage estimates will use the default efficiency until you add another vehicle.",
     "noVehicles": "No vehicles added.",
     "helper": "Used to estimate miles from energy consumed.",
-    "addFailed": "Failed to add vehicle. Please try again."
+    "addFailed": "Failed to add vehicle. Please try again.",
+    "deleteFailed": "Failed to delete vehicle. Please try again."
   },
   "notifications": {
     "title": "Notifications",
@@ -776,6 +781,7 @@
     "confirmRemoveDescription": "This station will be removed from your favorites list.",
     "added": "Station added to favorites.",
     "removed": "Station removed from favorites.",
+    "removeFailed": "Failed to remove favorite. Please try again.",
     "connectors": "{{available}}/{{total}} Available"
   },
   "charts": {

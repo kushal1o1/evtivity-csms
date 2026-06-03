@@ -597,10 +597,20 @@ async function seed(): Promise<void> {
   // Merge: config file overrides win over defaults
   const mergedSettings = { ...defaultSettings, ...remappedOverrides };
 
-  // Auto-encrypt keys ending in "Enc" when they have a non-empty plaintext value
+  // Auto-encrypt keys ending in "Enc" when they have a non-empty plaintext value.
+  // Fail loud if any Enc key has a non-empty value but SETTINGS_ENCRYPTION_KEY is
+  // missing -- the alternative is silently persisting credentials as plaintext,
+  // which breaks the "Enc suffix == encrypted at rest" contract and then makes
+  // every subsequent decryption attempt at runtime fail with a confusing error.
   const encryptionKey = process.env['SETTINGS_ENCRYPTION_KEY'] ?? '';
   const settingsRows = Object.entries(mergedSettings).map(([key, value]) => {
-    if (key.endsWith('Enc') && typeof value === 'string' && value !== '' && encryptionKey !== '') {
+    if (key.endsWith('Enc') && typeof value === 'string' && value !== '') {
+      if (encryptionKey === '') {
+        throw new Error(
+          `Cannot seed ${key} with a non-empty value when SETTINGS_ENCRYPTION_KEY is missing. ` +
+            `Set the env var or clear ${key} in seed.config.json.`,
+        );
+      }
       return { key, value: encryptString(value, encryptionKey) };
     }
     return { key, value };

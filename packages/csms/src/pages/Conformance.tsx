@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 
 interface OcttRun {
@@ -67,6 +68,7 @@ export function Conformance({ embedded }: { embedded?: boolean } = {}): React.JS
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedVersion, setSelectedVersion] = useState('all');
 
   const { data, isLoading } = useQuery({
@@ -87,6 +89,13 @@ export function Conformance({ embedded }: { embedded?: boolean } = {}): React.JS
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['octt-runs'] });
     },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('common.requestFailed'))
+          : t('common.requestFailed');
+      toast({ variant: 'destructive', title: message });
+    },
   });
 
   return (
@@ -101,7 +110,7 @@ export function Conformance({ embedded }: { embedded?: boolean } = {}): React.JS
 
         <div className="flex items-center gap-2 ml-auto">
           <Select
-            aria-label="OCPP version"
+            aria-label={t('conformance.ocppVersion')}
             className="w-[140px]"
             value={selectedVersion}
             onChange={(e) => {

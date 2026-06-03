@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
@@ -93,18 +94,27 @@ export function MfaChallenge(): React.JSX.Element {
             onSubmit={(e) => {
               void handleVerify(e);
             }}
+            noValidate
             className="space-y-4"
           >
-            <Input
-              value={code}
-              onChange={(e) => {
-                setCode(e.target.value);
-              }}
-              placeholder="000000"
-              maxLength={6}
-              autoFocus
-              className="text-center text-2xl tracking-widest"
-            />
+            <div className="space-y-2">
+              <Label htmlFor="mfaCode" className="sr-only">
+                {t('auth.mfaCodeLabel')}
+              </Label>
+              <Input
+                id="mfaCode"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                }}
+                placeholder="000000"
+                maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                className="text-center text-2xl tracking-widest"
+              />
+            </div>
             <Button type="submit" className="w-full" disabled={loading || code.length < 6}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {t('auth.mfaVerify')}

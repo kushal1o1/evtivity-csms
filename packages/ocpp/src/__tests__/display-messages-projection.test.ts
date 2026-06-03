@@ -40,7 +40,7 @@ describe('Display messages projection', () => {
     eventBus = createMockEventBus();
     // Register projections with a dummy database URL and mock pub/sub
     // We only test that the subscription is registered, not actual DB operations
-    registerProjections(eventBus, 'postgres://test:test@localhost:5432/test', mockPubSub);
+    registerProjections(eventBus, mockPubSub);
   });
 
   it('registers a subscriber for ocpp.NotifyDisplayMessages', () => {

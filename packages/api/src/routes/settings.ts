@@ -132,6 +132,11 @@ export function settingsRoutes(app: FastifyInstance): void {
                   .int()
                   .min(0)
                   .describe('Maximum reservation duration in hours'),
+                currency: z
+                  .string()
+                  .describe(
+                    'Platform default currency (ISO 4217) used to format any monetary value in this response, including the reservation cancellation fee',
+                  ),
               })
               .passthrough(),
           ),
@@ -142,12 +147,21 @@ export function settingsRoutes(app: FastifyInstance): void {
       const reservationEnabled = await isReservationEnabled();
       const supportEnabled = await isSupportEnabled();
       const reservationConfig = await getReservationSettings();
+      const [currencyRow] = await db
+        .select({ value: settings.value })
+        .from(settings)
+        .where(eq(settings.key, 'stripe.currency'));
+      const currency =
+        typeof currencyRow?.value === 'string' && currencyRow.value !== ''
+          ? currencyRow.value
+          : 'USD';
       return {
         reservationEnabled,
         supportEnabled,
         reservationCancellationFeeCents: reservationConfig.cancellationFeeCents,
         reservationCancellationWindowMinutes: reservationConfig.cancellationWindowMinutes,
         reservationMaxHours: reservationConfig.maxHours,
+        currency,
       };
     },
   );

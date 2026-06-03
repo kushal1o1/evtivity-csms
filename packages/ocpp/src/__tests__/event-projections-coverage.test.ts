@@ -61,6 +61,7 @@ vi.mock('postgres', () => {
 const mockIsRoamingEnabled = vi.fn().mockResolvedValue(false);
 
 vi.mock('@evtivity/database', () => ({
+  client: createSqlMock(),
   isRoamingEnabled: mockIsRoamingEnabled,
   getIdlingGracePeriodMinutes: vi.fn().mockResolvedValue(0),
   isSplitBillingEnabled: vi.fn().mockResolvedValue(false),
@@ -235,7 +236,7 @@ describe('Event projections - coverage expansion', () => {
 
   async function setup() {
     const { registerProjections } = await import('../server/event-projections.js');
-    registerProjections(eventBus, 'postgres://test:test@localhost:5432/test', mockPubSub);
+    registerProjections(eventBus, mockPubSub);
   }
 
   // ---- station.Connected ----

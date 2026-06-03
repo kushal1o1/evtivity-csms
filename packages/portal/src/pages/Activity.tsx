@@ -188,7 +188,7 @@ export function Activity(): React.JSX.Element {
             <Leaf className="h-5 w-5 text-success" />
             <span className="text-sm font-medium text-success">
               {t('activity.co2AvoidedMessage', {
-                amount: parseFloat(String(summary.totalCo2AvoidedKg)).toFixed(1),
+                amount: summary.totalCo2AvoidedKg.toFixed(1),
               })}
             </span>
           </CardContent>

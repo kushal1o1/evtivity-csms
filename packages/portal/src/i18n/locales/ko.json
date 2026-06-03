@@ -162,7 +162,9 @@
     "failedSave": "결제 수단 저장에 실패했습니다",
     "stripeNotConfigured": "현재 결제 처리를 이용할 수 없습니다.",
     "confirmRemoveTitle": "결제 수단 삭제",
-    "confirmRemoveDescription": "이 결제 수단을 삭제하시겠습니까? 충전에 사용하려면 다시 추가해야 합니다."
+    "confirmRemoveDescription": "이 결제 수단을 삭제하시겠습니까? 충전에 사용하려면 다시 추가해야 합니다.",
+    "removeFailed": "결제 수단을 제거하지 못했습니다. 다시 시도해 주세요.",
+    "setDefaultFailed": "기본 결제 수단을 설정하지 못했습니다. 다시 시도해 주세요."
   },
   "profile": {
     "title": "프로필",
@@ -427,6 +429,8 @@
     "submitCase": "문의 제출",
     "linkedSession": "연결된 세션",
     "caseCreated": "문의가 성공적으로 생성되었습니다",
+    "sendFailed": "메시지를 보내지 못했습니다. 다시 시도해 주세요.",
+    "downloadFailed": "첨부 파일을 다운로드하지 못했습니다. 다시 시도해 주세요.",
     "station": "충전소",
     "categories": {
       "billing_dispute": "청구 이의",
@@ -760,7 +764,8 @@
     "confirmDeleteDesc": "이 차량이 계정에서 제거됩니다. 새 차량을 추가할 때까지 마일리지 추정은 기본 효율을 사용합니다.",
     "noVehicles": "등록된 차량이 없습니다.",
     "helper": "에너지 소비량에서 마일을 추정하는 데 사용됩니다.",
-    "addFailed": "차량을 추가하지 못했습니다. 다시 시도해 주세요."
+    "addFailed": "차량을 추가하지 못했습니다. 다시 시도해 주세요.",
+    "deleteFailed": "차량을 삭제하지 못했습니다. 다시 시도해 주세요."
   },
   "notifications": {
     "title": "알림",
@@ -776,6 +781,7 @@
     "confirmRemoveDescription": "이 충전소가 즐겨찾기 목록에서 제거됩니다.",
     "added": "충전소가 즐겨찾기에 추가되었습니다.",
     "removed": "충전소가 즐겨찾기에서 제거되었습니다.",
+    "removeFailed": "즐겨찾기 제거에 실패했습니다. 다시 시도해 주세요.",
     "connectors": "{{available}}/{{total}} 이용 가능"
   },
   "charts": {

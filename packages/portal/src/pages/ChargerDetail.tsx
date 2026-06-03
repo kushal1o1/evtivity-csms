@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -33,9 +33,14 @@ import { EvPlugAnimation } from '@/components/EvPlugAnimation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn, formatDate } from '@/lib/utils';
-import { connectorStatusVariant, connectorStatusClassName } from '@/lib/connector-status';
-import { isCableDetected, formatConnectorType } from '@/lib/charger-utils';
+import {
+  connectorStatusVariant,
+  connectorStatusClassName,
+  isStartable,
+} from '@/lib/connector-status';
+import { formatConnectorType } from '@/lib/charger-utils';
 import { useStationEvents } from '@/hooks/use-station-events';
+import { useCableCheck } from '@/hooks/use-cable-check';
 
 interface ConnectorItem {
   connectorId: number;
@@ -130,8 +135,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
   const [selectedPm, setSelectedPm] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [isStarting, setIsStarting] = useState(false);
-  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-  const [showEvWarning, setShowEvWarning] = useState(false);
+  const { isCheckingStatus, showEvWarning, setShowEvWarning, runWithCableCheck } = useCableCheck();
 
   // Reserve-mode defaults: startsAt = now + 5 min rounded up to the next
   // 5-minute boundary (always future, even after a few seconds of form-fill);
@@ -147,7 +151,6 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
     data: station,
     isLoading,
     error: loadError,
-    dataUpdatedAt,
   } = useQuery({
     queryKey: ['station-detail', stationId],
     queryFn: () => api.get<StationDetail>(`/v1/portal/chargers/${stationId ?? ''}`),
@@ -160,11 +163,6 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
     // the live connector status instead of serving cached state.
     staleTime: 0,
   });
-
-  // Clear stale errors when station data refreshes (e.g., via SSE)
-  useEffect(() => {
-    if (dataUpdatedAt > 0) setError('');
-  }, [dataUpdatedAt]);
 
   const { data: pricing } = useQuery({
     queryKey: ['charger-pricing', stationId],
@@ -332,31 +330,15 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
 
   async function handleStart(): Promise<void> {
     if (selectedEvseId == null) return;
-    setError('');
-    setIsCheckingStatus(true);
-
-    try {
-      const result = await api.post<{ connectorStatus: string | null; error?: string }>(
-        `/v1/portal/chargers/${stationId ?? ''}/evse/${String(selectedEvseId)}/check-status`,
-        {},
-      );
-      setIsCheckingStatus(false);
-
-      if (result.error != null) {
-        setError(result.error);
-        return;
-      }
-
-      if (!isCableDetected(result.connectorStatus)) {
-        setShowEvWarning(true);
-        return;
-      }
-
-      await doStart();
-    } catch {
-      setIsCheckingStatus(false);
-      setError(t('charger.statusCheckFailed'));
-    }
+    await runWithCableCheck(
+      () =>
+        api.post<{ connectorStatus: string | null; error?: string }>(
+          `/v1/portal/chargers/${stationId ?? ''}/evse/${String(selectedEvseId)}/check-status`,
+          {},
+        ),
+      () => doStart(),
+      setError,
+    );
   }
 
   if (isLoading) {
@@ -547,19 +529,11 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
         <div className={`grid gap-3 ${station.evses.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {station.evses.map((evse) => {
             const connectorStatus = evse.connectors[0]?.status ?? 'unavailable';
-            const startableStatuses = [
-              'available',
-              'occupied',
-              'preparing',
-              'ev_connected',
-              'finishing',
-            ];
             // Reservation gate: an EVSE with any active reservation is
             // startable ONLY by the holder. Connector status flips to
             // `preparing`/`occupied`/`ev_connected` the moment the holder
-            // plugs in, all of which are in startableStatuses -- without
-            // this gate any other driver could start a session against
-            // the holder&#39;s plug.
+            // plugs in, all of which are startable -- without this gate any
+            // other driver could start a session against the holder&#39;s plug.
             const reservedByOther =
               evse.reservationDriverId != null && evse.reservationDriverId !== currentDriverId;
             const reservedForMe =
@@ -575,7 +549,7 @@ export function ChargerDetail({ mode = 'charge' }: ChargerDetailProps = {}): Rea
                 ? station.isOnline && evse.reservationDriverId == null
                 : station.isOnline &&
                   !reservedByOther &&
-                  (startableStatuses.includes(connectorStatus) || reservedForMe));
+                  (isStartable(connectorStatus) || reservedForMe));
             const isSelected = selectedEvseId === evse.evseId;
 
             const connectorTypes = [

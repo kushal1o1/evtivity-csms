@@ -4,6 +4,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { LucideIcon } from 'lucide-react';
 import { Zap, CreditCard, Wifi, Car, HelpCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
@@ -30,6 +31,7 @@ interface SessionsResponse {
 interface ActiveSession {
   id: string;
   stationId: string;
+  stationName: string | null;
   transactionId: string;
   startedAt: string | null;
   energyDeliveredWh: string | null;
@@ -39,6 +41,31 @@ interface ActiveSession {
 
 interface ActiveSessionsResponse {
   data: ActiveSession[];
+}
+
+function QuickActionCard({
+  to,
+  icon: Icon,
+  label,
+}: {
+  to: string;
+  icon: LucideIcon;
+  label: string;
+}): React.JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <Card
+      className="cursor-pointer hover:bg-accent/50 transition-colors"
+      onClick={() => {
+        void navigate(to);
+      }}
+    >
+      <CardContent className="flex flex-col items-center gap-2 p-4">
+        <Icon className="h-8 w-8 text-primary" />
+        <span className="text-sm font-medium">{label}</span>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function Home(): React.JSX.Element {
@@ -92,7 +119,9 @@ export function Home(): React.JSX.Element {
             <div>
               <p className="text-sm font-bold">{t('home.activeSession')}</p>
               <p className="text-xs text-muted-foreground">
-                {activeSessionsResponse.data[0]?.stationId ?? t('home.unknownStation')}
+                {activeSessionsResponse.data[0]?.stationName ??
+                  activeSessionsResponse.data[0]?.stationId ??
+                  t('home.unknownStation')}
                 {' - '}
                 {formatEnergy(activeSessionsResponse.data[0]?.energyDeliveredWh)}
               </p>
@@ -103,51 +132,11 @@ export function Home(): React.JSX.Element {
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 gap-3">
-        <Card
-          className="cursor-pointer hover:bg-accent/50 transition-colors"
-          onClick={() => {
-            void navigate('/payment-methods');
-          }}
-        >
-          <CardContent className="flex flex-col items-center gap-2 p-4">
-            <CreditCard className="h-8 w-8 text-primary" />
-            <span className="text-sm font-medium">{t('home.paymentMethods')}</span>
-          </CardContent>
-        </Card>
-        <Card
-          className="cursor-pointer hover:bg-accent/50 transition-colors"
-          onClick={() => {
-            void navigate('/rfid-cards');
-          }}
-        >
-          <CardContent className="flex flex-col items-center gap-2 p-4">
-            <Wifi className="h-8 w-8 text-primary" />
-            <span className="text-sm font-medium">{t('home.rfidCards')}</span>
-          </CardContent>
-        </Card>
-        <Card
-          className="cursor-pointer hover:bg-accent/50 transition-colors"
-          onClick={() => {
-            void navigate('/vehicles');
-          }}
-        >
-          <CardContent className="flex flex-col items-center gap-2 p-4">
-            <Car className="h-8 w-8 text-primary" />
-            <span className="text-sm font-medium">{t('home.vehicles')}</span>
-          </CardContent>
-        </Card>
+        <QuickActionCard to="/payment-methods" icon={CreditCard} label={t('home.paymentMethods')} />
+        <QuickActionCard to="/rfid-cards" icon={Wifi} label={t('home.rfidCards')} />
+        <QuickActionCard to="/vehicles" icon={Car} label={t('home.vehicles')} />
         {supportEnabled && (
-          <Card
-            className="cursor-pointer hover:bg-accent/50 transition-colors"
-            onClick={() => {
-              void navigate('/support');
-            }}
-          >
-            <CardContent className="flex flex-col items-center gap-2 p-4">
-              <HelpCircle className="h-8 w-8 text-primary" />
-              <span className="text-sm font-medium">{t('home.supportCases')}</span>
-            </CardContent>
-          </Card>
+          <QuickActionCard to="/support" icon={HelpCircle} label={t('home.supportCases')} />
         )}
       </div>
 

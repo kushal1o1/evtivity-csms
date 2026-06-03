@@ -1,6 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
+import { useTranslation } from 'react-i18next';
 import { Select } from '@/components/ui/select';
 
 const LANGUAGES = [
@@ -23,9 +24,10 @@ export function LanguageSelect({
   onChange,
   className,
 }: LanguageSelectProps): React.JSX.Element {
+  const { t } = useTranslation();
   return (
     <Select
-      aria-label="Language"
+      aria-label={t('nav.language')}
       value={value}
       onChange={(e) => {
         onChange(e.target.value);

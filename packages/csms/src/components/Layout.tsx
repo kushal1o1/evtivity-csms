@@ -34,19 +34,13 @@ import { Separator } from '@/components/ui/separator';
 import { AiAssistant } from '@/components/AiAssistant';
 import { SidebarNav } from '@/components/layout/SidebarNav';
 import { UserDropdown } from '@/components/layout/UserDropdown';
-import { useAuth, useHasAnyPermission } from '@/lib/auth';
+import { useAuth, useHasAnyPermission, hasPermissionCheck } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { useEventStream } from '@/hooks/use-event-stream';
 import { api } from '@/lib/api';
+import { SETTINGS_PERMISSIONS } from '@evtivity/lib';
 
-function hasPermCheck(userPermissions: string[], required: string): boolean {
-  if (userPermissions.includes(required)) return true;
-  if (required.endsWith(':read')) {
-    const writeVersion = required.replace(':read', ':write');
-    if (userPermissions.includes(writeVersion)) return true;
-  }
-  return false;
-}
+const SETTINGS_NAV_PERMISSIONS = SETTINGS_PERMISSIONS.filter((p) => p.endsWith(':read'));
 
 const navItems = [
   // Overview
@@ -264,19 +258,7 @@ export function Layout(): React.JSX.Element {
   }, [companyName, settings]);
 
   const permissions = useAuth((s) => s.permissions);
-  const hasAnySettings = useHasAnyPermission([
-    'settings.system:read',
-    'settings.notification:read',
-    'settings.payment:read',
-    'settings.integrations:read',
-    'settings.security:read',
-    'settings.apiKeys:read',
-    'settings.firmware:read',
-    'settings.stationConfig:read',
-    'settings.smartCharging:read',
-    'settings.ai:read',
-    'settings.conformance:read',
-  ]);
+  const hasAnySettings = useHasAnyPermission(SETTINGS_NAV_PERMISSIONS);
   const roamingEnabled = settings != null && settings['roaming.enabled'] === true;
   const pncEnabled = settings != null && settings['pnc.enabled'] === true;
   const reservationEnabled = settings == null || settings['reservation.enabled'] !== false;
@@ -292,7 +274,7 @@ export function Layout(): React.JSX.Element {
     if (item.to === '/settings') return hasAnySettings;
     // Permission-based filtering for all other nav items
     if (item.requiredPermission != null) {
-      return hasPermCheck(permissions, item.requiredPermission);
+      return hasPermissionCheck(permissions, item.requiredPermission);
     }
     return true;
   });

@@ -29,21 +29,23 @@ interface StatementResponse {
   sessions: StatementSession[];
   totals: {
     totalCostCents: number;
+    currency: string | null;
     totalEnergyWh: number;
     sessionCount: number;
     totalCo2AvoidedKg: number | null;
   };
 }
 
-function monthLabel(month: string): string {
+function monthLabel(month: string, locale: string): string {
   const [yearStr, monthStr] = month.split('-');
   const date = new Date(Number(yearStr), Number(monthStr) - 1, 1);
   const end = new Date(Number(yearStr), Number(monthStr), 0);
-  return `${date.toLocaleDateString('en-US', { month: 'long' })} ${String(date.getDate())} - ${date.toLocaleDateString('en-US', { month: 'long' })} ${String(end.getDate())}, ${String(date.getFullYear())}`;
+  const monthName = date.toLocaleDateString(locale, { month: 'long' });
+  return `${monthName} ${String(date.getDate())} - ${monthName} ${String(end.getDate())}, ${String(date.getFullYear())}`;
 }
 
 export function MonthlyStatement(): React.JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const timezone = useDriverTimezone();
   const distanceUnit = useAuth((s) => s.driver?.distanceUnit ?? 'miles');
   const [searchParams] = useSearchParams();
@@ -59,10 +61,6 @@ export function MonthlyStatement(): React.JSX.Element {
       api.get<StatementResponse>(`/v1/portal/sessions/monthly-statement?month=${month}`),
   });
 
-  // Activity.tsx looks up the driver's vehicle efficiency from the API so that
-  // the distance column reflects the driver's actual car. The statement used to
-  // hardcode 3.5 mi/kWh here, so the same energy figure rendered different
-  // miles on the two pages for any driver whose vehicle is not exactly 3.5.
   const { data: efficiencyData } = useQuery({
     queryKey: ['portal-vehicle-efficiency'],
     queryFn: () => api.get<{ efficiencyMiPerKwh: number }>('/v1/portal/vehicles/efficiency'),
@@ -89,7 +87,7 @@ export function MonthlyStatement(): React.JSX.Element {
           <div className="space-y-1">
             <p className="text-sm font-medium">{data.driverName}</p>
             <p className="text-xs text-muted-foreground">
-              {t('statement.period')}: {monthLabel(data.month)}
+              {t('statement.period')}: {monthLabel(data.month, i18n.language)}
             </p>
           </div>
 
@@ -142,9 +140,7 @@ export function MonthlyStatement(): React.JSX.Element {
                       </td>
                       {hasCo2Data && (
                         <td className="hidden md:table-cell px-2 py-2 text-right text-success">
-                          {s.co2AvoidedKg != null
-                            ? `${parseFloat(String(s.co2AvoidedKg)).toFixed(2)} kg`
-                            : 'n/a'}
+                          {s.co2AvoidedKg != null ? `${s.co2AvoidedKg.toFixed(2)} kg` : 'n/a'}
                         </td>
                       )}
                       <td className="hidden md:table-cell px-2 py-2 text-right text-xs whitespace-nowrap">
@@ -164,12 +160,12 @@ export function MonthlyStatement(): React.JSX.Element {
                       {formatDistance(data.totals.totalEnergyWh, efficiency, distanceUnit)}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {formatCents(data.totals.totalCostCents, 'USD')}
+                      {formatCents(data.totals.totalCostCents, data.totals.currency ?? 'USD')}
                     </td>
                     {hasCo2Data && (
                       <td className="hidden md:table-cell px-2 py-2 text-right text-success">
                         {data.totals.totalCo2AvoidedKg != null
-                          ? `${parseFloat(String(data.totals.totalCo2AvoidedKg)).toFixed(2)} kg`
+                          ? `${data.totals.totalCo2AvoidedKg.toFixed(2)} kg`
                           : 'n/a'}
                       </td>
                     )}

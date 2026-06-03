@@ -44,6 +44,14 @@ export function Favorites(): React.JSX.Element {
       setRemoveTarget(null);
       toast({ variant: 'success', title: t('favorites.removed') });
     },
+    onError: (err: unknown) => {
+      const message =
+        err != null && typeof err === 'object' && 'body' in err
+          ? ((err as { body: { error?: string } }).body.error ?? t('favorites.removeFailed'))
+          : t('favorites.removeFailed');
+      toast({ variant: 'destructive', title: message });
+      setRemoveTarget(null);
+    },
   });
 
   return (

@@ -169,21 +169,25 @@ export const authorizeAttempts = pgTable(
   ],
 );
 
-export const vehicles = pgTable('vehicles', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => createId('vehicle')),
-  driverId: text('driver_id')
-    .notNull()
-    .references(() => drivers.id, { onDelete: 'cascade' }),
-  make: varchar('make', { length: 100 }),
-  model: varchar('model', { length: 100 }),
-  year: varchar('year', { length: 4 }),
-  vin: varchar('vin', { length: 17 }),
-  licensePlate: varchar('license_plate', { length: 20 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const vehicles = pgTable(
+  'vehicles',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => createId('vehicle')),
+    driverId: text('driver_id')
+      .notNull()
+      .references(() => drivers.id, { onDelete: 'cascade' }),
+    make: varchar('make', { length: 100 }),
+    model: varchar('model', { length: 100 }),
+    year: varchar('year', { length: 4 }),
+    vin: varchar('vin', { length: 17 }),
+    licensePlate: varchar('license_plate', { length: 20 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_vehicles_driver_id').on(table.driverId)],
+);
 
 export const fleets = pgTable('fleets', {
   id: text('id')

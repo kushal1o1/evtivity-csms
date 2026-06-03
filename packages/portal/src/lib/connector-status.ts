@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // OCPP 1.6: available, preparing, finishing. OCPP 2.1: available, occupied, ev_connected.
+// Mirrored by `packages/api/src/routes/portal/charger.ts` and
+// `packages/api/src/routes/portal/guest.ts`; backend rejects with
+// `CONNECTOR_NOT_AVAILABLE` for anything outside this set.
 export const STARTABLE_STATUSES = [
   'available',
   'occupied',
@@ -9,6 +12,10 @@ export const STARTABLE_STATUSES = [
   'ev_connected',
   'finishing',
 ];
+
+export function isStartable(status: string | null | undefined): boolean {
+  return status != null && STARTABLE_STATUSES.includes(status);
+}
 
 export function connectorStatusVariant(): 'secondary' {
   return 'secondary';

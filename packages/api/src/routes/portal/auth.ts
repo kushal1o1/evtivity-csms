@@ -506,7 +506,12 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           403: errorWith('Account disabled', [ERROR_CODES.ACCOUNT_DISABLED]),
         },
       },
-      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: {
+          max: apiConfig.AUTH_RATE_LIMIT_MAX,
+          timeWindow: apiConfig.AUTH_RATE_LIMIT_WINDOW,
+        },
+      },
     },
     async (request, reply) => {
       const { mfaToken, code, challengeId } = request.body as z.infer<typeof mfaVerifyBody>;
@@ -637,7 +642,12 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           401: errorWith('Unauthorized', [ERROR_CODES.UNAUTHORIZED, ERROR_CODES.MFA_TOKEN_EXPIRED]),
         },
       },
-      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: {
+          max: apiConfig.AUTH_RATE_LIMIT_MAX,
+          timeWindow: apiConfig.AUTH_RATE_LIMIT_WINDOW,
+        },
+      },
     },
     async (request, reply) => {
       const { mfaToken } = request.body as z.infer<typeof mfaResendBody>;
@@ -822,7 +832,12 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           400: errorWith('Weak password', [ERROR_CODES.WEAK_PASSWORD]),
         },
       },
-      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: {
+          max: apiConfig.AUTH_RATE_LIMIT_MAX,
+          timeWindow: apiConfig.AUTH_RATE_LIMIT_WINDOW,
+        },
+      },
     },
     async (request, reply) => {
       const { token, password } = request.body as z.infer<typeof resetPasswordBody>;
@@ -898,7 +913,12 @@ export function portalAuthRoutes(app: FastifyInstance): void {
           400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
         },
       },
-      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: {
+          max: apiConfig.AUTH_RATE_LIMIT_MAX,
+          timeWindow: apiConfig.AUTH_RATE_LIMIT_WINDOW,
+        },
+      },
     },
     async (request, reply) => {
       const { token } = request.body as z.infer<typeof verifyEmailBody>;

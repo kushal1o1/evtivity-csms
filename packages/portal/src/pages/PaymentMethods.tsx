@@ -13,6 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 
 interface PaymentMethod {
@@ -99,7 +100,15 @@ function AddCardForm({
         <CardElement
           options={{
             style: {
-              base: { fontSize: '16px', color: '#020817' },
+              base: {
+                fontSize: '16px',
+                color: document.documentElement.classList.contains('dark') ? '#f8fafc' : '#020817',
+                '::placeholder': {
+                  color: document.documentElement.classList.contains('dark')
+                    ? '#94a3b8'
+                    : '#64748b',
+                },
+              },
             },
           }}
         />
@@ -114,6 +123,7 @@ function AddCardForm({
 export function PaymentMethods(): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [stripeError, setStripeError] = useState('');
   const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
@@ -126,15 +136,30 @@ export function PaymentMethods(): React.JSX.Element {
     queryFn: () => api.get<PaymentMethod[]>('/v1/portal/payment-methods'),
   });
 
+  function toastApiError(err: unknown, fallbackKey: string): void {
+    const message =
+      err != null && typeof err === 'object' && 'body' in err
+        ? ((err as { body: { error?: string } }).body.error ?? t(fallbackKey))
+        : t(fallbackKey);
+    toast({ variant: 'destructive', title: message });
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (pmId: number) => api.delete(`/v1/portal/payment-methods/${String(pmId)}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portal-payment-methods'] }),
+    onError: (err: unknown) => {
+      toastApiError(err, 'payments.removeFailed');
+      setPendingDeleteId(null);
+    },
   });
 
   const setDefaultMutation = useMutation({
     mutationFn: (pmId: number) =>
       api.patch(`/v1/portal/payment-methods/${String(pmId)}/default`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portal-payment-methods'] }),
+    onError: (err: unknown) => {
+      toastApiError(err, 'payments.setDefaultFailed');
+    },
   });
 
   async function handleShowAdd(): Promise<void> {

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { EntityHistoryTab } from '@/components/EntityHistoryTab';
 import { getErrorMessage } from '@/lib/error-message';
 import { api } from '@/lib/api';
@@ -66,6 +67,7 @@ export function RoamingPartnerDetail(): React.JSX.Element {
   const navigate = useNavigate();
   const timezone = useUserTimezone();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   const { data: partner, isLoading } = useQuery({
@@ -95,6 +97,9 @@ export function RoamingPartnerDetail(): React.JSX.Element {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['ocpi-partners'] });
       void navigate('/roaming/partners');
+    },
+    onError: (err) => {
+      toast({ variant: 'destructive', title: getErrorMessage(err, t) });
     },
   });
 

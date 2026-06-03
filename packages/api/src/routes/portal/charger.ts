@@ -215,6 +215,7 @@ const activeSessionItem = z
   .object({
     id: z.string().describe('Charging session ID'),
     stationId: z.string().nullable().describe('OCPP station identity'),
+    stationName: z.string().nullable().describe('Human-readable station name (model or vendor)'),
     transactionId: z.string().nullable().describe('OCPP transaction ID assigned by the station'),
     startedAt: z.coerce.date().describe('Session start timestamp'),
     energyDeliveredWh: z.coerce
@@ -2049,6 +2050,7 @@ export function portalChargerRoutes(app: FastifyInstance): void {
         .select({
           id: chargingSessions.id,
           stationId: chargingStations.stationId,
+          stationName: chargingStations.model,
           transactionId: chargingSessions.transactionId,
           startedAt: chargingSessions.startedAt,
           energyDeliveredWh: chargingSessions.energyDeliveredWh,

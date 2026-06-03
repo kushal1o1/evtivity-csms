@@ -159,7 +159,9 @@
     "failedSave": "Zahlungsmethode konnte nicht gespeichert werden",
     "stripeNotConfigured": "Zahlungsabwicklung ist derzeit nicht verfügbar.",
     "confirmRemoveTitle": "Zahlungsmethode entfernen",
-    "confirmRemoveDescription": "Möchtest du diese Zahlungsmethode wirklich entfernen? Du musst sie erneut hinzufügen, um sie zum Laden zu verwenden."
+    "confirmRemoveDescription": "Möchtest du diese Zahlungsmethode wirklich entfernen? Du musst sie erneut hinzufügen, um sie zum Laden zu verwenden.",
+    "removeFailed": "Zahlungsmethode konnte nicht entfernt werden. Bitte erneut versuchen.",
+    "setDefaultFailed": "Standard-Zahlungsmethode konnte nicht festgelegt werden. Bitte erneut versuchen."
   },
   "profile": {
     "title": "Profil",
@@ -423,6 +425,8 @@
     "submitCase": "Fall einreichen",
     "linkedSession": "Verknüpfter Vorgang",
     "caseCreated": "Fall erfolgreich erstellt",
+    "sendFailed": "Nachricht konnte nicht gesendet werden. Bitte erneut versuchen.",
+    "downloadFailed": "Anhang konnte nicht heruntergeladen werden. Bitte erneut versuchen.",
     "station": "Station",
     "categories": {
       "billing_dispute": "Abrechnungsstreit",
@@ -756,7 +760,8 @@
     "confirmDeleteDesc": "Dieses Fahrzeug wird aus Ihrem Konto entfernt. Reichweitenschätzungen verwenden den Standard-Verbrauch, bis Sie ein anderes Fahrzeug hinzufügen.",
     "noVehicles": "Keine Fahrzeuge hinzugefügt.",
     "helper": "Wird verwendet, um Meilen aus der verbrauchten Energie zu schätzen.",
-    "addFailed": "Fahrzeug konnte nicht hinzugefügt werden. Bitte erneut versuchen."
+    "addFailed": "Fahrzeug konnte nicht hinzugefügt werden. Bitte erneut versuchen.",
+    "deleteFailed": "Fahrzeug konnte nicht gelöscht werden. Bitte erneut versuchen."
   },
   "notifications": {
     "title": "Benachrichtigungen",
@@ -772,6 +777,7 @@
     "confirmRemoveDescription": "Diese Station wird aus deiner Favoritenliste entfernt.",
     "added": "Station zu Favoriten hinzugefügt.",
     "removed": "Station aus Favoriten entfernt.",
+    "removeFailed": "Favorit konnte nicht entfernt werden. Bitte erneut versuchen.",
     "connectors": "{{available}}/{{total}} verfügbar"
   },
   "charts": {

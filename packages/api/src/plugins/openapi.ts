@@ -27,7 +27,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
           'Operator endpoints accept JWT via `Authorization: Bearer <token>` header or the `csms_token` cookie. API keys (64-char hex) are passed via the same Bearer header. Driver portal endpoints use a separate driver JWT via `Authorization: Bearer <token>` or the `portal_token` cookie.',
           '',
           '## Pagination',
-          'List endpoints accept `page` (1-based, default 1) and `limit` (default 20, max 100) query parameters and return `{ data: T[], total: number }`.',
+          'List endpoints accept `page` (1-based, default 1) and `limit` (default 10, max 100) query parameters and return `{ data: T[], total: number }`.',
         ].join('\n'),
       },
       servers: [

@@ -2302,7 +2302,7 @@ export function siteRoutes(app: FastifyInstance): void {
         body: zodSchema(carbonRegionBody),
         response: {
           200: successResponse,
-          400: errorWith('Validation error', [ERROR_CODES.VALIDATION_ERROR]),
+          400: errorWith('Invalid region code', [ERROR_CODES.INVALID_REGION_CODE]),
           404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
         },
       },

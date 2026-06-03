@@ -1,16 +1,14 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { eq, and } from 'drizzle-orm';
-import { db, chargingStations } from '@evtivity/database';
+import { eq, and, inArray } from 'drizzle-orm';
+import { db, chargingStations, configTemplates, stationConfigurations } from '@evtivity/database';
 import type { Logger } from 'pino';
 import { getPubSub } from '@evtivity/api/src/lib/pubsub.js';
 
 export async function configDriftDetectionHandler(log: Logger): Promise<void> {
-  const { configTemplates, stationConfigurations } = await import('@evtivity/database');
-
-  // Get all templates with variables
   const templates = await db.select().from(configTemplates);
+  const pubsub = getPubSub();
 
   let driftCount = 0;
 
@@ -22,7 +20,6 @@ export async function configDriftDetectionHandler(log: Logger): Promise<void> {
     }>;
     if (variables.length === 0) continue;
 
-    // Resolve target stations from filter
     const filter = template.targetFilter as Record<string, string> | null;
     const conditions = [eq(chargingStations.isOnline, true)];
     if (filter?.siteId) conditions.push(eq(chargingStations.siteId, filter.siteId));
@@ -34,12 +31,23 @@ export async function configDriftDetectionHandler(log: Logger): Promise<void> {
       .from(chargingStations)
       .where(and(...conditions));
 
-    for (const station of targetStations) {
-      const actualVars = await db
-        .select()
-        .from(stationConfigurations)
-        .where(eq(stationConfigurations.stationId, station.id));
+    if (targetStations.length === 0) continue;
 
+    const stationIds = targetStations.map((s) => s.id);
+    const allActualVars = await db
+      .select()
+      .from(stationConfigurations)
+      .where(inArray(stationConfigurations.stationId, stationIds));
+
+    const varsByStation = new Map<string, typeof allActualVars>();
+    for (const v of allActualVars) {
+      const list = varsByStation.get(v.stationId) ?? [];
+      list.push(v);
+      varsByStation.set(v.stationId, list);
+    }
+
+    for (const station of targetStations) {
+      const actualVars = varsByStation.get(station.id) ?? [];
       for (const expected of variables) {
         const actual = actualVars.find(
           (v) => v.component === expected.component && v.variable === expected.variable,
@@ -47,7 +55,6 @@ export async function configDriftDetectionHandler(log: Logger): Promise<void> {
         if (actual == null || actual.value !== expected.value) {
           driftCount++;
           try {
-            const pubsub = getPubSub();
             await pubsub.publish(
               'csms_events',
               JSON.stringify({
@@ -60,7 +67,7 @@ export async function configDriftDetectionHandler(log: Logger): Promise<void> {
           } catch {
             // Best-effort SSE notification
           }
-          break; // One drift per station is enough to flag
+          break;
         }
       }
     }
