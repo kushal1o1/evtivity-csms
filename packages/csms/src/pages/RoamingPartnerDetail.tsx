@@ -71,7 +71,7 @@ export function RoamingPartnerDetail(): React.JSX.Element {
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   const { data: partner, isLoading } = useQuery({
-    queryKey: ['ocpi-partners'],
+    queryKey: ['ocpi-partners', id],
     queryFn: () => api.get<PartnerDetail>(`/v1/ocpi/partners/${id ?? ''}`),
     enabled: id != null,
   });

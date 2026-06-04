@@ -3,7 +3,6 @@
 
 import type { Logger } from 'pino';
 import { db, chargingStations } from '@evtivity/database';
-import { eq } from 'drizzle-orm';
 import { createId } from '@evtivity/database/src/lib/id.js';
 import type { TestCase, TestCaseResult, RunConfig, TriggerCommandFn } from './types.js';
 import { createTestClient, generateStationId } from './client.js';
@@ -121,16 +120,7 @@ export async function executeTest(
     };
   } finally {
     client.disconnect();
-    if (provisionStations) {
-      const station = await db
-        .select({ id: chargingStations.id })
-        .from(chargingStations)
-        .where(eq(chargingStations.stationId, stationId))
-        .limit(1);
-      const stationDbId = station[0]?.id;
-      if (stationDbId != null) {
-        await db.delete(chargingStations).where(eq(chargingStations.id, stationDbId));
-      }
-    }
+    // Station cleanup is deferred to run end (see runTests) to avoid racing the
+    // OCPP server's async projections.
   }
 }

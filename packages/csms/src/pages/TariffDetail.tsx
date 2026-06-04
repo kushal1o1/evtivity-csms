@@ -99,7 +99,7 @@ export function TariffDetail(): React.JSX.Element {
   ];
 
   const { data: tariff, isLoading } = useQuery({
-    queryKey: ['tariffs'],
+    queryKey: ['tariffs', id, tariffId],
     queryFn: () => api.get<Tariff>(`/v1/pricing-groups/${id ?? ''}/tariffs/${tariffId ?? ''}`),
     enabled: id != null && tariffId != null,
   });

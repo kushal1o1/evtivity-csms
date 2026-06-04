@@ -83,7 +83,7 @@ export function UserDetail(): React.JSX.Element {
   }, [isOwnUser, navigate]);
 
   const { data: user, isLoading } = useQuery({
-    queryKey: ['users'],
+    queryKey: ['users', id],
     queryFn: () => api.get<User>(`/v1/users/${id ?? ''}`),
     enabled: id != null,
   });

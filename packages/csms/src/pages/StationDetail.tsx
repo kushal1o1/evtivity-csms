@@ -107,7 +107,7 @@ export function StationDetail(): React.JSX.Element {
   const sites = sitesResponse?.data;
 
   const { data: station, isLoading } = useQuery({
-    queryKey: ['stations'],
+    queryKey: ['stations', id],
     queryFn: () => api.get<Station>(`/v1/stations/${id ?? ''}`),
     enabled: id != null,
   });

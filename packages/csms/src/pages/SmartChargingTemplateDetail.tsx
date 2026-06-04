@@ -174,7 +174,7 @@ export function SmartChargingTemplateDetail(): React.JSX.Element {
   const pushHistoryLimit = 10;
 
   const { data: template, isLoading } = useQuery({
-    queryKey: ['smart-charging-templates'],
+    queryKey: ['smart-charging-templates', id],
     queryFn: () => api.get<TemplateDetail>(`/v1/smart-charging/templates/${id ?? ''}`),
     enabled: id != null,
   });

@@ -84,7 +84,7 @@ export function SiteDetail(): React.JSX.Element {
   const canReadMaintenance = useHasPermission('maintenance:read');
 
   const { data: site, isLoading } = useQuery({
-    queryKey: ['sites'],
+    queryKey: ['sites', id],
     queryFn: () => api.get<Site>(`/v1/sites/${id ?? ''}`),
     enabled: id != null,
   });

@@ -167,6 +167,12 @@ export async function runTests(
 
   // Clean up test driver and tokens (FK is ON DELETE SET NULL, so delete tokens first for clarity)
   if (provisionStations) {
+    // Remove every OCTT test station created during this run. Cleanup is deferred
+    // to run end (not per-test) so the OCPP server's async projections finish
+    // before the parent row is deleted; ON DELETE CASCADE clears the child rows.
+    await db.delete(chargingStations).where(like(chargingStations.stationId, 'OCTT-%'));
+    logger.info('OCTT test stations cleaned up');
+
     // Clean up tariff and pricing group (cascade deletes handle child records)
     if (octtTariffId != null) {
       await db.execute(sql`DELETE FROM tariffs WHERE id = ${octtTariffId}`);
