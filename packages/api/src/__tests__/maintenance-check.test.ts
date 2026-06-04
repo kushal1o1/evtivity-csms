@@ -158,6 +158,29 @@ describe('findMaintenanceConflicts', () => {
     expect(result).toEqual([]);
   });
 
+  it('treats an empty affectedStationIds array as site-wide', async () => {
+    setupDbResults(
+      [{ siteId: 'sit_a' }],
+      [
+        {
+          id: 'mne_empty',
+          siteId: 'sit_a',
+          status: 'active',
+          plannedStartAt: new Date('2026-06-01T09:00:00Z'),
+          plannedEndAt: new Date('2026-06-01T13:00:00Z'),
+          affectedStationIds: [],
+        },
+      ],
+    );
+    const result = await findMaintenanceConflicts(
+      'sta_x',
+      new Date('2026-06-01T10:00:00Z'),
+      new Date('2026-06-01T12:00:00Z'),
+    );
+    expect(result).toHaveLength(1);
+    expect((result[0] as { id: string }).id).toBe('mne_empty');
+  });
+
   it('includes events that explicitly list the station', async () => {
     setupDbResults(
       [{ siteId: 'sit_a' }],

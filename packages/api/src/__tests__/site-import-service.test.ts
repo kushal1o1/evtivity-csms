@@ -73,6 +73,8 @@ vi.mock('@evtivity/database', () => ({
     siteId: 'siteId',
     model: 'model',
     serialNumber: 'serialNumber',
+    availability: 'availability',
+    onboardingStatus: 'onboardingStatus',
     vendorId: 'vendorId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
@@ -84,8 +86,11 @@ vi.mock('@evtivity/database', () => ({
     connectorId: 'connectorId',
     connectorType: 'connectorType',
     maxPowerKw: 'maxPowerKw',
+    maxCurrentAmps: 'maxCurrentAmps',
   },
   vendors: { id: 'id', name: 'name' },
+  siteAuditLog: { siteId: 'site_id' },
+  writeAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -94,6 +99,7 @@ vi.mock('drizzle-orm', () => ({
   ilike: vi.fn(),
   and: vi.fn(),
   asc: vi.fn(),
+  inArray: vi.fn(),
   sql: (...args: unknown[]) => ({ __brand: 'SQL', args }),
 }));
 
@@ -102,6 +108,7 @@ import {
   exportSitesTemplateCsv,
   importSitesCsv,
 } from '../services/site-import.service.js';
+import { writeAudit } from '@evtivity/database';
 
 beforeEach(() => {
   dbResults = [];
@@ -160,6 +167,35 @@ describe('exportSitesCsv', () => {
 
     // Header only, no data
     expect(lines.length).toBe(1);
+  });
+
+  it('returns only the header when siteIds is an empty array', async () => {
+    const csv = await exportSitesCsv(undefined, []);
+    expect(csv.split('\n')).toHaveLength(1);
+  });
+
+  it('applies the siteIds filter and renders empty join columns', async () => {
+    setupDbResults([
+      {
+        siteName: 'Scoped Site',
+        stationId: null,
+        stationModel: null,
+        stationSerialNumber: null,
+        stationStatus: null,
+        onboardingStatus: null,
+        evseId: null,
+        connectorId: null,
+        connectorType: null,
+        maxPowerKw: null,
+        maxCurrentAmps: null,
+        vendorName: null,
+      },
+    ]);
+
+    const csv = await exportSitesCsv('term', ['sit_1']);
+    const lines = csv.split('\n');
+
+    expect(lines[1]).toBe('Scoped Site,,,,,,,,,,,');
   });
 });
 
@@ -306,6 +342,171 @@ describe('importSitesCsv', () => {
     expect(result.stationsCreated).toBe(1);
     expect(result.evsesCreated).toBe(1);
     expect(result.connectorsCreated).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('skips null rows in the input array', async () => {
+    // A site-only row plus a hole; the hole is skipped, the site is created.
+    setupDbResults([], [{ id: 'site-1' }]);
+
+    const result = await importSitesCsv([null as never, { siteName: 'Only Site' }], false);
+
+    expect(result.sitesCreated).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('writes a created audit row when an actor is provided and a new site is inserted', async () => {
+    setupDbResults([], [{ id: 'site-1', name: 'Audited Site' }]);
+
+    const result = await importSitesCsv([{ siteName: 'Audited Site' }], false, {
+      actor: 'operator',
+      actorUserId: 'usr_1',
+    });
+
+    expect(result.sitesCreated).toBe(1);
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ idColumn: 'site_id' }),
+      expect.objectContaining({ action: 'created', notes: 'CSV import' }),
+      expect.anything(),
+    );
+  });
+
+  it('updates an existing site and writes an updated audit row when updateExisting and actor given', async () => {
+    const existing = { id: 'site-1', name: 'Existing' };
+    // 1. site lookup -> found
+    // 2. site update returning -> updated row
+    setupDbResults([existing], [{ id: 'site-1', name: 'Existing', updatedAt: new Date() }]);
+
+    const result = await importSitesCsv([{ siteName: 'Existing' }], true, {
+      actor: 'operator',
+      actorUserId: 'usr_1',
+    });
+
+    expect(result.sitesUpdated).toBe(1);
+    expect(writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ idColumn: 'site_id' }),
+      expect.objectContaining({ action: 'updated', notes: 'CSV import' }),
+      expect.anything(),
+    );
+  });
+
+  it('rejects new-site creation for a restricted operator', async () => {
+    setupDbResults([]); // site lookup: not found
+
+    const result = await importSitesCsv([{ siteName: 'Blocked Site' }], false, undefined, [
+      'sit_allowed',
+    ]);
+
+    expect(result.sitesCreated).toBe(0);
+    expect(result.errors[0]).toContain('insufficient site access to create new site');
+  });
+
+  it('rejects mutating a site outside the restricted operator allow-list', async () => {
+    setupDbResults([{ id: 'sit_other', name: 'Other Site' }]);
+
+    const result = await importSitesCsv([{ siteName: 'Other Site' }], true, undefined, [
+      'sit_allowed',
+    ]);
+
+    expect(result.sitesUpdated).toBe(0);
+    expect(result.errors[0]).toContain('no access to site');
+  });
+
+  it('resolves a vendor by case-insensitive name and reuses the cache across stations', async () => {
+    const now = new Date();
+    // 1. site lookup -> not found
+    // 2. site insert -> site-1
+    // 3. vendor lookup -> found
+    // 4. station insert (CS-001) -> station-1
+    // 5. site lookup again? no. Two stations share the vendor name; second uses cache.
+    // 4. station CS-001 insert (updateExisting false path uses select-then-insert)
+    setupDbResults(
+      [], // site lookup
+      [{ id: 'site-1' }], // site insert
+      [{ id: 'vnd_1' }], // vendor lookup -> found
+      [], // station CS-001 lookup: not found
+      [{ id: 'station-1' }], // station CS-001 insert
+      [], // station CS-002 lookup: not found (vendor from cache, no lookup)
+      [{ id: 'station-2' }], // station CS-002 insert
+    );
+
+    const result = await importSitesCsv(
+      [
+        { siteName: 'Vendor Site', stationId: 'CS-001', stationVendor: 'acme chargers' },
+        { siteName: 'Vendor Site', stationId: 'CS-002', stationVendor: 'acme chargers' },
+      ],
+      false,
+    );
+
+    expect(result.stationsCreated).toBe(2);
+    expect(result.errors).toEqual([]);
+    void now;
+  });
+
+  it('records an error when a referenced vendor is not found', async () => {
+    setupDbResults(
+      [], // site lookup
+      [{ id: 'site-1' }], // site insert
+      [], // vendor lookup -> empty
+      [], // station lookup: not found
+      [{ id: 'station-1' }], // station insert
+    );
+
+    const result = await importSitesCsv(
+      [{ siteName: 'Site', stationId: 'CS-001', stationVendor: 'Ghost Vendor' }],
+      false,
+    );
+
+    expect(result.errors.some((e) => e.includes('vendor "Ghost Vendor" not found'))).toBe(true);
+  });
+
+  it('counts a station as updated when the upsert returns differing timestamps', async () => {
+    const created = new Date('2026-01-01T00:00:00Z');
+    const updated = new Date('2026-02-01T00:00:00Z');
+    setupDbResults(
+      [], // site ilike pre-check: not found
+      [{ id: 'site-1', createdAt: created, updatedAt: created }], // site insert (created)
+      [{ id: 'station-1', createdAt: created, updatedAt: updated }], // station upsert -> UPDATED
+    );
+
+    const result = await importSitesCsv(
+      [{ siteName: 'Upsert', stationId: 'CS-001', stationModel: 'M', stationStatus: 'available' }],
+      true,
+    );
+
+    expect(result.stationsUpdated).toBe(1);
+    expect(result.stationsCreated).toBe(0);
+  });
+
+  it('updates an existing EVSE and connector with maxCurrentAmps when updateExisting is true', async () => {
+    const now = new Date();
+    setupDbResults(
+      [], // site ilike pre-check: not found
+      [{ id: 'site-1', createdAt: now, updatedAt: now }], // site insert
+      [{ id: 'station-1', createdAt: now, updatedAt: now }], // station upsert (created)
+      [{ id: 'evse-1' }], // EVSE lookup -> found
+      [], // EVSE update (no returning needed)
+      [{ id: 'conn-1' }], // connector lookup -> found
+      [], // connector update
+    );
+
+    const result = await importSitesCsv(
+      [
+        {
+          siteName: 'Site',
+          stationId: 'CS-001',
+          evseId: 1,
+          connectorId: 1,
+          connectorType: 'Type2',
+          maxPowerKw: 22,
+          maxCurrentAmps: 32,
+        },
+      ],
+      true,
+    );
+
+    expect(result.evsesUpdated).toBe(1);
+    expect(result.connectorsUpdated).toBe(1);
     expect(result.errors).toEqual([]);
   });
 });

@@ -62,6 +62,10 @@ vi.mock('@evtivity/database', () => ({
     userId: 'userId',
     siteId: 'siteId',
   },
+  chargingStations: {
+    id: 'id',
+    siteId: 'siteId',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -73,7 +77,18 @@ vi.mock('drizzle-orm', () => ({
   desc: vi.fn(),
 }));
 
-import { getUserSiteIds, invalidateSiteAccessCache } from '../lib/site-access.js';
+const publishMock = vi.fn(async () => undefined);
+vi.mock('../lib/pubsub.js', () => ({
+  getPubSub: (): { publish: typeof publishMock } => ({ publish: publishMock }),
+}));
+
+import {
+  getUserSiteIds,
+  invalidateSiteAccessCache,
+  clearSiteAccessCacheLocal,
+  userCanAccessSite,
+  checkStationSiteAccess,
+} from '../lib/site-access.js';
 
 beforeEach(() => {
   dbResults = [];
@@ -169,5 +184,105 @@ describe('getUserSiteIds', () => {
     setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-a' }]);
     const second = await getUserSiteIds(userId);
     expect(second).toEqual(['site-a']);
+  });
+});
+
+describe('invalidateSiteAccessCache pub/sub', () => {
+  it('publishes cache_invalidate with kind=site and the userId', () => {
+    publishMock.mockClear();
+    invalidateSiteAccessCache('user-pub');
+    expect(publishMock).toHaveBeenCalledWith(
+      'cache_invalidate',
+      JSON.stringify({ kind: 'site', userId: 'user-pub' }),
+    );
+  });
+});
+
+describe('clearSiteAccessCacheLocal', () => {
+  it('clears the local cache without publishing', async () => {
+    const userId = 'user-local-clear';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: true }]);
+    await getUserSiteIds(userId);
+
+    publishMock.mockClear();
+    clearSiteAccessCacheLocal(userId);
+    expect(publishMock).not.toHaveBeenCalled();
+
+    // Cache was cleared: next call hits the DB again.
+    const { db } = await import('@evtivity/database');
+    const before = vi.mocked(db.select).mock.calls.length;
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-x' }]);
+    const result = await getUserSiteIds(userId);
+    expect(result).toEqual(['site-x']);
+    expect(vi.mocked(db.select).mock.calls.length).toBeGreaterThan(before);
+  });
+});
+
+describe('userCanAccessSite', () => {
+  it('returns true when siteId is null (unsited stations visible to all)', async () => {
+    expect(await userCanAccessSite('user-1', null)).toBe(true);
+  });
+
+  it('returns true when siteId is undefined', async () => {
+    expect(await userCanAccessSite('user-1', undefined)).toBe(true);
+  });
+
+  it('returns true when the user has all-site access', async () => {
+    const userId = 'user-all-site-can';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: true }]);
+    expect(await userCanAccessSite(userId, 'site-1')).toBe(true);
+  });
+
+  it('returns true when the siteId is in the allowed list', async () => {
+    const userId = 'user-allowed';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }, { siteId: 'site-2' }]);
+    expect(await userCanAccessSite(userId, 'site-2')).toBe(true);
+  });
+
+  it('returns false when the siteId is not in the allowed list', async () => {
+    const userId = 'user-denied';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }]);
+    expect(await userCanAccessSite(userId, 'site-9')).toBe(false);
+  });
+});
+
+describe('checkStationSiteAccess', () => {
+  it('returns true when the user has all-site access (no station lookup)', async () => {
+    const userId = 'user-all-station';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: true }]);
+    expect(await checkStationSiteAccess('sta_1', userId)).toBe(true);
+  });
+
+  it('returns false when the station is not found', async () => {
+    const userId = 'user-station-missing';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }], []);
+    expect(await checkStationSiteAccess('sta_missing', userId)).toBe(false);
+  });
+
+  it('returns true when the station has no site (unsited)', async () => {
+    const userId = 'user-station-nosite';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }], [{ siteId: null }]);
+    expect(await checkStationSiteAccess('sta_nosite', userId)).toBe(true);
+  });
+
+  it('returns true when the station site is in the allowed list', async () => {
+    const userId = 'user-station-allowed';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }], [{ siteId: 'site-1' }]);
+    expect(await checkStationSiteAccess('sta_allowed', userId)).toBe(true);
+  });
+
+  it('returns false when the station site is not in the allowed list', async () => {
+    const userId = 'user-station-denied';
+    clearCache(userId);
+    setupDbResults([{ hasAllSiteAccess: false }], [{ siteId: 'site-1' }], [{ siteId: 'site-2' }]);
+    expect(await checkStationSiteAccess('sta_denied', userId)).toBe(false);
   });
 });

@@ -104,8 +104,10 @@ import {
   generateInvoiceNumber,
   createSessionInvoice,
   createAggregatedInvoice,
+  getInvoice,
   voidInvoice,
 } from '../services/invoice.service.js';
+import { calculateSessionCost } from '@evtivity/lib';
 
 beforeEach(() => {
   dbResults = [];
@@ -235,6 +237,285 @@ describe('Invoice Service', () => {
 
       await expect(createSessionInvoice('session-123')).rejects.toThrow('Session is not completed');
     });
+
+    it('throws when a completed session has no finalCostCents', async () => {
+      setupDbResults([
+        {
+          id: 'session-x',
+          driverId: 'd1',
+          tariffId: null,
+          energyDeliveredWh: '1000',
+          startedAt: new Date(),
+          endedAt: new Date(),
+          finalCostCents: null,
+          currency: 'USD',
+          status: 'completed',
+          idleMinutes: '0',
+          tariffPricePerKwh: null,
+          tariffPricePerMinute: null,
+          tariffPricePerSession: null,
+          tariffIdleFeePricePerMinute: null,
+          tariffTaxRate: null,
+        },
+      ]);
+
+      await expect(createSessionInvoice('session-x')).rejects.toThrow(
+        'cannot invoice an uncosted session',
+      );
+    });
+
+    it('creates a single line item from final cost when the session has no tariff', async () => {
+      const now = new Date();
+      setupDbResults(
+        [
+          {
+            id: 'ses-no-tariff',
+            driverId: 'd1',
+            tariffId: null, // no tariff -> costBreakdown stays null
+            energyDeliveredWh: '5000',
+            startedAt: new Date(now.getTime() - 3600000),
+            endedAt: now,
+            finalCostCents: 700,
+            currency: 'USD',
+            status: 'completed',
+            idleMinutes: '0',
+            tariffPricePerKwh: null,
+            tariffPricePerMinute: null,
+            tariffPricePerSession: null,
+            tariffIdleFeePricePerMinute: null,
+            tariffTaxRate: null, // taxRate 0 -> subtotal == total branch
+          },
+        ],
+        [], // segments: single tariff
+        [{ id: 'inv-1', totalCents: 700, status: 'issued' }], // invoice insert
+        [{ id: 'li-1', description: 'Charging session', totalCents: 700 }], // line items
+      );
+
+      const result = await createSessionInvoice('ses-no-tariff');
+
+      expect(result.lineItems).toHaveLength(1);
+      expect(result.lineItems[0]?.description).toBe('Charging session');
+    });
+
+    it('derives subtotal and tax from finalCostCents when no tariff but a tax rate exists', async () => {
+      const now = new Date();
+      setupDbResults(
+        [
+          {
+            id: 'ses-tax',
+            driverId: 'd1',
+            tariffId: null,
+            energyDeliveredWh: '5000',
+            startedAt: new Date(now.getTime() - 3600000),
+            endedAt: now,
+            finalCostCents: 1080,
+            currency: 'USD',
+            status: 'completed',
+            idleMinutes: '0',
+            tariffPricePerKwh: null,
+            tariffPricePerMinute: null,
+            tariffPricePerSession: null,
+            tariffIdleFeePricePerMinute: null,
+            tariffTaxRate: '0.08', // taxRate>0 with null costBreakdown
+          },
+        ],
+        [],
+        [{ id: 'inv-2', totalCents: 1080, status: 'issued' }],
+        [{ id: 'li-1', description: 'Charging session', totalCents: 1000 }],
+      );
+
+      const result = await createSessionInvoice('ses-tax');
+
+      // 1080 / 1.08 = 1000 subtotal, 80 tax.
+      expect(result.invoice.id).toBe('inv-2');
+    });
+
+    it('emits an idle-fee line item when the single-tariff breakdown has an idle fee', async () => {
+      vi.mocked(calculateSessionCost).mockReturnValueOnce({
+        energyCostCents: 500,
+        timeCostCents: 0,
+        sessionFeeCents: 0,
+        idleFeeCents: 150,
+        reservationHoldingFeeCents: 0,
+        subtotalCents: 650,
+        taxCents: 0,
+        totalCents: 650,
+        currency: 'USD',
+      });
+      const now = new Date();
+      setupDbResults(
+        [
+          {
+            id: 'ses-idle',
+            driverId: 'd1',
+            tariffId: 'trf-1',
+            energyDeliveredWh: '5000',
+            startedAt: new Date(now.getTime() - 3600000),
+            endedAt: now,
+            finalCostCents: 650,
+            currency: 'USD',
+            status: 'completed',
+            idleMinutes: '10',
+            tariffPricePerKwh: '0.25',
+            tariffPricePerMinute: null,
+            tariffPricePerSession: null,
+            tariffIdleFeePricePerMinute: '0.15',
+            tariffTaxRate: null,
+          },
+        ],
+        [], // single tariff
+        [{ id: 'inv-3', totalCents: 650, status: 'issued' }],
+        [
+          { id: 'li-1', description: 'Energy charge', totalCents: 500 },
+          { id: 'li-2', description: 'Idle fee', totalCents: 150 },
+        ],
+      );
+
+      const result = await createSessionInvoice('ses-idle');
+
+      expect(result.lineItems.some((li) => li.description === 'Idle fee')).toBe(true);
+    });
+
+    it('builds multi-segment line items for split billing', async () => {
+      const now = new Date();
+      const seg1Start = new Date(now.getTime() - 3600000);
+      const seg2Start = new Date(now.getTime() - 1800000);
+      // Per-segment calculateSessionCost outputs (consumed in order).
+      vi.mocked(calculateSessionCost)
+        .mockReturnValueOnce({
+          energyCostCents: 300,
+          timeCostCents: 100,
+          sessionFeeCents: 200,
+          idleFeeCents: 50,
+          reservationHoldingFeeCents: 0,
+          subtotalCents: 650,
+          taxCents: 0,
+          totalCents: 650,
+          currency: 'USD',
+        })
+        .mockReturnValueOnce({
+          energyCostCents: 300,
+          timeCostCents: 200,
+          sessionFeeCents: 0,
+          idleFeeCents: 0,
+          reservationHoldingFeeCents: 0,
+          subtotalCents: 500,
+          taxCents: 0,
+          totalCents: 500,
+          currency: 'USD',
+        });
+
+      setupDbResults(
+        // 1. session
+        [
+          {
+            id: 'ses-split',
+            driverId: 'd1',
+            tariffId: 'trf-1',
+            energyDeliveredWh: '12000',
+            startedAt: seg1Start,
+            endedAt: now,
+            finalCostCents: 1188,
+            currency: 'USD',
+            status: 'completed',
+            idleMinutes: '5',
+            tariffPricePerKwh: '0.25',
+            tariffPricePerMinute: '0.05',
+            tariffPricePerSession: '2.00',
+            tariffIdleFeePricePerMinute: '0.15',
+            tariffTaxRate: '0.08',
+          },
+        ],
+        // 2. segments (two -> split billing)
+        [
+          {
+            startedAt: seg1Start,
+            endedAt: seg2Start,
+            energyWhStart: '0',
+            energyWhEnd: '6000',
+            idleMinutes: '3',
+            tariffId: 'trf-1',
+          },
+          {
+            startedAt: seg2Start,
+            endedAt: now,
+            energyWhStart: '6000',
+            energyWhEnd: '12000',
+            idleMinutes: '2',
+            tariffId: 'trf-2',
+          },
+        ],
+        // 3. tariffs IN query
+        [
+          {
+            id: 'trf-1',
+            pricePerKwh: '0.25',
+            pricePerMinute: '0.05',
+            pricePerSession: '2.00',
+            idleFeePricePerMinute: '0.15',
+            reservationFeePerMinute: null,
+            taxRate: '0.08',
+            currency: 'USD',
+          },
+          {
+            id: 'trf-2',
+            pricePerKwh: '0.30',
+            pricePerMinute: '0.05',
+            pricePerSession: null,
+            idleFeePricePerMinute: '0.15',
+            reservationFeePerMinute: null,
+            taxRate: '0.08',
+            currency: 'USD',
+          },
+        ],
+        // 4. invoice insert
+        [{ id: 'inv-split', totalCents: 1188, status: 'issued', taxCents: 88 }],
+        // 5. line items insert
+        [
+          { id: 'li-1', description: 'Segment 1 energy charge', totalCents: 300 },
+          { id: 'li-2', description: 'Segment 1 time charge', totalCents: 100 },
+          { id: 'li-3', description: 'Session fee', totalCents: 200 },
+          { id: 'li-4', description: 'Segment 1 idle fee', totalCents: 50 },
+          { id: 'li-5', description: 'Segment 2 energy charge', totalCents: 300 },
+          { id: 'li-6', description: 'Segment 2 time charge', totalCents: 200 },
+          { id: 'li-7', description: 'Tax', totalCents: 88 },
+        ],
+      );
+
+      const result = await createSessionInvoice('ses-split');
+
+      expect(result.invoice.id).toBe('inv-split');
+      expect(result.lineItems.length).toBeGreaterThan(4);
+    });
+
+    it('throws when the invoice insert returns no row', async () => {
+      const now = new Date();
+      setupDbResults(
+        [
+          {
+            id: 'ses-fail',
+            driverId: 'd1',
+            tariffId: null,
+            energyDeliveredWh: '1000',
+            startedAt: new Date(now.getTime() - 3600000),
+            endedAt: now,
+            finalCostCents: 500,
+            currency: 'USD',
+            status: 'completed',
+            idleMinutes: '0',
+            tariffPricePerKwh: null,
+            tariffPricePerMinute: null,
+            tariffPricePerSession: null,
+            tariffIdleFeePricePerMinute: null,
+            tariffTaxRate: null,
+          },
+        ],
+        [], // segments
+        [], // invoice insert returns nothing
+      );
+
+      await expect(createSessionInvoice('ses-fail')).rejects.toThrow('Failed to create invoice');
+    });
   });
 
   describe('createAggregatedInvoice', () => {
@@ -323,6 +604,74 @@ describe('Invoice Service', () => {
       await expect(
         createAggregatedInvoice('driver-789', new Date('2026-01-01'), new Date('2026-01-31')),
       ).rejects.toThrow('No uninvoiced sessions found');
+    });
+
+    it('handles a zero-tax session and a null endedAt/null energy session', async () => {
+      setupDbResults(
+        [
+          {
+            id: 'session-1',
+            finalCostCents: 500,
+            currency: 'USD',
+            startedAt: new Date('2026-01-05'),
+            endedAt: null, // -> 'unknown' date
+            energyDeliveredWh: null, // -> '0' kWh
+            tariffTaxRate: null, // -> taxRate 0 branch
+          },
+        ],
+        [{ id: 'inv-agg', totalCents: 500, status: 'issued' }],
+        [{ id: 'li-1', description: 'Charging session unknown (0 kWh)', totalCents: 500 }],
+      );
+
+      const result = await createAggregatedInvoice(
+        'd1',
+        new Date('2026-01-01'),
+        new Date('2026-01-31'),
+      );
+
+      expect(result.lineItems).toHaveLength(1);
+      expect(result.lineItems[0]?.description).toContain('unknown');
+    });
+
+    it('throws when the aggregated invoice insert returns no row', async () => {
+      setupDbResults(
+        [
+          {
+            id: 'session-1',
+            finalCostCents: 500,
+            currency: 'USD',
+            startedAt: new Date('2026-01-05'),
+            endedAt: new Date('2026-01-05T02:00:00Z'),
+            energyDeliveredWh: '5000',
+            tariffTaxRate: '0.08',
+          },
+        ],
+        [], // invoice insert -> nothing
+      );
+
+      await expect(
+        createAggregatedInvoice('d1', new Date('2026-01-01'), new Date('2026-01-31')),
+      ).rejects.toThrow('Failed to create invoice');
+    });
+  });
+
+  describe('getInvoice', () => {
+    it('returns the invoice with its line items when found', async () => {
+      const invoice = { id: 'inv-1', invoiceNumber: 'INV-202601-0001', status: 'issued' };
+      const lineItems = [{ id: 'li-1', invoiceId: 'inv-1', description: 'Energy charge' }];
+      setupDbResults([invoice], lineItems);
+
+      const result = await getInvoice('inv-1');
+
+      expect(result).toEqual({ invoice, lineItems });
+    });
+
+    it('returns null when the invoice does not exist', async () => {
+      setupDbResults([]);
+
+      const result = await getInvoice('missing');
+
+      expect(result).toBeNull();
     });
   });
 

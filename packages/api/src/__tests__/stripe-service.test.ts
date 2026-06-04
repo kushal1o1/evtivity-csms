@@ -78,6 +78,9 @@ const { mockDecryptString, mockStripeInstance, mockConstructEvent } = vi.hoisted
     },
     paymentMethods: {
       detach: vi.fn().mockResolvedValue({ id: 'pm_test' }),
+      retrieve: vi
+        .fn()
+        .mockResolvedValue({ id: 'pm_test', card: { brand: 'visa', last4: '4242' } }),
     },
     webhooks: {
       constructEvent: mockConstructEvent,
@@ -135,6 +138,7 @@ import {
   createSetupIntent,
   createCustomer,
   detachPaymentMethod,
+  retrievePaymentMethod,
   clearConfigCache,
   verifyWebhookSignature,
 } from '../services/stripe.service.js';
@@ -390,6 +394,79 @@ describe('stripe.service', () => {
       expect(key1).toMatch(/^refund_pi_test_/);
       expect(key2).toMatch(/^refund_pi_test_/);
       expect(key1).not.toBe(key2);
+    });
+
+    it('reverses the transfer for a destination charge', async () => {
+      mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+        id: 'pi_dest',
+        transfer_data: { destination: 'acct_x' },
+        application_fee_amount: null,
+      });
+
+      await createRefund(config, 'pi_dest', 1000);
+
+      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment_intent: 'pi_dest',
+          amount: 1000,
+          reverse_transfer: true,
+        }),
+        expect.anything(),
+      );
+      const call = mockStripeInstance.refunds.create.mock.calls[0]![0] as Record<string, unknown>;
+      expect(call['refund_application_fee']).toBeUndefined();
+    });
+
+    it('refunds the application fee when the intent has one', async () => {
+      mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+        id: 'pi_fee',
+        transfer_data: { destination: 'acct_x' },
+        application_fee_amount: 250,
+      });
+
+      await createRefund(config, 'pi_fee');
+
+      expect(mockStripeInstance.refunds.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment_intent: 'pi_fee',
+          reverse_transfer: true,
+          refund_application_fee: true,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('does not reverse transfer for a non-destination charge', async () => {
+      mockStripeInstance.paymentIntents.retrieve.mockResolvedValueOnce({
+        id: 'pi_plain',
+        transfer_data: null,
+        application_fee_amount: null,
+      });
+
+      await createRefund(config, 'pi_plain');
+
+      const call = mockStripeInstance.refunds.create.mock.calls[0]![0] as Record<string, unknown>;
+      expect(call['reverse_transfer']).toBeUndefined();
+      expect(call['refund_application_fee']).toBeUndefined();
+    });
+  });
+
+  describe('retrievePaymentMethod', () => {
+    it('retrieves a payment method by id', async () => {
+      const config: StripeConfig = {
+        stripe: mockStripeInstance as unknown as StripeConfig['stripe'],
+        publishableKey: 'pk_test',
+        currency: 'USD',
+        preAuthAmountCents: 5000,
+        configId: null,
+        connectedAccountId: null,
+        platformFeePercent: 0,
+      };
+
+      const result = await retrievePaymentMethod(config, 'pm_retrieve_test');
+
+      expect(mockStripeInstance.paymentMethods.retrieve).toHaveBeenCalledWith('pm_retrieve_test');
+      expect(result).toEqual({ id: 'pm_test', card: { brand: 'visa', last4: '4242' } });
     });
   });
 
@@ -656,6 +733,50 @@ describe('stripe.service', () => {
       expect(config).not.toBeNull();
       expect(config!.connectedAccountId).toBeNull();
       expect(config!.currency).toBe('USD');
+    });
+
+    it('applies the per-site platformFeePercent override', async () => {
+      setupDbResults(platformSettingsRows(), [sitePaymentConfigRow({ platformFeePercent: '7.5' })]);
+      const config = await getStripeConfig('site-1');
+      expect(config).not.toBeNull();
+      // Site override (7.5) wins over the platform default (0).
+      expect(config!.platformFeePercent).toBe(7.5);
+    });
+  });
+
+  describe('clearConfigCache', () => {
+    it('evicts only the named site entry, leaving the platform cache intact', async () => {
+      setupDbResults(platformSettingsRows(), [sitePaymentConfigRow()]);
+      const siteFirst = await getStripeConfig('site-1');
+      expect(siteFirst).not.toBeNull();
+
+      setupDbResults(platformSettingsRows());
+      const platformFirst = await getStripeConfig(null);
+      expect(platformFirst).not.toBeNull();
+
+      // Evict only site-1. The platform entry stays cached.
+      clearConfigCache('site-1');
+
+      setupDbResults([]);
+      const platformAgain = await getStripeConfig(null);
+      expect(platformAgain).toBe(platformFirst);
+
+      // site-1 must refetch (queries run again).
+      setupDbResults(platformSettingsRows(), [sitePaymentConfigRow({ currency: 'GBP' })]);
+      const siteAgain = await getStripeConfig('site-1');
+      expect(siteAgain!.currency).toBe('GBP');
+    });
+
+    it('evicts the platform entry when called with null', async () => {
+      setupDbResults(platformSettingsRows());
+      const first = await getStripeConfig(null);
+      expect(first).not.toBeNull();
+
+      clearConfigCache(null);
+
+      setupDbResults([]);
+      const second = await getStripeConfig(null);
+      expect(second).toBeNull();
     });
   });
 });

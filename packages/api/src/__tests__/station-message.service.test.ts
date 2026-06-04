@@ -59,6 +59,7 @@ const {
   mockResolveTariff,
   mockFormatPricingDisplay,
   mockPublish,
+  mockSubscribe,
 } = vi.hoisted(() => ({
   mockIsStationMessageEnabled: vi.fn(),
   mockGetStationMessagePricingFormat: vi.fn(),
@@ -66,6 +67,7 @@ const {
   mockResolveTariff: vi.fn(),
   mockFormatPricingDisplay: vi.fn(),
   mockPublish: vi.fn().mockResolvedValue(undefined),
+  mockSubscribe: vi.fn().mockResolvedValue({ unsubscribe: vi.fn() }),
 }));
 
 // -- Mocks --
@@ -146,7 +148,7 @@ vi.mock('../services/tariff.service.js', () => ({
 }));
 
 vi.mock('../lib/pubsub.js', () => ({
-  getPubSub: vi.fn(() => ({ publish: mockPublish })),
+  getPubSub: vi.fn(() => ({ publish: mockPublish, subscribe: mockSubscribe })),
 }));
 
 // -- Import under test (after mocks) --
@@ -154,8 +156,12 @@ vi.mock('../lib/pubsub.js', () => ({
 import {
   pushAllStationMessages,
   pushStationMessageSlot,
+  clearStationMessageSlot,
   pushTransactionMessage,
   clearAllTransactionMessages,
+  pushAllMessagesToAllStations,
+  startStationMessageRefreshListener,
+  startStationMessageTransactionListener,
   STATION_MESSAGE_SLOT_IDLE,
   STATION_MESSAGE_SLOT_CHARGING,
   STATION_MESSAGE_SLOT_SUSPENDED,
@@ -615,6 +621,610 @@ describe('station-message.service', () => {
       );
 
       expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('clears a stale transaction slot when chargingState becomes Idle', async () => {
+      // chargingState Idle with an existing 9001 row -> clear 9001 + delete row.
+      setupDbResults([{ ocppMessageId: STATION_MESSAGE_SLOT_CHARGING, contentHash: 'h' }], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Idle' }),
+        mockLogger as never,
+      );
+
+      const clearCall = mockPublish.mock.calls.find((c) => {
+        const body = JSON.parse(c[1] as string) as { action: string; payload: { id?: number } };
+        return (
+          body.action === 'ClearDisplayMessage' && body.payload.id === STATION_MESSAGE_SLOT_CHARGING
+        );
+      });
+      expect(clearCall).toBeDefined();
+    });
+
+    it('logs a warning when clearing a stale slot fails on Idle transition', async () => {
+      setupDbResults([{ ocppMessageId: STATION_MESSAGE_SLOT_CHARGING, contentHash: 'h' }]);
+      // The ClearDisplayMessage publish rejects.
+      mockPublish.mockRejectedValueOnce(new Error('clear failed'));
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Idle' }),
+        mockLogger as never,
+      );
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ slot: STATION_MESSAGE_SLOT_CHARGING }),
+        'Failed to clear stale transaction message slot',
+      );
+    });
+
+    it('skips dispatch when the transaction content hash matches the existing push', async () => {
+      const hash = (await import('node:crypto'))
+        .createHash('sha256')
+        .update('rendered:charging')
+        .digest('hex');
+      setupDbResults(
+        [{ ocppMessageId: STATION_MESSAGE_SLOT_CHARGING, contentHash: hash }],
+        [{ value: '7000', unit: 'W' }],
+        [{ firstName: 'Alex' }],
+      );
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Charging' }),
+        mockLogger as never,
+      );
+
+      const setCall = mockPublish.mock.calls.find((c) => {
+        const body = JSON.parse(c[1] as string) as { action: string };
+        return body.action === 'SetDisplayMessage';
+      });
+      expect(setCall).toBeUndefined();
+    });
+
+    it('returns without publishing when the transaction template renders empty', async () => {
+      mockRenderStationMessage.mockResolvedValueOnce('');
+      setupDbResults([], [], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Charging' }),
+        mockLogger as never,
+      );
+
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('logs a warning when the transaction template render throws', async () => {
+      mockRenderStationMessage.mockRejectedValueOnce(new Error('template broken'));
+      setupDbResults([], [], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Charging' }),
+        mockLogger as never,
+      );
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ templateState: 'charging' }),
+        'Failed to render transaction station message',
+      );
+    });
+
+    it('logs a warning when the transaction dispatch publish throws', async () => {
+      setupDbResults([], [{ value: '7000', unit: 'W' }], [{ firstName: 'Alex' }], []);
+      mockPublish.mockRejectedValueOnce(new Error('publish failed'));
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ chargingState: 'Charging' }),
+        mockLogger as never,
+      );
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ slot: STATION_MESSAGE_SLOT_CHARGING }),
+        'Failed to dispatch transaction station message',
+      );
+    });
+  });
+
+  describe('pushAllStationMessages edge cases', () => {
+    it('returns early for a null ocppProtocol', async () => {
+      await pushAllStationMessages(STATION_OCPP_ID, INTERNAL_STATION_ID, null, mockLogger as never);
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('returns when the station row is missing', async () => {
+      setupDbResults([]); // station lookup empty
+
+      await pushAllStationMessages(
+        STATION_OCPP_ID,
+        INTERNAL_STATION_ID,
+        'ocpp2.1',
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).not.toHaveBeenCalled();
+    });
+
+    it('logs a warning when rendering throws', async () => {
+      mockRenderStationMessage.mockReset();
+      mockRenderStationMessage.mockRejectedValue(new Error('render broke'));
+      setupDbResults([STATION_ROW], []);
+
+      await pushAllStationMessages(
+        STATION_OCPP_ID,
+        INTERNAL_STATION_ID,
+        'ocpp2.1',
+        mockLogger as never,
+      );
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ stationId: STATION_OCPP_ID }),
+        'Failed to push station messages',
+      );
+    });
+
+    it('renders an empty pricing display when no tariff resolves', async () => {
+      mockResolveTariff.mockResolvedValueOnce(null);
+      setupDbResults([STATION_ROW], [], [], [], [], [], [], []);
+
+      await pushAllStationMessages(
+        STATION_OCPP_ID,
+        INTERNAL_STATION_ID,
+        'ocpp2.1',
+        mockLogger as never,
+      );
+
+      expect(mockFormatPricingDisplay).not.toHaveBeenCalled();
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'available',
+        expect.objectContaining({ pricingDisplay: '' }),
+      );
+    });
+
+    it('does not publish when the rendered content is empty (dispatchAndUpsert no-op)', async () => {
+      mockRenderStationMessage.mockReset();
+      mockRenderStationMessage.mockResolvedValue('');
+      setupDbResults([STATION_ROW], []);
+
+      await pushAllStationMessages(
+        STATION_OCPP_ID,
+        INTERNAL_STATION_ID,
+        'ocpp2.1',
+        mockLogger as never,
+      );
+
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearStationMessageSlot', () => {
+    it('publishes ClearDisplayMessage for OCPP 2.1', async () => {
+      await clearStationMessageSlot(STATION_OCPP_ID, 'ocpp2.1', 9002);
+
+      expect(mockPublish).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(mockPublish.mock.calls[0]![1] as string) as {
+        action: string;
+        payload: { id: number };
+      };
+      expect(body.action).toBe('ClearDisplayMessage');
+      expect(body.payload.id).toBe(9002);
+    });
+
+    it('is a no-op for OCPP 1.6', async () => {
+      await clearStationMessageSlot(STATION_OCPP_ID, 'ocpp1.6', 9002);
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op for a null protocol', async () => {
+      await clearStationMessageSlot(STATION_OCPP_ID, null, 9002);
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearAllTransactionMessages edge cases', () => {
+    it('returns early for OCPP 1.6', async () => {
+      await clearAllTransactionMessages(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp1.6',
+        mockLogger as never,
+      );
+      expect(mockPublish).not.toHaveBeenCalled();
+    });
+
+    it('logs a warning when a clear fails', async () => {
+      setupDbResults([{ ocppMessageId: STATION_MESSAGE_SLOT_CHARGING }]);
+      mockPublish.mockRejectedValueOnce(new Error('clear boom'));
+
+      await clearAllTransactionMessages(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        mockLogger as never,
+      );
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ slot: STATION_MESSAGE_SLOT_CHARGING }),
+        'Failed to clear transaction message slot on session end',
+      );
+    });
+  });
+
+  describe('transaction message formatting branches', () => {
+    function makeSession(overrides: Partial<TransactionSessionRow> = {}): TransactionSessionRow {
+      return {
+        id: 'ses_1',
+        stationId: INTERNAL_STATION_ID,
+        evseId: 'evs_1',
+        driverId: null,
+        transactionId: 'tx-1',
+        startedAt: null,
+        energyDeliveredWh: null,
+        currentCostCents: null,
+        currency: null,
+        chargingState: 'Charging',
+        tariffIdleFeePricePerMinute: null,
+        ...overrides,
+      };
+    }
+
+    it('handles null startedAt, null energy, null cost, null currency, null power, no driver', async () => {
+      // existing pushes [], power meter [] (empty -> ''), no driver lookup (driverId null)
+      setupDbResults([], [], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession(),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({ energyKwh: '0.0', powerKw: '', elapsedFormatted: '' }),
+      );
+    });
+
+    it('formats elapsed time over an hour', async () => {
+      setupDbResults([], [{ value: '7', unit: 'kW' }], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ startedAt: new Date(Date.now() - 95 * 60_000), driverId: null }),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({ elapsedFormatted: '1h 35m', powerKw: '7.0' }),
+      );
+    });
+
+    it('ignores a future startedAt and a non-numeric power value', async () => {
+      setupDbResults([], [{ value: 'not-a-number', unit: 'W' }], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ startedAt: new Date(Date.now() + 60_000) }),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({ elapsedFormatted: '', powerKw: '' }),
+      );
+    });
+
+    it('formats cost and idle-fee rate with a valid currency', async () => {
+      setupDbResults([], [{ value: '7000', unit: 'W' }], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({
+          currentCostCents: 500,
+          currency: 'USD',
+          tariffIdleFeePricePerMinute: '0.15',
+        }),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({
+          costFormatted: '$5.00',
+          idleFeeRate: expect.stringContaining('/min'),
+        }),
+      );
+    });
+
+    it('falls back gracefully when the currency code is invalid', async () => {
+      setupDbResults([], [], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({
+          currentCostCents: 500,
+          currency: 'NOTACURRENCY',
+          tariffIdleFeePricePerMinute: '0.15',
+        }),
+        mockLogger as never,
+      );
+
+      const ctx = mockRenderStationMessage.mock.calls[0]![1] as Record<string, string>;
+      expect(ctx['costFormatted']).toBe('5.00 NOTACURRENCY');
+      expect(ctx['idleFeeRate']).toBe('0.15 NOTACURRENCY/min');
+    });
+
+    it('omits the idle-fee rate when the rate is zero or negative', async () => {
+      setupDbResults([], [], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ tariffIdleFeePricePerMinute: '0' }),
+        mockLogger as never,
+      );
+
+      const ctx = mockRenderStationMessage.mock.calls[0]![1] as Record<string, unknown>;
+      expect(ctx['idleFeeRate']).toBeUndefined();
+    });
+
+    it('treats a numeric power value already in kW unit as-is', async () => {
+      setupDbResults([], [{ value: '11.2', unit: 'kW' }], []);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ driverId: 'drv_1' }),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({ powerKw: '11.2' }),
+      );
+    });
+
+    it('includes the driver first name when present', async () => {
+      setupDbResults([], [], [{ firstName: 'Sam' }]);
+
+      await pushTransactionMessage(
+        INTERNAL_STATION_ID,
+        STATION_OCPP_ID,
+        'ocpp2.1',
+        makeSession({ driverId: 'drv_1' }),
+        mockLogger as never,
+      );
+
+      expect(mockRenderStationMessage).toHaveBeenCalledWith(
+        'charging',
+        expect.objectContaining({ driverFirstName: 'Sam' }),
+      );
+    });
+  });
+
+  describe('startStationMessageRefreshListener', () => {
+    async function getHandler() {
+      await startStationMessageRefreshListener(mockLogger as never);
+      const call = mockSubscribe.mock.calls.find((c) => c[0] === 'station_message_refresh');
+      return call?.[1] as (raw: string) => void;
+    }
+
+    it('subscribes to the refresh channel', async () => {
+      await startStationMessageRefreshListener(mockLogger as never);
+      expect(mockSubscribe).toHaveBeenCalledWith('station_message_refresh', expect.any(Function));
+    });
+
+    it('ignores payloads missing required fields', async () => {
+      const handler = await getHandler();
+      handler(JSON.stringify({ stationOcppId: 'CS-1' })); // missing other fields
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockRenderStationMessage).not.toHaveBeenCalled();
+    });
+
+    it('pushes all messages for a valid payload', async () => {
+      setupDbResults([STATION_ROW], [], [], [], [], [], [], []);
+      const handler = await getHandler();
+      handler(
+        JSON.stringify({
+          stationOcppId: STATION_OCPP_ID,
+          internalStationId: INTERNAL_STATION_ID,
+          ocppProtocol: 'ocpp2.1',
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      expect(mockRenderStationMessage).toHaveBeenCalledWith('available', expect.any(Object));
+    });
+
+    it('logs a warning when the payload is not valid JSON', async () => {
+      const handler = await getHandler();
+      handler('{not json');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.any(Error) }),
+        'station_message_refresh handler failed',
+      );
+    });
+  });
+
+  describe('startStationMessageTransactionListener', () => {
+    async function getHandler() {
+      await startStationMessageTransactionListener(mockLogger as never);
+      const call = mockSubscribe.mock.calls.find((c) => c[0] === 'station_message_transaction');
+      return call?.[1] as (raw: string) => void;
+    }
+
+    const SESSION_DB_ROW = {
+      id: 'ses_1',
+      stationId: INTERNAL_STATION_ID,
+      evseId: 'evs_1',
+      driverId: null,
+      transactionId: 'tx-1',
+      startedAt: new Date(Date.now() - 5 * 60_000),
+      energyDeliveredWh: '1000',
+      currentCostCents: 100,
+      currency: 'USD',
+      tariffIdleFeePricePerMinute: null,
+    };
+
+    it('ignores payloads missing required fields', async () => {
+      const handler = await getHandler();
+      handler(JSON.stringify({ sessionId: 'ses_1' }));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockRenderStationMessage).not.toHaveBeenCalled();
+    });
+
+    it('clears all transaction slots on an ended event', async () => {
+      setupDbResults([{ ocppMessageId: STATION_MESSAGE_SLOT_CHARGING }]);
+      const handler = await getHandler();
+      handler(
+        JSON.stringify({
+          sessionId: 'ses_1',
+          internalStationId: INTERNAL_STATION_ID,
+          stationOcppId: STATION_OCPP_ID,
+          ocppProtocol: 'ocpp2.1',
+          eventType: 'ended',
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      const cleared = mockPublish.mock.calls.some((c) => {
+        const body = JSON.parse(c[1] as string) as { action: string };
+        return body.action === 'ClearDisplayMessage';
+      });
+      expect(cleared).toBe(true);
+    });
+
+    it('returns when the session row is not found', async () => {
+      setupDbResults([]); // loadTransactionSessionById -> empty
+      const handler = await getHandler();
+      handler(
+        JSON.stringify({
+          sessionId: 'ses_missing',
+          internalStationId: INTERNAL_STATION_ID,
+          stationOcppId: STATION_OCPP_ID,
+          ocppProtocol: 'ocpp2.1',
+          eventType: 'updated',
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      expect(mockRenderStationMessage).not.toHaveBeenCalled();
+    });
+
+    it('loads the session and pushes a transaction message on an updated event', async () => {
+      // 1) loadTransactionSessionById -> [SESSION_DB_ROW]
+      // then pushTransactionMessage: existing pushes [], power [], driver (null) skipped, insert []
+      setupDbResults([SESSION_DB_ROW], [], [], []);
+      const handler = await getHandler();
+      handler(
+        JSON.stringify({
+          sessionId: 'ses_1',
+          internalStationId: INTERNAL_STATION_ID,
+          stationOcppId: STATION_OCPP_ID,
+          ocppProtocol: 'ocpp2.1',
+          eventType: 'updated',
+          chargingState: 'Charging',
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      expect(mockRenderStationMessage).toHaveBeenCalledWith('charging', expect.any(Object));
+    });
+
+    it('logs a warning on malformed JSON', async () => {
+      const handler = await getHandler();
+      handler('not-json');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ error: expect.any(Error) }),
+        'station_message_transaction handler failed',
+      );
+    });
+  });
+
+  describe('pushAllMessagesToAllStations', () => {
+    it('pushes to every online OCPP 2.1 station and logs the count', async () => {
+      // 1) online stations list
+      // then for the single 2.1 station: pushAllStationMessages runs its own queries.
+      // station2 is 1.6 so pushAllStationMessages returns early (no DB queries).
+      setupDbResults(
+        [
+          { id: INTERNAL_STATION_ID, stationOcppId: STATION_OCPP_ID, ocppProtocol: 'ocpp2.1' },
+          { id: 'sta_2', stationOcppId: 'CS-0002', ocppProtocol: 'ocpp1.6' },
+        ],
+        [STATION_ROW],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      );
+
+      await pushAllMessagesToAllStations(mockLogger as never);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ pushed: 2 }),
+        'Station messages pushed to stations',
+      );
+    });
+
+    it('continues and warns when one station push throws', async () => {
+      mockIsStationMessageEnabled.mockReset();
+      // First station: enabled check throws -> caught in the per-station try/catch.
+      mockIsStationMessageEnabled.mockRejectedValueOnce(new Error('settings down'));
+      mockIsStationMessageEnabled.mockResolvedValue(true);
+
+      setupDbResults(
+        [
+          { id: 'sta_a', stationOcppId: 'CS-A', ocppProtocol: 'ocpp2.1' },
+          { id: 'sta_b', stationOcppId: 'CS-B', ocppProtocol: 'ocpp1.6' },
+        ],
+        // sta_b is 1.6 -> returns before any DB query.
+      );
+
+      await pushAllMessagesToAllStations(mockLogger as never);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ stationId: 'CS-A' }),
+        'Failed to push station messages to station',
+      );
+    });
+
+    it('does not log when there are no online stations', async () => {
+      setupDbResults([]);
+
+      await pushAllMessagesToAllStations(mockLogger as never);
+
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'Station messages pushed to stations',
+      );
     });
   });
 });

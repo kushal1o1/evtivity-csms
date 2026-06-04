@@ -147,10 +147,12 @@ import {
   createToken,
   updateToken,
   deleteToken,
+  bulkSetActive,
   exportTokensCsv,
   importTokensCsv,
   DuplicateTokenError,
 } from '../services/token.service.js';
+import { dispatchDriverNotification } from '@evtivity/lib';
 
 beforeEach(() => {
   dbResults = [];
@@ -177,6 +179,30 @@ describe('listTokens', () => {
 
     expect(result.data).toEqual(tokenRows);
     expect(result.total).toBe(1);
+  });
+
+  it('applies tokenType and status filters', async () => {
+    const tokenRows = [{ id: 't3', idToken: 'TYPED', tokenType: 'KeyCode', isActive: true }];
+    setupDbResults(tokenRows, [{ count: 1 }]);
+
+    const result = await listTokens({
+      page: 1,
+      limit: 10,
+      tokenType: 'KeyCode',
+      status: 'active',
+    });
+
+    expect(result.data).toEqual(tokenRows);
+    expect(result.total).toBe(1);
+  });
+
+  it('filters by inactive status', async () => {
+    setupDbResults([], [{ count: 0 }]);
+
+    const result = await listTokens({ page: 1, limit: 10, status: 'inactive' });
+
+    expect(result.data).toEqual([]);
+    expect(result.total).toBe(0);
   });
 });
 
@@ -228,6 +254,126 @@ describe('createToken', () => {
 
     expect(result).toEqual(token);
   });
+
+  it('notifies the driver and fires SSE when a token is created with a driver', async () => {
+    const token = {
+      id: 't9',
+      idToken: 'DRIVER_TOKEN',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+    };
+    setupDbResults([], [token]);
+
+    const result = await createToken(
+      { idToken: 'DRIVER_TOKEN', tokenType: 'ISO14443', driverId: 'drv_1' },
+      { type: 'operator', userId: 'usr_1' },
+    );
+
+    expect(result).toEqual(token);
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Added',
+      'drv_1',
+      expect.objectContaining({
+        idToken: 'DRIVER_TOKEN',
+        tokenType: 'ISO14443',
+        addedBy: 'operator',
+      }),
+    );
+  });
+
+  it('reactivates an existing inactive token belonging to the same driver', async () => {
+    // 1. dup check: existing inactive row for same driver
+    // 2. updateToken: select current row
+    // 3. updateToken: update returning (reactivated)
+    // 4. bumpStationsHoldingToken: select entries (empty -> no version bump)
+    const existing = { id: 't1', driverId: 'drv_1', isActive: false };
+    const reactivated = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: true,
+    };
+    const currentRow = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: false,
+    };
+    setupDbResults([existing], [currentRow], [reactivated], []);
+
+    const result = await createToken(
+      { idToken: 'RFID-1', tokenType: 'ISO14443', driverId: 'drv_1' },
+      { type: 'driver', driverId: 'drv_1' },
+    );
+
+    expect(result).toEqual(reactivated);
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Reactivated',
+      'drv_1',
+      expect.objectContaining({ reactivatedBy: 'you' }),
+    );
+  });
+
+  it('throws DuplicateTokenError when an existing token belongs to a different driver', async () => {
+    setupDbResults([{ id: 't1', driverId: 'drv_other', isActive: false }]);
+
+    await expect(
+      createToken(
+        { idToken: 'RFID-1', tokenType: 'ISO14443', driverId: 'drv_1' },
+        { type: 'driver', driverId: 'drv_1' },
+      ),
+    ).rejects.toBeInstanceOf(DuplicateTokenError);
+  });
+
+  it('maps a postgres 23505 unique violation on insert to DuplicateTokenError', async () => {
+    // dup pre-check returns empty, but the insert throws a unique-violation as
+    // a concurrent insert won the TOCTOU race.
+    setupDbResults([]);
+    const { db } = await import('@evtivity/database');
+    const uniqueErr = Object.assign(new Error('duplicate key'), { code: '23505' });
+    vi.mocked(db.insert).mockImplementationOnce(
+      () =>
+        ({
+          values: () => ({
+            returning: () => Promise.reject(uniqueErr),
+          }),
+        }) as never,
+    );
+
+    await expect(createToken({ idToken: 'RACE', tokenType: 'ISO14443' })).rejects.toBeInstanceOf(
+      DuplicateTokenError,
+    );
+  });
+
+  it('rethrows non-unique-violation insert errors', async () => {
+    setupDbResults([]);
+    const { db } = await import('@evtivity/database');
+    const otherErr = new Error('connection lost');
+    vi.mocked(db.insert).mockImplementationOnce(
+      () =>
+        ({
+          values: () => ({
+            returning: () => Promise.reject(otherErr),
+          }),
+        }) as never,
+    );
+
+    await expect(createToken({ idToken: 'X', tokenType: 'ISO14443' })).rejects.toThrow(
+      'connection lost',
+    );
+  });
+
+  it('returns null when the insert returns no row', async () => {
+    setupDbResults([], []);
+
+    const result = await createToken({ idToken: 'NONE', tokenType: 'ISO14443' });
+
+    expect(result).toBeNull();
+  });
 });
 
 describe('updateToken', () => {
@@ -267,6 +413,115 @@ describe('updateToken', () => {
 
     expect(result).toEqual(token);
   });
+
+  it('deactivates an active token, notifies the driver, and bumps stations holding it', async () => {
+    const current = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: true,
+    };
+    const updated = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: false,
+    };
+    // 1. select current
+    // 2. update returning
+    // 3. bumpStationsHoldingToken: select entries -> two rows on one station
+    // 4. update stationLocalAuthVersions
+    setupDbResults([current], [updated], [{ stationId: 'sta_1' }, { stationId: 'sta_1' }], []);
+
+    const result = await updateToken(
+      't1',
+      { isActive: false, revokedReason: 'Lost card' },
+      { type: 'operator', userId: 'usr_1' },
+    );
+
+    expect(result).toEqual(updated);
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Deactivated',
+      'drv_1',
+      expect.objectContaining({ reason: 'Lost card' }),
+    );
+  });
+
+  it('reactivates an inactive token and clears the revoked stamp', async () => {
+    const current = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: false,
+    };
+    const updated = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: true,
+    };
+    // 1. select current
+    // 2. update returning
+    // 3. bumpStationsHoldingToken: select entries (empty)
+    setupDbResults([current], [updated], []);
+
+    const result = await updateToken(
+      't1',
+      { isActive: true },
+      { type: 'operator', userId: 'usr_1' },
+    );
+
+    expect(result).toEqual(updated);
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Reactivated',
+      'drv_1',
+      expect.objectContaining({ reactivatedBy: 'operator' }),
+    );
+  });
+
+  it('swallows a driver-notification failure and still returns the updated token', async () => {
+    const current = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: true,
+    };
+    const updated = {
+      id: 't1',
+      idToken: 'RFID-1',
+      tokenType: 'ISO14443',
+      driverId: 'drv_1',
+      isActive: false,
+    };
+    setupDbResults([current], [updated], []);
+    vi.mocked(dispatchDriverNotification).mockRejectedValueOnce(new Error('SMTP down'));
+
+    const result = await updateToken('t1', { isActive: false }, { type: 'system' });
+
+    expect(result).toEqual(updated);
+  });
+
+  it('returns null when the update returns no row', async () => {
+    const current = {
+      id: 't1',
+      idToken: 'OLD',
+      tokenType: 'ISO14443',
+      driverId: null,
+      isActive: true,
+    };
+    setupDbResults([current], []);
+
+    const result = await updateToken('t1', { expiresAt: new Date() });
+
+    expect(result).toBeNull();
+  });
 });
 
 describe('deleteToken', () => {
@@ -285,6 +540,68 @@ describe('deleteToken', () => {
     const result = await deleteToken('nonexistent');
 
     expect(result).toBeNull();
+  });
+});
+
+describe('bulkSetActive', () => {
+  it('returns updated 0 for an empty id list', async () => {
+    const result = await bulkSetActive([], true);
+    expect(result).toEqual({ updated: 0 });
+  });
+
+  it('returns updated 0 when the bulk update matches no rows', async () => {
+    // update returning -> empty
+    setupDbResults([]);
+
+    const result = await bulkSetActive(['x', 'y'], false);
+
+    expect(result).toEqual({ updated: 0 });
+  });
+
+  it('deactivates tokens, writes one audit batch, bumps stations, and notifies drivers', async () => {
+    const updatedRows = [
+      { id: 't1', idToken: 'A', tokenType: 'ISO14443', driverId: 'drv_1' },
+      { id: 't2', idToken: 'B', tokenType: 'ISO14443', driverId: 'drv_2' },
+    ];
+    // 1. update returning -> two rows
+    // 2. insert tokenAuditLog (no result)
+    // 3. select entries -> one station
+    // 4. update stationLocalAuthVersions
+    setupDbResults(updatedRows, [], [{ stationId: 'sta_1' }], []);
+
+    const result = await bulkSetActive(['t1', 't2'], false, { type: 'operator', userId: 'usr_1' });
+
+    expect(result).toEqual({ updated: 2 });
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Deactivated',
+      'drv_1',
+      expect.objectContaining({ reason: '' }),
+    );
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Deactivated',
+      'drv_2',
+      expect.objectContaining({ reason: '' }),
+    );
+  });
+
+  it('reactivates tokens and notifies with the reactivated template', async () => {
+    const updatedRows = [{ id: 't1', idToken: 'A', tokenType: 'ISO14443', driverId: 'drv_1' }];
+    // 1. update returning
+    // 2. insert audit
+    // 3. select entries -> empty (no station bump)
+    setupDbResults(updatedRows, [], []);
+
+    const result = await bulkSetActive(['t1'], true, { type: 'operator', userId: 'usr_1' });
+
+    expect(result).toEqual({ updated: 1 });
+    expect(dispatchDriverNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      'token.Reactivated',
+      'drv_1',
+      expect.objectContaining({ reactivatedBy: 'operator' }),
+    );
   });
 });
 
@@ -314,6 +631,24 @@ describe('exportTokensCsv', () => {
     expect(lines[0]).toBe('idToken,tokenType,driverEmail,isActive,expiresAt');
     expect(lines[1]).toBe('TOK1,ISO14443,a@b.com,true,');
     expect(lines[2]).toBe('TOK2,ISO15693,,false,');
+  });
+
+  it('serializes an expiresAt Date and applies the search filter', async () => {
+    const expires = new Date('2027-01-01T00:00:00.000Z');
+    setupDbResults([
+      {
+        idToken: 'TOK3',
+        tokenType: 'ISO14443',
+        driverEmail: 'c@d.com',
+        isActive: true,
+        expiresAt: expires,
+      },
+    ]);
+
+    const csv = await exportTokensCsv('TOK3');
+
+    const lines = csv.split('\n');
+    expect(lines[1]).toBe('TOK3,ISO14443,c@d.com,true,2027-01-01T00:00:00.000Z');
   });
 });
 
@@ -382,6 +717,52 @@ describe('importTokensCsv', () => {
     expect(result.imported).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('already exists');
+  });
+
+  it('imports a row with a valid expiresAt date', async () => {
+    const insertedRows = [{ id: 't1', idToken: 'EXP', tokenType: 'ISO14443', driverId: null }];
+    // no driverEmail -> no driver lookup; existing (empty); insert returning; audit insert
+    setupDbResults([], insertedRows, []);
+
+    const result = await importTokensCsv([
+      { idToken: 'EXP', tokenType: 'ISO14443', expiresAt: '2027-06-01T00:00:00Z' },
+    ]);
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('flags a row with an invalid expiresAt before the transaction', async () => {
+    setupDbResults();
+
+    const result = await importTokensCsv([
+      { idToken: 'BAD', tokenType: 'ISO14443', expiresAt: 'not-a-date' },
+    ]);
+
+    expect(result.imported).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('invalid expiresAt');
+  });
+
+  it('returns empty result when every row fails parsing (no transaction)', async () => {
+    setupDbResults();
+
+    const result = await importTokensCsv([{ idToken: '', tokenType: '' }]);
+
+    expect(result.imported).toBe(0);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it('treats a blank expiresAt string as no expiry', async () => {
+    const insertedRows = [{ id: 't1', idToken: 'BLANK', tokenType: 'ISO14443', driverId: null }];
+    setupDbResults([], insertedRows, []);
+
+    const result = await importTokensCsv([
+      { idToken: 'BLANK', tokenType: 'ISO14443', expiresAt: '   ' },
+    ]);
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toEqual([]);
   });
 
   it('flags duplicate rows within the same batch', async () => {

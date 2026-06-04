@@ -77,6 +77,7 @@ import {
   revokeRefreshToken,
   revokeAllUserRefreshTokens,
   revokeAllDriverRefreshTokens,
+  revokeAllUserSessions,
 } from '../services/refresh-token.service.js';
 import { db } from '@evtivity/database';
 
@@ -227,6 +228,77 @@ describe('validateAndRotateRefreshToken', () => {
       driverId: 'drv_xyz789',
       tokenId: 99,
     });
+  });
+
+  it('returns null without theft-revocation for a token revoked inside the grace window', async () => {
+    // Revoked 5s ago (< 30s grace) -> legitimate concurrent rotation.
+    const row = {
+      id: 11,
+      userId: 'usr_abc123',
+      driverId: null,
+      tokenHash: 'somehash',
+      type: 'session',
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      revokedAt: new Date(Date.now() - 5_000),
+      createdAt: new Date(),
+    };
+    setupDbResults([row]);
+
+    const result = await validateAndRotateRefreshToken('recently-rotated-token');
+
+    expect(result).toBeNull();
+    // No mass-revocation: the grace window swallows the replay silently.
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('revokes all user sessions when a token revoked outside the grace window is replayed', async () => {
+    // Revoked 60s ago (> 30s grace) -> treat as theft, revoke every session.
+    const row = {
+      id: 12,
+      userId: 'usr_theft',
+      driverId: null,
+      tokenHash: 'somehash',
+      type: 'session',
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      revokedAt: new Date(Date.now() - 60_000),
+      createdAt: new Date(),
+    };
+    setupDbResults([row], []);
+
+    const result = await validateAndRotateRefreshToken('stolen-token');
+
+    expect(result).toBeNull();
+    // revokeAllUserSessions fired its single mass-revocation UPDATE.
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('revokes all driver tokens when a driver token is replayed outside the grace window', async () => {
+    const row = {
+      id: 13,
+      userId: null,
+      driverId: 'drv_theft',
+      tokenHash: 'somehash',
+      type: 'session',
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      revokedAt: new Date(Date.now() - 60_000),
+      createdAt: new Date(),
+    };
+    setupDbResults([row], []);
+
+    const result = await validateAndRotateRefreshToken('stolen-driver-token');
+
+    expect(result).toBeNull();
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('revokeAllUserSessions', () => {
+  it('revokes only session-type tokens for a user', async () => {
+    setupDbResults([]);
+
+    await revokeAllUserSessions('usr_abc123');
+
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 });
 

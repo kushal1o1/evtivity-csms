@@ -122,6 +122,28 @@ describe('createApiKey', () => {
     expect(result.id).toBe(2);
     expect(db.insert).toHaveBeenCalled();
   });
+
+  it('throws when the insert returns no row', async () => {
+    setupDbResults([]);
+
+    await expect(createApiKey({ userId: 'usr_abc123', name: 'Doomed Key' })).rejects.toThrow(
+      'Failed to insert API key',
+    );
+  });
+
+  it('scopes the key to the provided permissions array', async () => {
+    const createdAt = new Date();
+    setupDbResults([{ id: 3, createdAt }]);
+
+    const result = await createApiKey({
+      userId: 'usr_abc123',
+      name: 'Scoped Key',
+      permissions: ['stations:read', 'sessions:read'],
+    });
+
+    expect(result.id).toBe(3);
+    expect(db.insert).toHaveBeenCalled();
+  });
 });
 
 describe('listApiKeys', () => {

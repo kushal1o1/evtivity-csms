@@ -116,6 +116,7 @@ import {
   addStationToFleet,
   removeStationFromFleet,
   getFleetVehicles,
+  searchAvailableVehicles,
   getFleetSessions,
   getFleetMetrics,
   getFleetEnergyHistory,
@@ -340,6 +341,36 @@ describe('getFleetVehicles', () => {
     const result = await getFleetVehicles('f1', 1, 10);
 
     expect(result).toEqual({ data: vehicles, total: 1 });
+  });
+});
+
+describe('searchAvailableVehicles', () => {
+  it('returns vehicles not yet assigned to the fleet matching the search', async () => {
+    const rows = [
+      {
+        id: 'v2',
+        driverId: 'd2',
+        driverName: 'Jane Roe',
+        make: 'Rivian',
+        model: 'R1T',
+        year: 2024,
+        vin: 'RIV999',
+        licensePlate: 'EV-2',
+      },
+    ];
+    setupDbResults(rows);
+
+    const result = await searchAvailableVehicles('f1', 'Rivian', 25);
+
+    expect(result).toEqual(rows);
+  });
+
+  it('returns an empty list when nothing matches', async () => {
+    setupDbResults([]);
+
+    const result = await searchAvailableVehicles('f1', 'no-such-vehicle', 25);
+
+    expect(result).toEqual([]);
   });
 });
 

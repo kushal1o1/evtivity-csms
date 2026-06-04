@@ -28,6 +28,7 @@ vi.mock('../services/stripe.service.js', () => ({
 import {
   reconcilePayments,
   mapStripeStatusToLocal,
+  acceptableLocalStatusesForStripe,
 } from '../services/payment-reconciliation.service.js';
 import { getStripeConfig } from '../services/stripe.service.js';
 import { db } from '@evtivity/database';
@@ -252,6 +253,80 @@ describe('reconcilePayments', () => {
     expect(mockStripe.paymentIntents.retrieve).not.toHaveBeenCalled();
   });
 
+  it('returns immediately with no records when the first batch is empty', async () => {
+    const mockStripe = { paymentIntents: { retrieve: vi.fn() } };
+    vi.mocked(getStripeConfig).mockResolvedValue({
+      stripe: mockStripe as never,
+      publishableKey: 'pk_test',
+      currency: 'USD',
+      preAuthAmountCents: 5000,
+      configId: null,
+      connectedAccountId: null,
+      platformFeePercent: 0,
+    });
+
+    vi.mocked(db.select).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValueOnce([]),
+          }),
+        }),
+      }),
+    } as never);
+
+    const result = await reconcilePayments(mockLog);
+
+    expect(result.checked).toBe(0);
+    expect(result.matched).toBe(0);
+    expect(result.errors).toHaveLength(0);
+    expect(mockStripe.paymentIntents.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('paginates a full batch then stops on the empty follow-up batch', async () => {
+    const mockStripe = {
+      paymentIntents: {
+        retrieve: vi.fn().mockResolvedValue({ status: 'requires_capture', amount_received: 0 }),
+      },
+    };
+    vi.mocked(getStripeConfig).mockResolvedValue({
+      stripe: mockStripe as never,
+      publishableKey: 'pk_test',
+      currency: 'USD',
+      preAuthAmountCents: 5000,
+      configId: null,
+      connectedAccountId: null,
+      platformFeePercent: 0,
+    });
+
+    // 200 records (== RECONCILIATION_BATCH_SIZE) forces a second query; the
+    // second returns empty to break the loop via the batch.length===0 path.
+    const fullBatch = Array.from({ length: 200 }, (_, i) => ({
+      id: i + 1,
+      stripePaymentIntentId: `pi_${String(i + 1)}`,
+      status: 'pre_authorized',
+      capturedAmountCents: null,
+      createdAt: new Date(),
+    }));
+
+    vi.mocked(db.select).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValueOnce(fullBatch).mockResolvedValueOnce([]),
+          }),
+        }),
+      }),
+    } as never);
+
+    const result = await reconcilePayments(mockLog);
+
+    expect(result.checked).toBe(200);
+    expect(result.matched).toBe(200);
+    // 200 in first batch + a second query returning empty.
+    expect(mockStripe.paymentIntents.retrieve).toHaveBeenCalledTimes(200);
+  });
+
   it('detects captured amount discrepancy', async () => {
     const mockStripe = {
       paymentIntents: {
@@ -335,5 +410,31 @@ describe('mapStripeStatusToLocal', () => {
 
   it('returns null for unknown status', () => {
     expect(mapStripeStatusToLocal('unknown_status')).toBeNull();
+  });
+});
+
+describe('acceptableLocalStatusesForStripe', () => {
+  it('maps succeeded to captured/partially_refunded/refunded', () => {
+    const set = acceptableLocalStatusesForStripe('succeeded');
+    expect(set).not.toBeNull();
+    expect([...(set as Set<string>)].sort()).toEqual([
+      'captured',
+      'partially_refunded',
+      'refunded',
+    ]);
+  });
+
+  it('maps requires_capture to pre_authorized only', () => {
+    const set = acceptableLocalStatusesForStripe('requires_capture');
+    expect([...(set as Set<string>)]).toEqual(['pre_authorized']);
+  });
+
+  it('maps canceled to cancelled or failed', () => {
+    const set = acceptableLocalStatusesForStripe('canceled');
+    expect([...(set as Set<string>)].sort()).toEqual(['cancelled', 'failed']);
+  });
+
+  it('returns null for an unmapped Stripe status', () => {
+    expect(acceptableLocalStatusesForStripe('weird_status')).toBeNull();
   });
 });

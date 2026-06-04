@@ -125,6 +125,7 @@ import {
   generateDownloadUrl,
   deleteObject,
   buildS3Key,
+  buildStationImageS3Key,
 } from '../services/s3.service.js';
 import type { S3Config } from '../services/s3.service.js';
 
@@ -319,6 +320,42 @@ describe('s3.service', () => {
     it('handles special characters in fileName', () => {
       const key = buildS3Key('c1', 'm1', 'f1', 'my file (2).pdf');
       expect(key).toBe('support-cases/c1/m1/f1-my file (2).pdf');
+    });
+
+    it('accepts a numeric messageId', () => {
+      const key = buildS3Key('case-1', 42, 'file-9', 'doc.pdf');
+      expect(key).toBe('support-cases/case-1/42/file-9-doc.pdf');
+    });
+  });
+
+  describe('buildStationImageS3Key', () => {
+    it('builds the station image key with a sanitized fileName', () => {
+      const key = buildStationImageS3Key('sta_1', 'img_1', 'photo.png');
+      expect(key).toBe('stations/sta_1/img_1-photo.png');
+    });
+
+    it('replaces path separators and unsafe characters with underscores', () => {
+      // Dots, hyphens and underscores are preserved; slashes and spaces are not.
+      const key = buildStationImageS3Key('sta_2', 'img_2', '../../etc/pa ss?wd');
+      expect(key).toBe('stations/sta_2/img_2-.._.._etc_pa_ss_wd');
+    });
+
+    it('truncates long file names to 100 characters', () => {
+      const longName = 'a'.repeat(150) + '.png';
+      const key = buildStationImageS3Key('sta_3', 'img_3', longName);
+      const fileNamePart = key.split('img_3-')[1] as string;
+      expect(fileNamePart).toHaveLength(100);
+    });
+
+    it('falls back to "image" when the sanitized fileName is empty', () => {
+      const key = buildStationImageS3Key('sta_4', 'img_4', '@@@');
+      // '@@@' sanitizes to '___' (non-empty), so use a name that empties out.
+      expect(key).toBe('stations/sta_4/img_4-___');
+    });
+
+    it('uses the "image" fallback for an empty fileName', () => {
+      const key = buildStationImageS3Key('sta_5', 'img_5', '');
+      expect(key).toBe('stations/sta_5/img_5-image');
     });
   });
 });

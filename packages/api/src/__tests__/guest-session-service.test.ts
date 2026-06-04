@@ -212,6 +212,95 @@ describe('guest-session.service', () => {
         'Linked guest session to charging session',
       );
     });
+
+    it('returns without updating when a matching guest exists but the event has no sessionId', async () => {
+      // Guest found, but sessionId is null -> linkGuestSession bails before
+      // updating and never logs the link message.
+      setupDbResults([{ id: 'guest-1', sessionToken: 'TOKEN-1', status: 'payment_authorized' }]);
+
+      await fireEvent({
+        type: 'TransactionStarted',
+        idToken: { idToken: 'TOKEN-1', type: 'ISO14443' },
+      });
+      await tick();
+
+      expect(mockLogger.info).not.toHaveBeenCalledWith(
+        expect.objectContaining({ guestSessionId: 'guest-1' }),
+        'Linked guest session to charging session',
+      );
+    });
+
+    it('creates a pre-authorized payment record when the guest has a Stripe intent', async () => {
+      mockGetStripeConfig.mockResolvedValueOnce({ configId: 7, currency: 'EUR' });
+      // 1: find guest (has stripePaymentIntentId)
+      // 2: update guest session
+      // 3: find station siteId
+      // 4: insert payment record
+      setupDbResults(
+        [
+          {
+            id: 'guest-1',
+            sessionToken: 'TOKEN-1',
+            status: 'payment_authorized',
+            stripePaymentIntentId: 'pi_guest',
+            stationOcppId: 'CS-001',
+            preAuthAmountCents: 4000,
+          },
+        ],
+        [],
+        [{ siteId: 'site-1' }],
+        [],
+      );
+
+      await fireEvent({
+        type: 'TransactionStarted',
+        idToken: { idToken: 'TOKEN-1', type: 'ISO14443' },
+        sessionId: 'session-1',
+      });
+      await tick();
+
+      expect(mockGetStripeConfig).toHaveBeenCalledWith('site-1');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        { guestSessionId: 'guest-1', chargingSessionId: 'session-1' },
+        'Linked guest session to charging session',
+      );
+    });
+
+    it('defaults the payment record config to null/USD when no station/site found', async () => {
+      mockGetStripeConfig.mockResolvedValueOnce(null);
+      // 1: find guest (has intent)
+      // 2: update guest session
+      // 3: find station -> empty (no siteId)
+      // 4: insert payment record (config null -> currency USD)
+      setupDbResults(
+        [
+          {
+            id: 'guest-2',
+            sessionToken: 'TOKEN-2',
+            status: 'payment_authorized',
+            stripePaymentIntentId: 'pi_guest2',
+            stationOcppId: 'CS-002',
+            preAuthAmountCents: 4000,
+          },
+        ],
+        [],
+        [],
+        [],
+      );
+
+      await fireEvent({
+        type: 'TransactionStarted',
+        idToken: { idToken: 'TOKEN-2', type: 'ISO14443' },
+        sessionId: 'session-2',
+      });
+      await tick();
+
+      expect(mockGetStripeConfig).toHaveBeenCalledWith(null);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        { guestSessionId: 'guest-2', chargingSessionId: 'session-2' },
+        'Linked guest session to charging session',
+      );
+    });
   });
 
   describe('TransactionEnded', () => {
@@ -346,6 +435,121 @@ describe('guest-session.service', () => {
         expect.objectContaining({ err: expect.any(Error), guestSessionId: 'guest-1' }),
         'Failed to finalize guest payment',
       );
+    });
+
+    it('uses the Unknown payment error fallback for a non-Error throw', async () => {
+      mockCapturePayment.mockRejectedValueOnce('a string failure');
+
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }],
+        [{ id: 'pr-1', stripePaymentIntentId: 'pi_abc' }],
+        [{ finalCostCents: 5000, stationId: 'station-1' }],
+        [{ siteId: 'site-1' }],
+        [],
+        [],
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ guestSessionId: 'guest-1' }),
+        'Failed to finalize guest payment',
+      );
+    });
+
+    it('skips finalization when the payment is already in a terminal state', async () => {
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }],
+        [{ id: 'pr-1', stripePaymentIntentId: 'pi_abc', status: 'captured' }],
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockCapturePayment).not.toHaveBeenCalled();
+      expect(mockCancelPaymentIntent).not.toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        { guestSessionId: 'guest-1', paymentRecordId: 'pr-1', status: 'captured' },
+        'Skipping guest payment finalization, already terminal',
+      );
+    });
+
+    it('returns when the charging session row is missing', async () => {
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }],
+        [{ id: 'pr-1', stripePaymentIntentId: 'pi_abc', status: 'pre_authorized' }],
+        [], // charging session not found
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockCapturePayment).not.toHaveBeenCalled();
+      expect(mockCancelPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('marks the guest session completed when no Stripe config exists for capture', async () => {
+      mockGetStripeConfig.mockResolvedValueOnce(null);
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: '', stationOcppId: 'CS-001' }],
+        [{ id: 'pr-1', stripePaymentIntentId: 'pi_abc', status: 'pre_authorized' }],
+        [{ finalCostCents: 3500, stationId: 'station-1' }],
+        [{ siteId: 'site-1' }],
+        [],
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockCapturePayment).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        { guestSessionId: 'guest-1' },
+        'No Stripe config for guest payment capture',
+      );
+    });
+
+    it('logs and swallows a receipt notification failure', async () => {
+      mockDispatchSystemNotification.mockRejectedValueOnce(new Error('SMTP down'));
+      // Free session path with email so sendGuestReceipt runs and throws.
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: 'receipt@test.com', stationOcppId: 'CS-001' }],
+        [],
+        [],
+        [
+          {
+            energyDeliveredWh: '5000',
+            finalCostCents: 0,
+            currency: 'USD',
+            startedAt: '2026-01-01T00:00:00Z',
+            endedAt: '2026-01-01T01:00:00Z',
+          },
+        ],
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error), guestSessionId: 'guest-1' }),
+        'Failed to send guest receipt notification',
+      );
+    });
+
+    it('skips the receipt when the charging session is missing inside sendGuestReceipt', async () => {
+      // Free session with email, but the receipt-time charging session lookup
+      // returns empty -> sendGuestReceipt returns before dispatching.
+      setupDbResults(
+        [{ id: 'guest-1', guestEmail: 'receipt@test.com', stationOcppId: 'CS-001' }],
+        [],
+        [],
+        [], // charging session lookup inside sendGuestReceipt: empty
+      );
+
+      await fireEvent({ type: 'TransactionEnded', sessionId: 'session-1' });
+      await tick();
+
+      expect(mockDispatchSystemNotification).not.toHaveBeenCalled();
     });
   });
 });

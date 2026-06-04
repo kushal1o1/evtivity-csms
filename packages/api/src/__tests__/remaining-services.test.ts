@@ -186,7 +186,7 @@ import {
   createTariff,
 } from '../services/pricing.service.js';
 
-import { resolveTariff, clearHolidayCache } from '../services/tariff.service.js';
+import { resolveTariff, clearHolidayCache, isTariffFree } from '../services/tariff.service.js';
 
 beforeEach(() => {
   dbResults = [];
@@ -482,6 +482,16 @@ describe('Transaction Service', () => {
       expect(result.data).toEqual([]);
       expect(result.total).toBe(0);
     });
+
+    it('applies the siteIds filter when provided', async () => {
+      const event = { id: 'te2', triggerReason: 'Started' };
+      setupDbResults([{ event }], [{ count: 1 }]);
+
+      const result = await listTransactionEvents({ page: 2, limit: 5 }, ['sit_1', 'sit_2']);
+
+      expect(result.data).toEqual([event]);
+      expect(result.total).toBe(1);
+    });
   });
 
   describe('getTransactionEventsBySession', () => {
@@ -642,6 +652,90 @@ describe('Tariff Service', () => {
       const result = await resolveTariff('sta_000000000001', null);
 
       expect(result).toEqual(mockTariffRow);
+    });
+
+    it('returns null when the group resolves but has no active tariffs', async () => {
+      // execute resolves the group, but the active-tariffs query is empty.
+      setupDbResults([mockExecuteGroup], [], [], []);
+
+      const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when no tariff matches the current time and there is no default', async () => {
+      // A single energy-threshold tariff (priority 50) that never matches at
+      // sessionEnergyKwh=0, and no default fallback, so resolveActiveTariff
+      // returns null.
+      const energyTariff = {
+        ...mockTariffRow,
+        id: 't-energy',
+        priority: 50,
+        isDefault: false,
+        restrictions: { energyThresholdKwh: 1000 },
+      };
+      setupDbResults([mockExecuteGroup], [], [energyTariff], []);
+
+      const result = await resolveTariff('sta_000000000001', 'drv_000000000001');
+
+      expect(result).toBeNull();
+    });
+
+    it('serves holidays from the in-process cache on a second call', async () => {
+      // First call populates the holiday cache (3rd queue slot consumed).
+      setupDbResults([mockExecuteGroup], [{ date: '2026-12-25' }], [mockTariffRow], []);
+      const first = await resolveTariff('sta_000000000001', 'drv_000000000001');
+      expect(first).toEqual(mockTariffRow);
+
+      // Second call: holidays come from cache, so only execute + tariffs +
+      // timezone are queued (no holidays query).
+      setupDbResults([mockExecuteGroup], [mockTariffRow], []);
+      const second = await resolveTariff('sta_000000000001', 'drv_000000000001');
+      expect(second).toEqual(mockTariffRow);
+    });
+  });
+
+  describe('isTariffFree', () => {
+    it('returns true for a null tariff', () => {
+      expect(isTariffFree(null)).toBe(true);
+    });
+
+    it('returns true when all price components are zero or null', () => {
+      expect(
+        isTariffFree({
+          id: 't1',
+          name: 'Free',
+          currency: 'USD',
+          pricePerKwh: '0',
+          pricePerMinute: null,
+          pricePerSession: '0',
+          idleFeePricePerMinute: null,
+          reservationFeePerMinute: null,
+          taxRate: null,
+          restrictions: null,
+          priority: 0,
+          isDefault: true,
+        }),
+      ).toBe(true);
+    });
+
+    it('returns false when any price component is non-zero', () => {
+      expect(
+        isTariffFree({
+          id: 't2',
+          name: 'Paid',
+          currency: 'USD',
+          pricePerKwh: '0.25',
+          pricePerMinute: null,
+          pricePerSession: null,
+          idleFeePricePerMinute: null,
+          reservationFeePerMinute: null,
+          taxRate: null,
+          restrictions: null,
+          priority: 0,
+          isDefault: true,
+        }),
+      ).toBe(false);
     });
   });
 });
