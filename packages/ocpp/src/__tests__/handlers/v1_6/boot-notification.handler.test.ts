@@ -5,21 +5,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import pino from 'pino';
 import type { HandlerContext } from '../../../server/middleware/pipeline.js';
 
-const selectFn = vi.fn();
-const fromFn = vi.fn();
-const whereFn = vi.fn();
+const { selectFn, fromFn, whereFn } = vi.hoisted(() => ({
+  selectFn: vi.fn(),
+  fromFn: vi.fn(),
+  whereFn: vi.fn(),
+}));
 
-vi.mock('@evtivity/database', () => {
-  whereFn.mockResolvedValue([{ onboardingStatus: 'accepted' }]);
-  fromFn.mockReturnValue({ where: whereFn });
-  selectFn.mockReturnValue({ from: fromFn });
-  return {
-    db: { select: selectFn },
-    chargingStations: { id: 'id', onboardingStatus: 'onboarding_status' },
-    getHeartbeatIntervalSeconds: vi.fn().mockResolvedValue(300),
-    getRegistrationPolicy: vi.fn().mockResolvedValue('auto-accept'),
-  };
-});
+vi.mock('@evtivity/database', () => ({
+  db: { select: selectFn },
+  chargingStations: { id: 'id', onboardingStatus: 'onboarding_status' },
+  getHeartbeatIntervalSeconds: vi.fn().mockResolvedValue(300),
+  getRegistrationPolicy: vi.fn().mockResolvedValue('open'),
+}));
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a: unknown, b: unknown) => ({ type: 'eq', a, b })),
@@ -67,7 +64,7 @@ beforeEach(() => {
   fromFn.mockReturnValue({ where: whereFn });
   selectFn.mockReturnValue({ from: fromFn });
   vi.mocked(getHeartbeatIntervalSeconds).mockResolvedValue(300);
-  vi.mocked(getRegistrationPolicy).mockResolvedValue('auto-accept');
+  vi.mocked(getRegistrationPolicy).mockResolvedValue('open');
 });
 
 describe('OCPP 1.6 BootNotification handler', () => {
@@ -165,9 +162,9 @@ describe('OCPP 1.6 BootNotification handler', () => {
     expect(getRegistrationPolicy).toHaveBeenCalledTimes(1);
   });
 
-  it('returns Accepted when onboardingStatus is pending but policy is auto-accept', async () => {
+  it('returns Accepted when onboardingStatus is pending but policy is open', async () => {
     whereFn.mockResolvedValue([{ onboardingStatus: 'pending' }]);
-    vi.mocked(getRegistrationPolicy).mockResolvedValue('auto-accept');
+    vi.mocked(getRegistrationPolicy).mockResolvedValue('open');
     const { ctx } = makeCtx(
       { chargePointVendor: 'V', chargePointModel: 'M' },
       { stationDbId: 'sta_pending_auto' },

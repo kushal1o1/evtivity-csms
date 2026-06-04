@@ -12,11 +12,13 @@ vi.mock('@evtivity/database', () => ({
 
 import { ManualProvider } from '../../../services/pki/manual-provider.js';
 
-let fetchMock: ReturnType<typeof vi.fn>;
+type FetchMock = ReturnType<typeof vi.fn<(url: string, init: RequestInit) => Promise<Response>>>;
+
+let fetchMock: FetchMock;
 
 beforeEach(() => {
   clientMock.mockReset();
-  fetchMock = vi.fn();
+  fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
   vi.stubGlobal('fetch', fetchMock);
 });
 

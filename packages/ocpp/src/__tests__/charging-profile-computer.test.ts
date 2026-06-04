@@ -197,6 +197,176 @@ describe('computeAndSendChargingProfile', () => {
     expect(periods[0].limit).toBe(3680);
   });
 
+  it('uses dcChargingParameters.evMaxPower directly when present', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [], // no connector rows (so connector does not cap)
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'DC_extended',
+        dcChargingParameters: { evMaxPower: 120000 },
+      },
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    // EV max 120 kW direct value, nothing caps it.
+    expect(periods[0].limit).toBe(120000);
+  });
+
+  it('uses v2xChargingParameters.evMaxChargePower when present for DC transfer', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [], // no connector rows
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'DC',
+        dcChargingParameters: { evMaxCurrent: 100, evMaxVoltage: 400 },
+        v2xChargingParameters: { evMaxChargePower: 90000 },
+      },
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    // v2x evMaxChargePower (90 kW) overrides the DC current*voltage computation.
+    expect(periods[0].limit).toBe(90000);
+  });
+
+  it('falls back to 22000 W when no charging parameters and no requestedEnergyTransfer', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [], // no connector rows
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    // No requestedEnergyTransfer -> defaults to AC_single_phase, but no
+    // acChargingParameters -> evMaxPowerW stays at the 22000 W fallback.
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {},
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    expect(periods[0].limit).toBe(22000);
+  });
+
+  it('uses AC single-phase defaults when acChargingParameters lacks current/voltage', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [], // no connector rows
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'AC_single_phase',
+        acChargingParameters: {},
+      },
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    // Defaults: 32 A * 230 V = 7360 W
+    expect(periods[0].limit).toBe(7360);
+  });
+
+  it('uses AC three-phase defaults when acChargingParameters lacks current/voltage', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [], // no connector rows
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'AC_three_phase',
+        acChargingParameters: {},
+      },
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    // Defaults: 32 A * 230 V * 3 = 22080 W
+    expect(periods[0].limit).toBe(22080);
+  });
+
+  it('treats missing site current_draw as zero', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [{ max_power_kw: 100 }], // connector
+      [{ max_power_kw: 60 }], // site power limit 60 kW
+      [], // draw query returns no rows -> COALESCE/?? defaults to 0
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 1,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'AC_single_phase',
+        acChargingParameters: { evMaxCurrent: 100, evMaxVoltage: 230 },
+      },
+    });
+
+    const publishCall = (mockPubSub.publish as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = JSON.parse(publishCall[1] as string);
+    const periods = payload.payload.chargingProfile.chargingSchedule[0].chargingSchedulePeriod;
+    // Site max 60 kW, zero current draw -> 60 kW available, caps the 23 kW EV
+    // request at the EV value (23000), so the EV value wins via Math.min.
+    expect(periods[0].limit).toBe(23000);
+  });
+
+  it('records the computed schedule via an INSERT', async () => {
+    const sql = createSqlMock();
+    setupSqlResults(
+      [{ max_power_kw: 22 }], // connector
+      [], // no site power limit
+      [], // INSERT schedule
+    );
+    await computeAndSendChargingProfile(sql as never, mockPubSub, {
+      stationUuid: 'sta_test',
+      stationOcppId: 'CS-TEST',
+      evseId: 4,
+      chargingNeeds: {
+        requestedEnergyTransfer: 'AC_single_phase',
+        acChargingParameters: { evMaxCurrent: 16, evMaxVoltage: 230 },
+      },
+    });
+
+    const insertCall = sqlCalls.find((c) =>
+      c.strings.some((s) => s.includes('ev_charging_schedules')),
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall?.values).toContain('sta_test');
+    expect(insertCall?.values).toContain(4);
+  });
+
   it('computes departure time schedule', async () => {
     const sql = createSqlMock();
     setupSqlResults(

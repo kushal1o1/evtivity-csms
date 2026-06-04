@@ -33,14 +33,9 @@ function createMockLogger() {
   } as unknown as Parameters<typeof authenticateConnection>[1];
 }
 
-function createMockRequest(
-  url: string,
-  authHeader?: string,
-  encrypted = false,
-  remoteAddress: string | undefined = '127.0.0.1',
-): IncomingMessage {
+function createMockRequest(url: string, authHeader?: string, encrypted = false): IncomingMessage {
   const socket = {
-    remoteAddress,
+    remoteAddress: '127.0.0.1',
     encrypted,
   } as unknown as Socket;
 
@@ -617,7 +612,10 @@ describe('authenticateConnection', () => {
       onboarding_status: 'accepted',
     };
     const sql = createQueuedSql({ results: [[station]] });
-    const req = createMockRequest('/NO-ADDR', undefined, false, undefined);
+    const req = createMockRequest('/NO-ADDR');
+    // Force the socket to report no remote address so the `?? null` fallback on
+    // remoteAddress is exercised.
+    (req.socket as unknown as { remoteAddress: string | undefined }).remoteAddress = undefined;
     const result = await authenticateConnection(req, logger, sql);
     expect(result.authenticated).toBe(false);
     expect(result.error).toBe('Basic auth credentials required');

@@ -358,6 +358,93 @@ describe('v2_1 Authorize handler', () => {
     });
   });
 
+  it('builds a tariff with only the non-zero price components and no tax rates', async () => {
+    whereQueue = [
+      [{ id: 'dtk_z', driverId: 'drv_z', isActive: true, expiresAt: null, revokedAt: null }],
+      [],
+    ];
+    executeFn.mockResolvedValue([
+      {
+        id: 'trf_2',
+        currency: 'EUR',
+        price_per_kwh: '0.30',
+        price_per_minute: null,
+        price_per_session: '0',
+        idle_fee_price_per_minute: '0',
+        tax_rate: '0',
+        pricing_group_id: 'pgr_2',
+      },
+    ]);
+    const { handleAuthorize } = await import('../../../handlers/v2_1/authorize.handler.js');
+    const { ctx } = makeCtx({ idToken: { idToken: 'tariff-min', type: 'ISO14443' } });
+    const response = await handleAuthorize(ctx);
+
+    expect(response['tariff']).toEqual({
+      tariffId: 'trf_2',
+      currency: 'EUR',
+      energy: { prices: [{ priceKwh: 0.3 }] },
+    });
+  });
+
+  it('builds all four tariff components without tax rates when tax is zero', async () => {
+    whereQueue = [
+      [{ id: 'dtk_nt', driverId: 'drv_nt', isActive: true, expiresAt: null, revokedAt: null }],
+      [],
+    ];
+    executeFn.mockResolvedValue([
+      {
+        id: 'trf_nt',
+        currency: 'USD',
+        price_per_kwh: '0.25',
+        price_per_minute: '0.15',
+        price_per_session: '2.00',
+        idle_fee_price_per_minute: '0.05',
+        tax_rate: '0',
+        pricing_group_id: 'pgr_nt',
+      },
+    ]);
+    const { handleAuthorize } = await import('../../../handlers/v2_1/authorize.handler.js');
+    const { ctx } = makeCtx({ idToken: { idToken: 'tariff-notax', type: 'ISO14443' } });
+    const response = await handleAuthorize(ctx);
+
+    expect(response['tariff']).toEqual({
+      tariffId: 'trf_nt',
+      currency: 'USD',
+      energy: { prices: [{ priceKwh: 0.25 }] },
+      chargingTime: { prices: [{ priceMinute: 0.15 }] },
+      idleTime: { prices: [{ priceMinute: 0.05 }] },
+      fixedFee: { prices: [{ priceFixed: 2 }] },
+    });
+  });
+
+  it('resolves a tariff for an accepted token whose driverId is null (station/site path)', async () => {
+    whereQueue = [
+      [{ id: 'dtk_nd', driverId: null, isActive: true, expiresAt: null, revokedAt: null }],
+      [],
+    ];
+    executeFn.mockResolvedValue([
+      {
+        id: 'trf_3',
+        currency: 'USD',
+        price_per_kwh: '0.40',
+        price_per_minute: null,
+        price_per_session: null,
+        idle_fee_price_per_minute: null,
+        tax_rate: null,
+        pricing_group_id: 'pgr_3',
+      },
+    ]);
+    const { handleAuthorize } = await import('../../../handlers/v2_1/authorize.handler.js');
+    const { ctx } = makeCtx({ idToken: { idToken: 'tariff-nd', type: 'ISO14443' } });
+    const response = await handleAuthorize(ctx);
+
+    expect(response['tariff']).toEqual({
+      tariffId: 'trf_3',
+      currency: 'USD',
+      energy: { prices: [{ priceKwh: 0.4 }] },
+    });
+  });
+
   it('omits tariff when resolution returns no rows', async () => {
     whereQueue = [
       [{ id: 'dtk_9', driverId: 'drv_9', isActive: true, expiresAt: null, revokedAt: null }],
@@ -396,6 +483,26 @@ describe('v2_1 Authorize handler', () => {
       expect(response).toEqual({ idTokenInfo: { status: 'Accepted' } });
       // free-vend short-circuit returns before any tariff resolution
       expect(executeFn).not.toHaveBeenCalled();
+    });
+
+    it('accepts free-vend when the matched token row has a null driverId', async () => {
+      isSiteFreeVendEnabledByStationMock.mockResolvedValue(true);
+      whereQueue = [[{ id: 'dtk_fv2', driverId: null }]];
+      const { handleAuthorize } = await import('../../../handlers/v2_1/authorize.handler.js');
+      const { ctx } = makeCtx({ idToken: { idToken: 'fv-null-driver', type: 'ISO14443' } });
+      const response = await handleAuthorize(ctx);
+
+      expect(response).toEqual({ idTokenInfo: { status: 'Accepted' } });
+    });
+
+    it('accepts free-vend when no matched token row exists', async () => {
+      isSiteFreeVendEnabledByStationMock.mockResolvedValue(true);
+      whereQueue = [[]];
+      const { handleAuthorize } = await import('../../../handlers/v2_1/authorize.handler.js');
+      const { ctx } = makeCtx({ idToken: { idToken: 'fv-nomatch', type: 'ISO14443' } });
+      const response = await handleAuthorize(ctx);
+
+      expect(response).toEqual({ idTokenInfo: { status: 'Accepted' } });
     });
 
     it('accepts free-vend even when the matched-token lookup throws', async () => {

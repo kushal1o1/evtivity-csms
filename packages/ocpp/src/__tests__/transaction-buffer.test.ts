@@ -72,4 +72,92 @@ describe('TransactionBuffer', () => {
     buffer.add('tx-2', makeEvent('ocpp.MeterValues', 'tx-2'));
     expect(buffer.size).toBe(3);
   });
+
+  it('uses default options when none provided', () => {
+    const defaultBuffer = new TransactionBuffer();
+    try {
+      // Default maxSize is 1000, so 6 adds all succeed where the test buffer
+      // (maxSize 5) would reject the 6th.
+      for (let i = 0; i < 6; i++) {
+        expect(
+          defaultBuffer.add(`tx-${String(i)}`, makeEvent('ocpp.MeterValues', `tx-${String(i)}`)),
+        ).toBe(true);
+      }
+      expect(defaultBuffer.size).toBe(6);
+    } finally {
+      defaultBuffer.destroy();
+    }
+  });
+
+  describe('with a logger', () => {
+    let warn: ReturnType<typeof vi.fn>;
+    let loggedBuffer: TransactionBuffer;
+
+    beforeEach(() => {
+      warn = vi.fn();
+      const logger = { warn } as unknown as import('@evtivity/lib').Logger;
+      loggedBuffer = new TransactionBuffer({
+        maxSize: 5,
+        ttlMs: 1000,
+        cleanupIntervalMs: 500,
+        logger,
+      });
+    });
+
+    afterEach(() => {
+      loggedBuffer.destroy();
+    });
+
+    it('logs and drops expired events on drain', () => {
+      // Long cleanup interval so the sweep does not evict before drain runs;
+      // this isolates the drain-time expiry path.
+      loggedBuffer.destroy();
+      const warnLocal = vi.fn();
+      loggedBuffer = new TransactionBuffer({
+        maxSize: 5,
+        ttlMs: 1000,
+        cleanupIntervalMs: 100_000,
+        logger: { warn: warnLocal } as unknown as import('@evtivity/lib').Logger,
+      });
+      warn = warnLocal;
+
+      loggedBuffer.add('tx-1', makeEvent('ocpp.MeterValues', 'tx-1'));
+      vi.advanceTimersByTime(1100);
+
+      const drained = loggedBuffer.drain('tx-1');
+
+      expect(drained).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ transactionId: 'tx-1', expired: 1, ttlMs: 1000 }),
+        expect.stringContaining('expired before Started arrived'),
+      );
+      expect(loggedBuffer.size).toBe(0);
+    });
+
+    it('logs expired events during the cleanup sweep', () => {
+      loggedBuffer.add('tx-1', makeEvent('ocpp.TransactionEvent', 'tx-1'));
+      // Advance past TTL so the next cleanup interval evicts the entry.
+      vi.advanceTimersByTime(1100);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactionId: 'tx-1',
+          expired: 1,
+          firstEventType: 'ocpp.TransactionEvent',
+          ttlMs: 1000,
+        }),
+        expect.stringContaining('expired in cleanup sweep'),
+      );
+      expect(loggedBuffer.size).toBe(0);
+    });
+
+    it('keeps non-expired events across a cleanup sweep', () => {
+      loggedBuffer.add('tx-1', makeEvent('ocpp.MeterValues', 'tx-1'));
+      // 600ms < ttl 1000ms: the cleanup at 500ms should not evict.
+      vi.advanceTimersByTime(600);
+
+      expect(loggedBuffer.size).toBe(1);
+      expect(loggedBuffer.drain('tx-1')).toHaveLength(1);
+    });
+  });
 });

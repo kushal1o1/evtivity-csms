@@ -5,9 +5,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import pino from 'pino';
 import type { HandlerContext } from '../../../server/middleware/pipeline.js';
 
-const selectFn = vi.fn();
-const insertFn = vi.fn();
-const valuesFn = vi.fn();
+const { selectFn, insertFn, valuesFn } = vi.hoisted(() => ({
+  selectFn: vi.fn(),
+  insertFn: vi.fn(),
+  valuesFn: vi.fn(),
+}));
 
 vi.mock('@evtivity/database', () => {
   insertFn.mockReturnValue({ values: valuesFn });
@@ -46,24 +48,25 @@ const logger = pino({ level: 'silent' });
 
 // Build a `db.select()` chain whose terminal `.where()` (token lookup) or
 // `.where().limit()` (driver/guest/ocpi/session lookups) resolves to `rows`.
+// `where()` returns a thenable that also exposes `.limit`, so both the awaited
+// `await ...where(...)` form and the chained `...where(...).limit(1)` form work.
 function selectResolving(rows: unknown[]): { from: ReturnType<typeof vi.fn> } {
-  const limit = vi.fn().mockResolvedValue(rows);
-  // `.where()` must be both awaitable (token lookup uses `await ...where(...)`)
-  // and chainable to `.limit()` (the fallbacks use `.where(...).limit(1)`).
-  const where = vi.fn(() => ({ limit })) as ReturnType<typeof vi.fn>;
-  (where as unknown as { then?: unknown }).then = (resolve: (v: unknown) => unknown): unknown =>
-    resolve(rows);
+  const whereResult = {
+    limit: vi.fn().mockResolvedValue(rows),
+    then: (resolve: (v: unknown) => unknown): unknown => resolve(rows),
+  };
+  const where = vi.fn().mockReturnValue(whereResult);
   const from = vi.fn().mockReturnValue({ where });
   return { from };
 }
 
 function selectThrowing(err: unknown): { from: ReturnType<typeof vi.fn> } {
-  const reject = vi.fn().mockRejectedValue(err);
-  const where = vi.fn(() => ({ limit: reject })) as ReturnType<typeof vi.fn>;
-  (where as unknown as { then?: unknown }).then = (
-    _resolve: (v: unknown) => unknown,
-    rejectCb: (e: unknown) => unknown,
-  ): unknown => rejectCb(err);
+  const whereResult = {
+    limit: vi.fn().mockRejectedValue(err),
+    then: (_resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown): unknown =>
+      reject(err),
+  };
+  const where = vi.fn().mockReturnValue(whereResult);
   const from = vi.fn().mockReturnValue({ where });
   return { from };
 }
@@ -195,11 +198,19 @@ describe('OCPP 1.6 Authorize handler', () => {
   describe('driver_tokens match matrix', () => {
     it('Accepted with expiryDate when an active, non-revoked, future-expiry token matches', async () => {
       const future = new Date(Date.now() + 86_400_000);
-      selectFn.mockReturnValue(
-        selectResolving([
-          { id: 'dtk_ok', driverId: 'drv_ok', isActive: true, expiresAt: future, revokedAt: null },
-        ]),
-      );
+      selectFn
+        .mockReturnValueOnce(
+          selectResolving([
+            {
+              id: 'dtk_ok',
+              driverId: 'drv_ok',
+              isActive: true,
+              expiresAt: future,
+              revokedAt: null,
+            },
+          ]),
+        )
+        .mockReturnValueOnce(selectResolving([])); // concurrent-tx lookup: none
       const { ctx } = makeCtx('GOOD-TAG');
 
       const response = await handleAuthorize(ctx);
@@ -217,17 +228,19 @@ describe('OCPP 1.6 Authorize handler', () => {
     });
 
     it('Accepted without expiryDate when the matched token has no expiry', async () => {
-      selectFn.mockReturnValue(
-        selectResolving([
-          {
-            id: 'dtk_noexp',
-            driverId: 'drv_noexp',
-            isActive: true,
-            expiresAt: null,
-            revokedAt: null,
-          },
-        ]),
-      );
+      selectFn
+        .mockReturnValueOnce(
+          selectResolving([
+            {
+              id: 'dtk_noexp',
+              driverId: 'drv_noexp',
+              isActive: true,
+              expiresAt: null,
+              revokedAt: null,
+            },
+          ]),
+        )
+        .mockReturnValueOnce(selectResolving([])); // concurrent-tx lookup: none
       const { ctx } = makeCtx('NOEXP-TAG');
 
       const response = await handleAuthorize(ctx);
@@ -301,18 +314,26 @@ describe('OCPP 1.6 Authorize handler', () => {
 
     it('prefers the usable token when both usable and unusable rows match', async () => {
       const future = new Date(Date.now() + 86_400_000);
-      selectFn.mockReturnValue(
-        selectResolving([
-          { id: 'dtk_bad', driverId: 'drv_bad', isActive: false, expiresAt: null, revokedAt: null },
-          {
-            id: 'dtk_good',
-            driverId: 'drv_good',
-            isActive: true,
-            expiresAt: future,
-            revokedAt: null,
-          },
-        ]),
-      );
+      selectFn
+        .mockReturnValueOnce(
+          selectResolving([
+            {
+              id: 'dtk_bad',
+              driverId: 'drv_bad',
+              isActive: false,
+              expiresAt: null,
+              revokedAt: null,
+            },
+            {
+              id: 'dtk_good',
+              driverId: 'drv_good',
+              isActive: true,
+              expiresAt: future,
+              revokedAt: null,
+            },
+          ]),
+        )
+        .mockReturnValueOnce(selectResolving([])); // concurrent-tx lookup: none
       const { ctx } = makeCtx('MULTI-TAG');
 
       const response = await handleAuthorize(ctx);

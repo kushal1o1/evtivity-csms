@@ -5,10 +5,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import pino from 'pino';
 import type { HandlerContext } from '../../../server/middleware/pipeline.js';
 
-const selectFn = vi.fn();
-const executeFn = vi.fn();
-const insertFn = vi.fn();
-const valuesFn = vi.fn();
+const { selectFn, executeFn, insertFn, valuesFn } = vi.hoisted(() => ({
+  selectFn: vi.fn(),
+  executeFn: vi.fn(),
+  insertFn: vi.fn(),
+  valuesFn: vi.fn(),
+}));
 
 vi.mock('@evtivity/database', () => {
   insertFn.mockReturnValue({ values: valuesFn });
@@ -46,21 +48,22 @@ import { isSiteFreeVendEnabledByStation } from '@evtivity/database';
 const logger = pino({ level: 'silent' });
 
 function selectResolving(rows: unknown[]): { from: ReturnType<typeof vi.fn> } {
-  const limit = vi.fn().mockResolvedValue(rows);
-  const where = vi.fn(() => ({ limit })) as ReturnType<typeof vi.fn>;
-  (where as unknown as { then?: unknown }).then = (resolve: (v: unknown) => unknown): unknown =>
-    resolve(rows);
+  const whereResult = {
+    limit: vi.fn().mockResolvedValue(rows),
+    then: (resolve: (v: unknown) => unknown): unknown => resolve(rows),
+  };
+  const where = vi.fn().mockReturnValue(whereResult);
   const from = vi.fn().mockReturnValue({ where });
   return { from };
 }
 
 function selectThrowing(err: unknown): { from: ReturnType<typeof vi.fn> } {
-  const reject = vi.fn().mockRejectedValue(err);
-  const where = vi.fn(() => ({ limit: reject })) as ReturnType<typeof vi.fn>;
-  (where as unknown as { then?: unknown }).then = (
-    _resolve: (v: unknown) => unknown,
-    rejectCb: (e: unknown) => unknown,
-  ): unknown => rejectCb(err);
+  const whereResult = {
+    limit: vi.fn().mockRejectedValue(err),
+    then: (_resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown): unknown =>
+      reject(err),
+  };
+  const where = vi.fn().mockReturnValue(whereResult);
   const from = vi.fn().mockReturnValue({ where });
   return { from };
 }

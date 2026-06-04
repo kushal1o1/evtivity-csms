@@ -321,6 +321,13 @@ describe('command-translation', () => {
         });
         expect(result?.payload).toEqual({ key: ['SomeVar'] });
       });
+
+      it('returns empty object when the single getVariableData entry is null', () => {
+        const result = translateCommand('GetVariables', 'ocpp1.6', {
+          getVariableData: [null],
+        });
+        expect(result?.payload).toEqual({});
+      });
     });
 
     describe('SetVariables edge cases', () => {
@@ -336,6 +343,13 @@ describe('command-translation', () => {
           setVariableData: [{ variable: { name: 'SomeVar' }, attributeValue: '42' }],
         });
         expect(result?.payload).toEqual({ key: 'SomeVar', value: '42' });
+      });
+
+      it('returns empty object when the single setVariableData entry is null', () => {
+        const result = translateCommand('SetVariables', 'ocpp1.6', {
+          setVariableData: [null],
+        });
+        expect(result?.payload).toEqual({});
       });
     });
 
@@ -427,6 +441,94 @@ describe('command-translation', () => {
       it('returns null for known command on unknown version', () => {
         const result = translateCommand('Reset', 'ocpp99.9', {});
         expect(result).toBeNull();
+      });
+    });
+
+    describe('Reset with no type', () => {
+      it('throws when type is absent targeting ocpp1.6', () => {
+        expect(() => translateCommand('Reset', 'ocpp1.6', {})).toThrow(
+          'Reset type "undefined" has no OCPP 1.6 equivalent',
+        );
+      });
+    });
+
+    describe('RequestStopTransaction validation', () => {
+      it('throws for a non-numeric transactionId targeting ocpp1.6', () => {
+        expect(() =>
+          translateCommand('RequestStopTransaction', 'ocpp1.6', { transactionId: 'abc' }),
+        ).toThrow('Invalid transactionId for OCPP 1.6 stop: abc');
+      });
+
+      it('throws for a zero transactionId targeting ocpp1.6', () => {
+        expect(() =>
+          translateCommand('RequestStopTransaction', 'ocpp1.6', { transactionId: 0 }),
+        ).toThrow('Invalid transactionId for OCPP 1.6 stop: 0');
+      });
+
+      it('coerces a numeric-string transactionId to a positive integer for ocpp1.6', () => {
+        const result = translateCommand('RequestStopTransaction', 'ocpp1.6', {
+          transactionId: '42',
+        });
+        expect(result).toEqual({
+          action: 'RemoteStopTransaction',
+          payload: { transactionId: 42 },
+        });
+      });
+    });
+
+    describe('ClearChargingProfile nested 2.1 criteria', () => {
+      it('flattens chargingProfileCriteria and maps chargingProfileId to id for ocpp1.6', () => {
+        const result = translateCommand('ClearChargingProfile', 'ocpp1.6', {
+          chargingProfileId: 7,
+          chargingProfileCriteria: {
+            evseId: 2,
+            chargingProfilePurpose: 'TxDefaultProfile',
+            customData: { vendorId: 'x' },
+          },
+        });
+        expect(result?.payload).toEqual({
+          chargingProfilePurpose: 'TxDefaultProfile',
+          id: 7,
+          connectorId: 2,
+        });
+        expect(result?.payload).not.toHaveProperty('chargingProfileId');
+        expect(result?.payload).not.toHaveProperty('evseId');
+        expect(result?.payload).not.toHaveProperty('customData');
+      });
+
+      it('omits id and connectorId when chargingProfileId and evseId are absent for ocpp1.6', () => {
+        const result = translateCommand('ClearChargingProfile', 'ocpp1.6', {
+          chargingProfileCriteria: { chargingProfilePurpose: 'ChargingStationMaxProfile' },
+        });
+        expect(result?.payload).toEqual({ chargingProfilePurpose: 'ChargingStationMaxProfile' });
+        expect(result?.payload).not.toHaveProperty('id');
+        expect(result?.payload).not.toHaveProperty('connectorId');
+      });
+    });
+
+    describe('GetVariables multi-variable rejection', () => {
+      it('throws when more than one variable targets ocpp1.6', () => {
+        expect(() =>
+          translateCommand('GetVariables', 'ocpp1.6', {
+            getVariableData: [
+              { component: { name: 'A' }, variable: { name: 'x' } },
+              { component: { name: 'B' }, variable: { name: 'y' } },
+            ],
+          }),
+        ).toThrow('at most one variable per call');
+      });
+    });
+
+    describe('SetVariables multi-variable rejection', () => {
+      it('throws when more than one variable targets ocpp1.6', () => {
+        expect(() =>
+          translateCommand('SetVariables', 'ocpp1.6', {
+            setVariableData: [
+              { component: { name: 'A' }, variable: { name: 'x' }, attributeValue: '1' },
+              { component: { name: 'B' }, variable: { name: 'y' }, attributeValue: '2' },
+            ],
+          }),
+        ).toThrow('at most one variable per call');
       });
     });
   });

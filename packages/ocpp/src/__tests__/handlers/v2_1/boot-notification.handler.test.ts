@@ -199,4 +199,15 @@ describe('v2_1 BootNotification handler', () => {
     expect(response).toMatchObject({ status: 'Pending', interval: 300 });
     expect(ctx.session.bootStatus).toBe('Pending');
   });
+
+  it('fails closed to Pending when the lookup rejects with a non-Error value', async () => {
+    whereFn.mockRejectedValueOnce('string failure');
+    const { handleBootNotification } =
+      await import('../../../handlers/v2_1/boot-notification.handler.js');
+    const { ctx } = makeCtx(bootPayload, 'sta_6');
+    const response = await handleBootNotification(ctx);
+
+    expect(response).toMatchObject({ status: 'Pending' });
+    expect(ctx.session.bootStatus).toBe('Pending');
+  });
 });

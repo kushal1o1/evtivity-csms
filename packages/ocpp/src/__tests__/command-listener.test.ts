@@ -446,4 +446,244 @@ describe('CommandListener', () => {
       }),
     );
   });
+
+  it('rethrows and logs when subscribing fails', async () => {
+    const failingPubsub: PubSubClient = {
+      publish: mockPublish,
+      subscribe: vi.fn().mockRejectedValue(new Error('Redis unavailable')),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const listener = new CommandListener(failingPubsub, dispatcher as never, logger, eventBus);
+
+    await expect(listener.start()).rejects.toThrow('Redis unavailable');
+  });
+
+  it('rethrows when subscribing fails with a non-Error value', async () => {
+    const failingPubsub: PubSubClient = {
+      publish: mockPublish,
+      subscribe: vi.fn().mockRejectedValue('redis string failure'),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const listener = new CommandListener(failingPubsub, dispatcher as never, logger, eventBus);
+
+    await expect(listener.start()).rejects.toBe('redis string failure');
+  });
+
+  it('stringifies a non-Error dispatch failure into the error result', async () => {
+    dispatcher.sendVersionAwareCommand.mockRejectedValueOnce('plain string failure');
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-strerr',
+        stationId: 'CS-001',
+        action: 'TriggerMessage',
+        payload: {},
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'ocpp_command_results',
+      JSON.stringify({ commandId: 'cmd-strerr', error: 'plain string failure' }),
+    );
+  });
+
+  it('drops a payload missing required fields without dispatching', async () => {
+    await createAndStart();
+    // Missing action and payload.
+    subscribeHandler!(JSON.stringify({ stationId: 'CS-001' }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(dispatcher.sendCommand).not.toHaveBeenCalled();
+    expect(dispatcher.sendVersionAwareCommand).not.toHaveBeenCalled();
+  });
+
+  it('drops a payload whose commandId is not a string', async () => {
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({ commandId: 123, stationId: 'CS-001', action: 'Reset', payload: {} }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(dispatcher.sendCommand).not.toHaveBeenCalled();
+    expect(dispatcher.sendVersionAwareCommand).not.toHaveBeenCalled();
+  });
+
+  it('proceeds with dispatch (fail-open) when the registry lookup throws', async () => {
+    const mockRegistry = {
+      register: vi.fn(),
+      unregister: vi.fn(),
+      getInstanceId: vi.fn().mockRejectedValue(new Error('registry down')),
+    };
+
+    const listener = new CommandListener(pubsub, dispatcher as never, logger, eventBus, {
+      registry: mockRegistry,
+      instanceId: 'instance-1',
+    });
+    await listener.start();
+
+    subscribeHandler!(
+      JSON.stringify({ stationId: 'CS-001', action: 'Reset', payload: { type: 'Soft' } }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(dispatcher.sendVersionAwareCommand).toHaveBeenCalledWith('CS-001', 'Reset', {
+      type: 'Soft',
+    });
+  });
+
+  it('publishes pnc.InstallCertificateResult on InstallCertificate success', async () => {
+    dispatcher.sendCommand.mockResolvedValueOnce({ status: 'Accepted' });
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-cert',
+        stationId: 'CS-001',
+        action: 'InstallCertificate',
+        payload: { certificateType: 'V2GRootCertificate', certificate: 'PEM' },
+        version: 'ocpp2.1',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'pnc.InstallCertificateResult',
+        aggregateType: 'ChargingStation',
+        aggregateId: 'CS-001',
+        payload: expect.objectContaining({
+          certificateType: 'V2GRootCertificate',
+          status: 'Accepted',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('publishes command.GetVariables on GetVariables success', async () => {
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-gv',
+        stationId: 'CS-001',
+        action: 'GetVariables',
+        payload: { getVariableData: [] },
+        version: 'ocpp2.1',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'command.GetVariables', aggregateId: 'CS-001' }),
+    );
+  });
+
+  it('publishes command.GetConfiguration on GetConfiguration success', async () => {
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-gc',
+        stationId: 'CS-001',
+        action: 'GetConfiguration',
+        payload: { key: ['HeartbeatInterval'] },
+        version: 'ocpp1.6',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'command.GetConfiguration', aggregateId: 'CS-001' }),
+    );
+  });
+
+  it('publishes command.UpdateFirmware on UpdateFirmware success', async () => {
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-fw',
+        stationId: 'CS-001',
+        action: 'UpdateFirmware',
+        payload: { location: 'https://fw', retrieveDate: '2026-01-01T00:00:00Z' },
+        version: 'ocpp2.1',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'command.UpdateFirmware', aggregateId: 'CS-001' }),
+    );
+  });
+
+  it('publishes command.GetLog on GetLog success', async () => {
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-log',
+        stationId: 'CS-001',
+        action: 'GetLog',
+        payload: { logType: 'DiagnosticsLog' },
+        version: 'ocpp2.1',
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'command.GetLog', aggregateId: 'CS-001' }),
+    );
+  });
+
+  it('publishes command.ReserveNow on ReserveNow success so projections can roll back', async () => {
+    dispatcher.sendVersionAwareCommand.mockResolvedValueOnce({ status: 'Occupied' });
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-resv',
+        stationId: 'CS-001',
+        action: 'ReserveNow',
+        payload: { id: 7, evseId: 1 },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'command.ReserveNow',
+        aggregateId: 'CS-001',
+        payload: {
+          request: { id: 7, evseId: 1 },
+          response: { status: 'Occupied' },
+        },
+      }),
+    );
+  });
+
+  it('publishes CALLERROR and error result for a non-offline failure with commandId', async () => {
+    dispatcher.sendVersionAwareCommand.mockRejectedValueOnce(
+      new Error('Station rejected: NotImplemented'),
+    );
+    await createAndStart();
+    subscribeHandler!(
+      JSON.stringify({
+        commandId: 'cmd-err',
+        stationId: 'CS-001',
+        action: 'TriggerMessage',
+        payload: {},
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(eventBus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'ocpp.MessageLog',
+        payload: expect.objectContaining({
+          direction: 'inbound',
+          messageType: 4,
+          errorDescription: 'Station rejected: NotImplemented',
+        }) as unknown,
+      }),
+    );
+    expect(mockPublish).toHaveBeenCalledWith(
+      'ocpp_command_results',
+      JSON.stringify({ commandId: 'cmd-err', error: 'Station rejected: NotImplemented' }),
+    );
+  });
 });

@@ -4,17 +4,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import pino from 'pino';
 
-const mockInsertFn = vi.fn();
-const mockValuesFn = vi.fn();
+const { mockInsertFn, mockValuesFn } = vi.hoisted(() => ({
+  mockInsertFn: vi.fn(),
+  mockValuesFn: vi.fn(),
+}));
 
-vi.mock('@evtivity/database', () => {
-  mockValuesFn.mockResolvedValue(undefined);
-  mockInsertFn.mockReturnValue({ values: mockValuesFn });
-  return {
-    db: { insert: mockInsertFn },
-    authorizeAttempts: { __table: 'authorize_attempts' },
-  };
-});
+vi.mock('@evtivity/database', () => ({
+  db: { insert: mockInsertFn },
+  authorizeAttempts: { __table: 'authorize_attempts' },
+}));
 
 import {
   logAuthorizeAttempt,
@@ -26,8 +24,8 @@ const logger = pino({ level: 'silent' });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  valuesFn.mockResolvedValue(undefined);
-  insertFn.mockReturnValue({ values: valuesFn });
+  mockValuesFn.mockResolvedValue(undefined);
+  mockInsertFn.mockReturnValue({ values: mockValuesFn });
 });
 
 describe('parseOcpiValidThru', () => {
@@ -90,12 +88,12 @@ describe('logAuthorizeAttempt', () => {
       logger,
     );
 
-    expect(insertFn).toHaveBeenCalledTimes(1);
-    expect(insertFn).toHaveBeenCalledWith(
+    expect(mockInsertFn).toHaveBeenCalledTimes(1);
+    expect(mockInsertFn).toHaveBeenCalledWith(
       expect.objectContaining({ __table: 'authorize_attempts' }),
     );
-    expect(valuesFn).toHaveBeenCalledTimes(1);
-    expect(valuesFn).toHaveBeenCalledWith({
+    expect(mockValuesFn).toHaveBeenCalledTimes(1);
+    expect(mockValuesFn).toHaveBeenCalledWith({
       stationId: 'CS-001',
       idToken: 'TAG-ABC',
       tokenType: 'ISO14443',
@@ -119,7 +117,7 @@ describe('logAuthorizeAttempt', () => {
       logger,
     );
 
-    expect(valuesFn).toHaveBeenCalledWith({
+    expect(mockValuesFn).toHaveBeenCalledWith({
       stationId: 'CS-001',
       idToken: 'TAG-XYZ',
       tokenType: null,
@@ -146,7 +144,7 @@ describe('logAuthorizeAttempt', () => {
       logger,
     );
 
-    expect(valuesFn).toHaveBeenCalledWith({
+    expect(mockValuesFn).toHaveBeenCalledWith({
       stationId: null,
       idToken: 'TAG-NULLS',
       tokenType: null,
@@ -183,7 +181,7 @@ describe('logAuthorizeAttempt', () => {
         logger,
       );
 
-      expect(valuesFn).toHaveBeenCalledWith(
+      expect(mockValuesFn).toHaveBeenCalledWith(
         expect.objectContaining({ outcome, idToken: `TAG-${outcome}` }),
       );
     });
@@ -191,7 +189,7 @@ describe('logAuthorizeAttempt', () => {
 
   it('swallows a DB insert error and logs a warning instead of throwing', async () => {
     const insertError = new Error('connection refused');
-    valuesFn.mockRejectedValueOnce(insertError);
+    mockValuesFn.mockRejectedValueOnce(insertError);
     const warnSpy = vi.spyOn(logger, 'warn');
 
     await expect(
@@ -217,7 +215,7 @@ describe('logAuthorizeAttempt', () => {
 
   it('swallows a synchronous throw from db.insert and warns', async () => {
     const insertError = new Error('insert blew up');
-    insertFn.mockImplementationOnce(() => {
+    mockInsertFn.mockImplementationOnce(() => {
       throw insertError;
     });
     const warnSpy = vi.spyOn(logger, 'warn');

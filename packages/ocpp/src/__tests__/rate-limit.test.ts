@@ -130,33 +130,50 @@ describe('Rate limit middleware', () => {
 describe('Rate limit middleware stale-entry cleanup', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
   it('deletes counters for stations idle beyond the stale threshold', async () => {
+    vi.resetModules();
     vi.useFakeTimers();
     const start = 5_000_000;
     vi.setSystemTime(start);
 
-    // Re-import the module under fake timers so its module-level setInterval is
-    // registered against the fake clock.
+    // Importing under fake timers registers the module-level cleanup interval
+    // against the fake clock so it can be fired deterministically.
     const mod = await import('../server/middleware/rate-limit.js');
     const middleware = mod.createRateLimitMiddleware(50);
     const ctx = createMockContext('STALE-001');
 
+    const deleteSpy = vi.spyOn(Map.prototype, 'delete');
     await middleware(ctx, () => Promise.resolve());
 
-    // Advance beyond the 300s stale threshold; the 60s cleanup interval fires
-    // and removes the idle station's counter. After removal a fresh window is
-    // created, so the station is allowed again at full quota.
+    // Advance past the 300s stale threshold, then fire one 60s cleanup tick.
+    // The idle station's counter (windowStart=start) is now older than the
+    // threshold, so the cleanup callback deletes it.
     vi.setSystemTime(start + 300_001);
     await vi.advanceTimersByTimeAsync(60_000);
 
-    let called = false;
-    await middleware(ctx, () => {
-      called = true;
-      return Promise.resolve();
-    });
-    expect(called).toBe(true);
+    expect(deleteSpy).toHaveBeenCalledWith('STALE-001');
+  });
+
+  it('keeps counters for stations within the stale threshold', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const start = 8_000_000;
+    vi.setSystemTime(start);
+
+    const mod = await import('../server/middleware/rate-limit.js');
+    const middleware = mod.createRateLimitMiddleware(50);
+    const ctx = createMockContext('FRESH-001');
+    await middleware(ctx, () => Promise.resolve());
+
+    const deleteSpy = vi.spyOn(Map.prototype, 'delete');
+    // One cleanup tick at 60s: still well within the 300s threshold, so the
+    // counter is retained (the stale branch is not taken).
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(deleteSpy).not.toHaveBeenCalledWith('FRESH-001');
   });
 });

@@ -3,7 +3,12 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { OcppServer } from '../server/ocpp-server.js';
+import type { HandlerContext } from '../server/middleware/pipeline.js';
 
 let testPort = 19080;
 let server: OcppServer | null = null;
@@ -30,6 +35,20 @@ async function startServer(port: number): Promise<OcppServer> {
 function connectStation(port: number, stationId: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${String(port)}/${stationId}`, ['ocpp2.1'], {
+      headers: {
+        authorization: 'Basic ' + Buffer.from(`${stationId}:password`).toString('base64'),
+      },
+    });
+    ws.on('open', () => {
+      resolve(ws);
+    });
+    ws.on('error', reject);
+  });
+}
+
+function connectStation16(port: number, stationId: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${String(port)}/${stationId}`, ['ocpp1.6'], {
       headers: {
         authorization: 'Basic ' + Buffer.from(`${stationId}:password`).toString('base64'),
       },
@@ -214,7 +233,12 @@ describe('OcppServer integration', () => {
     expect(conn?.session.stationId).toBe('TEST-006');
 
     ws.close();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Poll for the disconnect to be reflected rather than guessing a fixed
+    // delay; under parallel test load a 100ms wait can race the close handler.
+    const deadline = Date.now() + 5000;
+    while (srv.getConnectionManager().get('TEST-006') != null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     expect(srv.getConnectionManager().get('TEST-006')).toBeUndefined();
   });
 
@@ -362,5 +386,252 @@ describe('OcppServer integration', () => {
     });
 
     expect(connected).toBe(false);
+  });
+
+  it('records a pong when the station replies to a server ping', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const ws = await connectStation(port, 'TEST-PONG');
+
+    const conn = srv.getConnectionManager().get('TEST-PONG');
+    expect(conn).toBeDefined();
+
+    // Observe the server-side socket receiving the auto-pong, which drives the
+    // `ws.on('pong')` handler that calls pingMonitor.recordPong.
+    const serverPongSeen = new Promise<void>((resolve) => {
+      conn!.ws.on('pong', () => {
+        resolve();
+      });
+    });
+    // Server pings the client; the ws client auto-replies with a pong frame.
+    conn!.ws.ping();
+    await serverPongSeen;
+
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
+  });
+
+  it('handles a server-side WebSocket error by closing the connection', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const ws = await connectStation(port, 'TEST-WSERR');
+
+    const conn = srv.getConnectionManager().get('TEST-WSERR');
+    expect(conn).toBeDefined();
+
+    const closed = new Promise<void>((resolve) => {
+      ws.on('close', () => {
+        resolve();
+      });
+    });
+
+    // Emitting an error on the server-side socket exercises the `ws.on('error')`
+    // handler, which logs and closes the connection with code 1011.
+    conn!.ws.emit('error', new Error('simulated socket failure'));
+    await closed;
+
+    expect(ws.readyState).toBe(WebSocket.CLOSED);
+  });
+
+  it('negotiates the ocpp1.6 subprotocol when only 1.6 is offered', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const ws = await connectStation16(port, 'TEST-16');
+
+    expect(ws.protocol).toBe('ocpp1.6');
+    const conn = srv.getConnectionManager().get('TEST-16');
+    expect(conn?.session.ocppProtocol).toBe('ocpp1.6');
+    ws.close();
+  });
+
+  it('publishes an inbound CALLRESULT message log for unmatched responses', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const eventBus = srv.getEventBus();
+
+    const logged = new Promise<Record<string, unknown>>((resolve) => {
+      eventBus.subscribe('ocpp.MessageLog', (event) => {
+        const p = event.payload;
+        if (p['messageType'] === 3 && p['direction'] === 'inbound') {
+          resolve(p);
+        }
+        return Promise.resolve();
+      });
+    });
+
+    const ws = await connectStation(port, 'TEST-RESLOG');
+    ws.send(JSON.stringify([3, 'orphan-msg', { status: 'Accepted' }]));
+
+    const payload = await logged;
+    expect(payload['messageId']).toBe('orphan-msg');
+    expect(payload['action']).toBeNull();
+    ws.close();
+  });
+
+  it('publishes an inbound CALLERROR message log for unmatched error responses', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const eventBus = srv.getEventBus();
+
+    const logged = new Promise<Record<string, unknown>>((resolve) => {
+      eventBus.subscribe('ocpp.MessageLog', (event) => {
+        const p = event.payload;
+        if (p['messageType'] === 4 && p['direction'] === 'inbound') {
+          resolve(p);
+        }
+        return Promise.resolve();
+      });
+    });
+
+    const ws = await connectStation(port, 'TEST-ERRLOG');
+    ws.send(JSON.stringify([4, 'orphan-err', 'InternalError', 'boom', { extra: true }]));
+
+    const payload = await logged;
+    expect(payload['errorCode']).toBe('InternalError');
+    expect(payload['errorDescription']).toBe('boom');
+    ws.close();
+  });
+
+  it('publishes an outbound CALLRESULT message log on a successful handler', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+    const eventBus = srv.getEventBus();
+
+    const logged = new Promise<Record<string, unknown>>((resolve) => {
+      eventBus.subscribe('ocpp.MessageLog', (event) => {
+        const p = event.payload;
+        if (
+          p['messageType'] === 3 &&
+          p['direction'] === 'outbound' &&
+          p['action'] === 'Heartbeat'
+        ) {
+          resolve(p);
+        }
+        return Promise.resolve();
+      });
+    });
+
+    const ws = await connectStation(port, 'TEST-OUTLOG');
+    await bootStation(ws);
+    sendCall(ws, 'hb-1', 'Heartbeat', {});
+
+    const payload = await logged;
+    expect(payload['messageId']).toBe('hb-1');
+    expect(payload['payload']).toHaveProperty('currentTime');
+    ws.close();
+  });
+
+  it('returns an InternalError CALLERROR when a handler throws a plain Error', async () => {
+    const port = getNextPort();
+    const srv = await startServer(port);
+
+    // Replace the Heartbeat handler with one that throws a non-OcppError. The
+    // server must translate it into an InternalError CALLERROR rather than
+    // leaking the stack to the station. Each test builds a fresh OcppServer,
+    // so this override is isolated.
+    srv.getRouter().register('ocpp2.1', 'Heartbeat', (_ctx: HandlerContext) => {
+      throw new Error('handler exploded');
+    });
+
+    const ws = await connectStation(port, 'TEST-INTERR');
+    await bootStation(ws);
+
+    const responsePromise = waitForMessage(ws);
+    sendCall(ws, 'msg-internal', 'Heartbeat', {});
+
+    const response = await responsePromise;
+    expect(response[0]).toBe(4);
+    expect(response[1]).toBe('msg-internal');
+    expect(response[2]).toBe('InternalError');
+    expect(response[3]).toBe('Internal server error');
+    ws.close();
+  });
+
+  it('constructs a postgres pool when a databaseUrl is supplied and closes it on stop', async () => {
+    // A databaseUrl makes the constructor build a postgres pool (this.sql).
+    // start()/stop() must wire the ping monitor to it and end the pool without
+    // requiring a reachable database (no query is issued during start/stop).
+    const port = getNextPort();
+    const srv = new OcppServer({ databaseUrl: 'postgres://u:p@127.0.0.1:1/none' });
+    await srv.start({ port, host: '127.0.0.1' });
+    // stop() ends the sql pool; resolves cleanly even though nothing connected.
+    await expect(srv.stop()).resolves.toBeUndefined();
+    server = null;
+  });
+
+  it('uses an injected eventBus instead of constructing one', async () => {
+    const port = getNextPort();
+    const injected = new OcppServer();
+    const sharedBus = injected.getEventBus();
+    const srv = new OcppServer({ eventBus: sharedBus });
+    server = srv;
+    await srv.start({ port, host: '127.0.0.1' });
+
+    expect(srv.getEventBus()).toBe(sharedBus);
+    await injected.stop();
+  });
+
+  it('starts a TLS (wss://) listener and accepts secure connections', async () => {
+    const certDir = mkdtempSync(join(tmpdir(), 'ocpp-tls-'));
+    try {
+      const keyPath = join(certDir, 'key.pem');
+      const certPath = join(certDir, 'cert.pem');
+      // Generate a throwaway self-signed cert for the TLS server. Skip the
+      // test gracefully if openssl is unavailable in the environment.
+      try {
+        execFileSync('openssl', [
+          'req',
+          '-x509',
+          '-newkey',
+          'rsa:2048',
+          '-nodes',
+          '-keyout',
+          keyPath,
+          '-out',
+          certPath,
+          '-days',
+          '1',
+          '-subj',
+          '/CN=127.0.0.1',
+        ]);
+      } catch {
+        return;
+      }
+
+      const wsPort = getNextPort();
+      const tlsPort = getNextPort();
+      const srv = new OcppServer();
+      server = srv;
+      await srv.start({
+        port: wsPort,
+        host: '127.0.0.1',
+        tls: {
+          cert: readFileSync(certPath, 'utf-8'),
+          key: readFileSync(keyPath, 'utf-8'),
+          port: tlsPort,
+        },
+      });
+
+      const secureOpened = await new Promise<boolean>((resolve) => {
+        const ws = new WebSocket(`wss://127.0.0.1:${String(tlsPort)}/TEST-TLS`, ['ocpp2.1'], {
+          rejectUnauthorized: false,
+          headers: {
+            authorization: 'Basic ' + Buffer.from('TEST-TLS:password').toString('base64'),
+          },
+        });
+        ws.on('open', () => {
+          ws.close();
+          resolve(true);
+        });
+        ws.on('error', () => {
+          resolve(false);
+        });
+      });
+
+      expect(secureOpened).toBe(true);
+      expect(srv.getConnectionManager().count()).toBeGreaterThanOrEqual(0);
+    } finally {
+      rmSync(certDir, { recursive: true, force: true });
+    }
   });
 });

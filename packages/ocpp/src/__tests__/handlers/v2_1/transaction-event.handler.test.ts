@@ -157,6 +157,28 @@ describe('v2_1 TransactionEvent handler', () => {
     });
   });
 
+  it('defaults the MeterValues evseId to 0 when no evse is present', async () => {
+    const meterValue = [{ timestamp: '2026-06-04T00:00:00Z', sampledValue: [{ value: 7 }] }];
+    const { handleTransactionEvent } =
+      await import('../../../handlers/v2_1/transaction-event.handler.js');
+    const { ctx, publishMock } = makeCtx({
+      eventType: 'Updated',
+      timestamp: '2026-06-04T00:00:00Z',
+      triggerReason: 'MeterValuePeriodic',
+      seqNo: 3,
+      transactionInfo: { transactionId: 'tx-no-evse', chargingState: 'Charging' },
+      meterValue,
+    });
+    await handleTransactionEvent(ctx);
+
+    expect(publishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'ocpp.MeterValues',
+        payload: expect.objectContaining({ evseId: 0 }) as unknown,
+      }),
+    );
+  });
+
   it('does not publish MeterValues for an empty meterValue array', async () => {
     const { handleTransactionEvent } =
       await import('../../../handlers/v2_1/transaction-event.handler.js');
@@ -231,6 +253,23 @@ describe('v2_1 TransactionEvent handler', () => {
           status: 'Accepted',
           groupIdToken: { idToken: 'rfid-1', type: 'ISO14443' },
           cacheExpiryDateTime: expiresAt.toISOString(),
+        },
+      });
+    });
+
+    it('accepts an active token whose row has a null driverId', async () => {
+      whereResult = [
+        { id: 'dtk_nd', driverId: null, isActive: true, expiresAt: null, revokedAt: null },
+      ];
+      const { handleTransactionEvent } =
+        await import('../../../handlers/v2_1/transaction-event.handler.js');
+      const { ctx } = makeCtx(startedWithToken());
+      const response = await handleTransactionEvent(ctx);
+
+      expect(response).toEqual({
+        idTokenInfo: {
+          status: 'Accepted',
+          groupIdToken: { idToken: 'rfid-1', type: 'ISO14443' },
         },
       });
     });

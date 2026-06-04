@@ -54,10 +54,12 @@ function binaryResponse(ok: boolean, status: number, bytes: Buffer): Response {
   } as unknown as Response;
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
+type FetchMock = ReturnType<typeof vi.fn<(url: string, init: RequestInit) => Promise<Response>>>;
+
+let fetchMock: FetchMock;
 
 beforeEach(() => {
-  fetchMock = vi.fn();
+  fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>();
   vi.stubGlobal('fetch', fetchMock);
 });
 

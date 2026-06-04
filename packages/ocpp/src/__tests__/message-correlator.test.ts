@@ -127,6 +127,62 @@ describe('MessageCorrelator', () => {
       await promise;
     });
 
+    it('resolves when the action is not in the response registry (no schema to check)', async () => {
+      correlator = new MessageCorrelator(logger);
+      const ws = mockWs();
+      const session = createSessionState('CS-001');
+
+      // An action with no registry entry skips validation and resolves as-is.
+      const promise = correlator.sendCall(ws, session, 'ActionWithNoRegistryEntry', {});
+
+      const sentData = JSON.parse(vi.mocked(ws.send).mock.calls[0]?.[0] as string) as unknown[];
+      const messageId = sentData[1] as string;
+
+      const callResult: CallResult = [3, messageId, { anything: 'goes' }];
+      const handled = correlator.handleResponse(session, callResult);
+
+      expect(handled).toBe(true);
+      await expect(promise).resolves.toEqual({ anything: 'goes' });
+    });
+
+    it('rejects when a CALLRESULT payload fails response schema validation', async () => {
+      correlator = new MessageCorrelator(logger);
+      const ws = mockWs();
+      const session = createSessionState('CS-001');
+
+      const promise = correlator.sendCall(ws, session, 'Reset', { type: 'Immediate' });
+
+      const sentData = JSON.parse(vi.mocked(ws.send).mock.calls[0]?.[0] as string) as unknown[];
+      const messageId = sentData[1] as string;
+
+      // Reset's response schema requires a valid `status` enum; an invalid
+      // value must be rejected, not resolved.
+      const callResult: CallResult = [3, messageId, { status: 'NotARealResetStatus' }];
+      const handled = correlator.handleResponse(session, callResult);
+
+      expect(handled).toBe(true);
+      await expect(promise).rejects.toThrow(
+        'Invalid CALLRESULT for Reset: response payload failed schema validation',
+      );
+      expect(session.pendingMessages.size).toBe(0);
+    });
+
+    it('validates against the ocpp1.6 registry for 1.6 sessions', async () => {
+      correlator = new MessageCorrelator(logger);
+      const ws = mockWs();
+      const session = createSessionState('CS-001', 'ocpp1.6');
+
+      const promise = correlator.sendCall(ws, session, 'Reset', { type: 'Hard' });
+
+      const sentData = JSON.parse(vi.mocked(ws.send).mock.calls[0]?.[0] as string) as unknown[];
+      const messageId = sentData[1] as string;
+
+      const callResult: CallResult = [3, messageId, { status: 'Accepted' }];
+      correlator.handleResponse(session, callResult);
+
+      await expect(promise).resolves.toEqual({ status: 'Accepted' });
+    });
+
     it('clears timeout on successful response', async () => {
       correlator = new MessageCorrelator(logger, 5000);
       const ws = mockWs();
