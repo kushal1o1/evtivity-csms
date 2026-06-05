@@ -78,6 +78,7 @@ services:
       AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW:-1 minute}
       METRICS_PORT: 9091
       SMTP_HOST: mailpit
+      SEED_DEMO: ${SEED_DEMO:-false}
     healthcheck:
       test:
         [

@@ -1,16 +1,20 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-// Local dev seed (npm run db:seed). Always inserts settings, roles, admin user,
+// Local dev seed (npm run db:seed). Always upserts settings, roles, admin user,
 // and permissions. When SEED_DEMO=true also generates the full demo dataset
-// (sites, 2000 stations, sessions, drivers, etc.). For production initial setup
-// see seed-admin.ts; for the docker-build dev station fixture see seed-dev-stations.ts.
+// (sites, 2000 stations, sessions, drivers, etc.) into an empty inventory.
+// Idempotent and non-destructive: never truncates or deletes existing rows.
+// Demo generation is skipped when sites or stations already exist; for a clean
+// slate, drop and recreate the database (or the docker volume), run
+// db:migrate, then re-run this seed. For production initial setup see
+// seed-admin.ts; for the docker-build dev station fixture see seed-dev-stations.ts.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, client } from './config.js';
-import { sql, eq, and, isNotNull, isNull } from 'drizzle-orm';
+import { sql, eq, and, isNotNull, isNull, notInArray } from 'drizzle-orm';
 import { createId } from './lib/id.js';
 import {
   settings,
@@ -22,7 +26,6 @@ import {
   roles,
   users,
   pricingGroups,
-  tariffs,
   pricingGroupStations,
   pricingGroupFleets,
   pricingGroupSites,
@@ -365,26 +368,13 @@ function padNum(n: number, digits: number): string {
 }
 
 const seedDemo = process.env['SEED_DEMO'] === 'true';
+// Same env vars seed-admin.ts honors, so all entry points agree on the admin
+// account. Defaults match the historical dev credentials.
+const initialAdminEmail = process.env['INITIAL_ADMIN_EMAIL'] ?? 'admin@evtivity.local';
+const initialAdminPassword = process.env['INITIAL_ADMIN_PASSWORD'] ?? 'admin123';
 
 async function seed(): Promise<void> {
   console.log(`Seeding database...${seedDemo ? '' : ' (demo data disabled)'}`);
-
-  // Clear existing data (truncate all tables with cascade). Tables whose
-  // rows are seeded ONLY by migrations (not re-inserted by this seed script)
-  // must be excluded -- otherwise re-seeding wipes the catalog and the
-  // feature that depends on it stops working until the next migration runs.
-  // Add to this set when a new migration seeds reference data that the seed
-  // script does not also populate.
-  const TRUNCATE_EXCLUDED = new Set<string>(['drizzle_migrations', 'vehicle_efficiency_lookup']);
-  console.log('  Clearing existing data...');
-  const tables = await db.execute<{ tablename: string }>(sql`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-  `);
-  const truncatable = tables.map((t) => t.tablename).filter((name) => !TRUNCATE_EXCLUDED.has(name));
-  if (truncatable.length > 0) {
-    await db.execute(sql.raw(`TRUNCATE TABLE ${truncatable.join(', ')} CASCADE`));
-  }
-  console.log('  Tables cleared.');
 
   // ------ Settings ------
   // EVtivity logo - green ring (two parallel-aligned gaps) with green lightning bolt
@@ -640,514 +630,35 @@ async function seed(): Promise<void> {
     { name: 'Thanksgiving', date: '2026-11-26' },
     { name: 'Christmas Day', date: '2026-12-25' },
   ];
-  await db.insert(pricingHolidays).values(holidayRows);
+  await db.insert(pricingHolidays).values(holidayRows).onConflictDoNothing();
   console.log(`  ${String(holidayRows.length)} pricing holidays created.`);
 
-  // ------ Pricing Groups and Tariffs (all restriction types) ------
-  const pricingGroupDefs = [
-    {
-      name: 'Time-of-Day Standard',
-      description: 'Full schedule with peak/off-peak/shoulder/holiday/energy tiers',
-      isDefault: true,
-    },
-    {
-      name: 'Premium DC Fast',
-      description: 'High-power DC with weekday/weekend time splits',
-      isDefault: false,
-    },
-    {
-      name: 'Fleet Discount',
-      description: 'Discounted fleet rate with seasonal and energy tiers',
-      isDefault: false,
-    },
-    {
-      name: 'Employee Benefit',
-      description: 'Free off-peak charging with nominal peak rate',
-      isDefault: false,
-    },
-    {
-      name: 'Seasonal Resort',
-      description: 'Summer/winter seasonal pricing for resort locations',
-      isDefault: false,
-    },
-    {
-      name: 'VIP',
-      description: 'Free charging for VIP drivers',
-      isDefault: false,
-    },
+  // ------ Pricing Groups (seeded by migration) ------
+  // Migration 0001_seed_defaults.sql seeds the six demo pricing groups
+  // (pgr_seed*) and all their tariffs on every install. Look them up by name
+  // for the demo assignments below instead of re-seeding them here.
+  const PRICING_GROUP_NAMES = [
+    'Time-of-Day Standard',
+    'Premium DC Fast',
+    'Fleet Discount',
+    'Employee Benefit',
+    'Seasonal Resort',
+    'VIP',
   ];
-  const createdPricingGroups = await db
-    .insert(pricingGroups)
-    .values(pricingGroupDefs)
-    .returning({ id: pricingGroups.id });
-  console.log(`  ${String(createdPricingGroups.length)} pricing groups created.`);
-
-  // Group 0: Time-of-Day Standard (all restriction types)
-  // Group 1: Premium DC Fast (day+time combos)
-  // Group 2: Fleet Discount (seasonal + energy threshold)
-  // Group 3: Employee Benefit (time-only)
-  // Group 4: Seasonal Resort (date-range + holiday)
-  const tariffRows = [
-    // --- Group 0: Time-of-Day Standard ---
-    // Default fallback (priority 0)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Standard Rate',
-      currency: 'USD',
-      pricePerKwh: '0.30',
-      pricePerMinute: '0.02',
-      pricePerSession: '1.00',
-      idleFeePricePerMinute: '0.15',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: peak hours (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Peak Hours',
-      currency: 'USD',
-      pricePerKwh: '0.48',
-      pricePerMinute: '0.05',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.25',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '16:00', endTime: '21:00' } },
-    },
-    // Time-only: off-peak overnight with midnight crossing (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Off-Peak Overnight',
-      currency: 'USD',
-      pricePerKwh: '0.18',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.50',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '23:00', endTime: '06:00' } },
-    },
-    // Day+time: weekday peak (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Weekday Business Hours',
-      currency: 'USD',
-      pricePerKwh: '0.42',
-      pricePerMinute: '0.04',
-      pricePerSession: '1.25',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '08:00', endTime: '17:00' },
-      },
-    },
-    // Day+time: weekend daytime (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Weekend Daytime',
-      currency: 'USD',
-      pricePerKwh: '0.25',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.75',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [0, 6],
-        timeRange: { startTime: '09:00', endTime: '21:00' },
-      },
-    },
-    // Holiday (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'Holiday Rate',
-      currency: 'USD',
-      pricePerKwh: '0.22',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.50',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold: high-usage surcharge (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 0).id,
-      name: 'High Usage Surcharge',
-      currency: 'USD',
-      pricePerKwh: '0.55',
-      pricePerMinute: '0.06',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 80 },
-    },
-
-    // --- Group 1: Premium DC Fast ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'DC Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.50',
-      pricePerMinute: '0.08',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.40',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Day+time: weekday morning rush (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekday Morning Rush',
-      currency: 'USD',
-      pricePerKwh: '0.65',
-      pricePerMinute: '0.10',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '07:00', endTime: '10:00' },
-      },
-    },
-    // Day+time: weekday evening rush (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekday Evening Rush',
-      currency: 'USD',
-      pricePerKwh: '0.68',
-      pricePerMinute: '0.10',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        timeRange: { startTime: '17:00', endTime: '20:00' },
-      },
-    },
-    // Day+time: weekend all day (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Weekend Rate',
-      currency: 'USD',
-      pricePerKwh: '0.45',
-      pricePerMinute: '0.06',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [0, 6],
-        timeRange: { startTime: '06:00', endTime: '22:00' },
-      },
-    },
-    // Holiday (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Holiday Discount',
-      currency: 'USD',
-      pricePerKwh: '0.40',
-      pricePerMinute: '0.04',
-      pricePerSession: '1.00',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold: ultra-high usage (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 1).id,
-      name: 'Ultra-High Usage',
-      currency: 'USD',
-      pricePerKwh: '0.75',
-      pricePerMinute: '0.12',
-      pricePerSession: '3.00',
-      idleFeePricePerMinute: '0.60',
-      taxRate: '0.0725',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 100 },
-    },
-
-    // --- Group 2: Fleet Discount ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.20',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: fleet overnight charging discount (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Overnight',
-      currency: 'USD',
-      pricePerKwh: '0.12',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '22:00', endTime: '05:00' } },
-    },
-    // Seasonal: summer peak demand (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Summer Peak Surcharge',
-      currency: 'USD',
-      pricePerKwh: '0.28',
-      pricePerMinute: '0.02',
-      pricePerSession: '0.50',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '06-01', endDate: '09-30' } },
-    },
-    // Seasonal: winter off-peak (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Winter Discount',
-      currency: 'USD',
-      pricePerKwh: '0.14',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '11-01', endDate: '02-28' } },
-    },
-    // Energy threshold: bulk charging (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 2).id,
-      name: 'Fleet Bulk Discount',
-      currency: 'USD',
-      pricePerKwh: '0.10',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      taxRate: '0.0825',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 50 },
-    },
-
-    // --- Group 3: Employee Benefit ---
-    // Default (free off-peak)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Employee Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: nominal peak rate (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Employee Peak Rate',
-      currency: 'USD',
-      pricePerKwh: '0.10',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.15',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '12:00', endTime: '14:00' } },
-    },
-    // Day+time: Friday afternoon free (priority 20)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Friday Afternoon Free',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 20,
-      isDefault: false,
-      restrictions: {
-        daysOfWeek: [5],
-        timeRange: { startTime: '13:00', endTime: '18:00' },
-      },
-    },
-    // Holiday: employee holiday bonus (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 3).id,
-      name: 'Holiday Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-
-    // --- Group 4: Seasonal Resort ---
-    // Default
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Resort Base Rate',
-      currency: 'USD',
-      pricePerKwh: '0.35',
-      pricePerMinute: '0.03',
-      pricePerSession: '1.50',
-      idleFeePricePerMinute: '0.20',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-      restrictions: null,
-    },
-    // Time-only: resort evening discount (priority 10)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Evening Discount',
-      currency: 'USD',
-      pricePerKwh: '0.25',
-      pricePerMinute: '0.01',
-      pricePerSession: '0.75',
-      idleFeePricePerMinute: '0.10',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 10,
-      isDefault: false,
-      restrictions: { timeRange: { startTime: '20:00', endTime: '08:00' } },
-    },
-    // Seasonal: summer peak (priority 30)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Summer Peak Season',
-      currency: 'USD',
-      pricePerKwh: '0.55',
-      pricePerMinute: '0.06',
-      pricePerSession: '2.50',
-      idleFeePricePerMinute: '0.35',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '05-15', endDate: '09-15' } },
-    },
-    // Seasonal: ski season (priority 30, year-wrapping date range)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Ski Season Premium',
-      currency: 'USD',
-      pricePerKwh: '0.50',
-      pricePerMinute: '0.05',
-      pricePerSession: '2.00',
-      idleFeePricePerMinute: '0.30',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 30,
-      isDefault: false,
-      restrictions: { dateRange: { startDate: '11-15', endDate: '03-31' } },
-    },
-    // Holiday: resort holiday premium (priority 40)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Holiday Premium',
-      currency: 'USD',
-      pricePerKwh: '0.60',
-      pricePerMinute: '0.08',
-      pricePerSession: '3.00',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 40,
-      isDefault: false,
-      restrictions: { holidays: true },
-    },
-    // Energy threshold (priority 50)
-    {
-      pricingGroupId: at(createdPricingGroups, 4).id,
-      name: 'Heavy Usage Rate',
-      currency: 'USD',
-      pricePerKwh: '0.70',
-      pricePerMinute: '0.10',
-      pricePerSession: '3.50',
-      idleFeePricePerMinute: '0.50',
-      taxRate: '0.09',
-      isActive: true,
-      priority: 50,
-      isDefault: false,
-      restrictions: { energyThresholdKwh: 60 },
-    },
-
-    // --- Group 5: VIP ---
-    {
-      pricingGroupId: at(createdPricingGroups, 5).id,
-      name: 'VIP Free Charging',
-      currency: 'USD',
-      pricePerKwh: '0.00',
-      pricePerMinute: '0.00',
-      pricePerSession: '0.00',
-      idleFeePricePerMinute: '0.00',
-      taxRate: '0.00',
-      isActive: true,
-      priority: 0,
-      isDefault: true,
-    },
-  ];
-  await db.insert(tariffs).values(tariffRows);
-  console.log(`  ${String(tariffRows.length)} tariffs created.`);
+  const existingGroups = await db
+    .select({ id: pricingGroups.id, name: pricingGroups.name })
+    .from(pricingGroups);
+  const groupIdByName = new Map(existingGroups.map((g) => [g.name, g.id]));
+  const createdPricingGroups = PRICING_GROUP_NAMES.map((name) => {
+    const id = groupIdByName.get(name);
+    if (id == null) {
+      throw new Error(`Pricing group "${name}" not found. Run db:migrate before db:seed.`);
+    }
+    return { id };
+  });
+  console.log(
+    `  ${String(createdPricingGroups.length)} pricing groups resolved from migration seed.`,
+  );
 
   // ------ Station Message Templates (always seeded) ------
   // One row per OCPP MessageState slot. ON CONFLICT DO NOTHING so re-runs
@@ -1167,7 +678,7 @@ async function seed(): Promise<void> {
   if (!seedDemo) {
     // When SEED_DEMO=false, only create roles, admin user, and permissions, then exit
     const argon2 = await import('argon2');
-    const passwordHash = await argon2.hash('admin123');
+    const passwordHash = await argon2.hash(initialAdminPassword);
 
     const [adminRole] = await db
       .insert(roles)
@@ -1198,7 +709,7 @@ async function seed(): Promise<void> {
       .insert(users)
 
       .values({
-        email: 'admin@evtivity.local',
+        email: initialAdminEmail,
         passwordHash,
         firstName: 'Admin',
         lastName: 'User',
@@ -1211,7 +722,7 @@ async function seed(): Promise<void> {
         set: { passwordHash: sql`EXCLUDED.password_hash`, updatedAt: new Date() },
       })
       .returning({ id: users.id });
-    console.log('  1 admin user created (admin@evtivity.local / admin123).');
+    console.log(`  1 admin user created (${initialAdminEmail}).`);
 
     const permRows = ADMIN_DEFAULT_PERMISSIONS.map((perm) => ({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -1222,6 +733,33 @@ async function seed(): Promise<void> {
     console.log(`  ${String(permRows.length)} admin permissions created.`);
 
     console.log('Seed complete (SEED_DEMO=false).');
+    await client.end();
+    return;
+  }
+
+  // Demo generation only seeds into an empty inventory. The demo rows have no
+  // natural keys (random sessions, generated IDs), so re-running on top of
+  // existing data would duplicate them instead of converging. Skip rather
+  // than delete: this seed must never destroy existing data. The baseline
+  // fixtures from migration 0001 (Main Office site, CS-0001/CS-0002) exist on
+  // every fresh install and do not count as inventory.
+  const BASELINE_SITE_IDS = ['sit_000000000001'];
+  const BASELINE_STATION_IDS = ['sta_000000000001', 'sta_000000000002'];
+  const [existingSite] = await db
+    .select({ id: sites.id })
+    .from(sites)
+    .where(notInArray(sites.id, BASELINE_SITE_IDS))
+    .limit(1);
+  const [existingStation] = await db
+    .select({ id: chargingStations.id })
+    .from(chargingStations)
+    .where(notInArray(chargingStations.id, BASELINE_STATION_IDS))
+    .limit(1);
+  if (existingSite != null || existingStation != null) {
+    console.log('  Existing sites or stations found; skipping demo data generation.');
+    console.log('  For a fresh demo dataset: drop and recreate the database (or the');
+    console.log('  docker volume), run db:migrate, then re-run db:seed.');
+    console.log('Seed complete (demo data skipped).');
     await client.end();
     return;
   }
@@ -1270,16 +808,31 @@ async function seed(): Promise<void> {
   console.log(`  ${String(createdSites.length)} sites created.`);
 
   // ------ Vendors ------
-  const vendorRows = VENDOR_NAMES.map((name) => ({ name }));
-  const createdVendors = await db
-    .insert(vendors)
-    .values(vendorRows)
-    .returning({ id: vendors.id, name: vendors.name });
-  console.log(`  ${String(createdVendors.length)} vendors created.`);
-  const ioVendorId = createdVendors.find((v) => v.name === 'IoCharger')?.id;
+  // vendors.name has no unique constraint; reuse existing rows by name so the
+  // migration-seeded EVtivity vendor is not duplicated.
+  const existingVendors = await db.select({ id: vendors.id, name: vendors.name }).from(vendors);
+  const vendorIdByName = new Map(existingVendors.map((v) => [v.name, v.id]));
+  const missingVendorRows = VENDOR_NAMES.filter((name) => !vendorIdByName.has(name)).map(
+    (name) => ({ name }),
+  );
+  const insertedVendors =
+    missingVendorRows.length > 0
+      ? await db
+          .insert(vendors)
+          .values(missingVendorRows)
+          .returning({ id: vendors.id, name: vendors.name })
+      : [];
+  const createdVendors = VENDOR_NAMES.map((name) => {
+    const id = vendorIdByName.get(name) ?? insertedVendors.find((v) => v.name === name)?.id;
+    if (id == null) throw new Error(`Vendor ${name} not created`);
+    return { id, name };
+  });
+  console.log(
+    `  ${String(createdVendors.length)} vendors ready (${String(insertedVendors.length)} created).`,
+  );
   const evtivityVendorId = createdVendors.find((v) => v.name === 'EVtivity')?.id;
-  if (ioVendorId == null || evtivityVendorId == null) {
-    throw new Error('Required vendors (IoCharger, EVtivity) not created');
+  if (evtivityVendorId == null) {
+    throw new Error('Required vendor (EVtivity) not created');
   }
 
   // ------ Charging Stations (2000) ------
@@ -1307,7 +860,7 @@ async function seed(): Promise<void> {
   const stationJitter = () => (Math.random() - 0.5) * 0.004; // ~200m offset
   const stationRows = Array.from({ length: 2000 }, (_, i) => {
     const is16 = i >= 1000;
-    const siteRef = i === 0 ? at(createdSites, 0) : pick(createdSites);
+    const siteRef = pick(createdSites);
     const modelInfo = is16 ? pick(STATION_MODELS_16) : pick(STATION_MODELS);
     stationModels.push(modelInfo);
     const availability = pick(stationStatuses);
@@ -1345,14 +898,15 @@ async function seed(): Promise<void> {
     const isSaratogaSite = saratogaSiteIds.has(siteRef.id);
     const siteCoords = saratogaSiteCoords.get(siteRef.id);
     return {
-      stationId: i === 0 ? 'IOCHARGER-001' : `CS-${padNum(i + 1, 4)}`,
+      // CS numbering starts at CS-0003: CS-0001/CS-0002 are the baseline
+      // fixtures seeded by migration 0001 and station_id is globally unique.
+      // IOCHARGER-* ids are reserved for the real-hardware dev fixtures
+      // created by seed-dev-stations.ts and are never part of the demo set.
+      stationId: `CS-${padNum(i + 3, 4)}`,
       siteId: siteRef.id,
-      // IOCHARGER-001 keeps the IoCharger vendor; all CS-* stations use the
-      // EVtivity vendor so the demo data reflects a single-vendor fleet.
-      vendorId: i === 0 ? ioVendorId : evtivityVendorId,
-      model: i === 0 ? 'IOCAH10-50' : modelInfo.model,
-      serialNumber:
-        i === 0 ? 'A10E231922830' : `SN-${String(2024 + Math.floor(i / 100))}-${padNum(i + 1, 4)}`,
+      vendorId: evtivityVendorId,
+      model: modelInfo.model,
+      serialNumber: `SN-${String(2024 + Math.floor(i / 100))}-${padNum(i + 1, 4)}`,
       firmwareVersion: `${String(randomInt(1, 3))}.${String(randomInt(0, 9))}.${String(randomInt(0, 20))}`,
       iccid: `8901${padNum(randomInt(10, 99), 2)}${padNum(i + 1, 13)}`.slice(0, 20),
       imsi: `${String(randomInt(310, 316))}${padNum(randomInt(10, 99), 2)}${padNum(i + 1, 10)}`.slice(
@@ -1365,9 +919,9 @@ async function seed(): Promise<void> {
       lastHeartbeat: null,
       loadPriority,
       securityProfile,
-      ocppProtocol: i === 0 ? 'ocpp1.6' : is16 ? 'ocpp1.6' : 'ocpp2.1',
+      ocppProtocol: is16 ? 'ocpp1.6' : 'ocpp2.1',
       basicAuthPasswordHash: passwordHash,
-      isSimulator: i !== 0,
+      isSimulator: true,
       latitude:
         isSaratogaSite && siteCoords != null
           ? (siteCoords.lat + stationJitter()).toFixed(6)
@@ -1385,17 +939,17 @@ async function seed(): Promise<void> {
   console.log(`  ${String(createdStations.length)} charging stations created.`);
 
   // Pair every is_simulator=true row with a css_stations row so
-  // SimulatorManager boots them on its 5s poll. Replaces the runtime mirror
-  // that used to live in ChaosOrchestrator.start(). target_url uses the
-  // docker-compose service hostname; db:seed is a dev-only workflow so this
-  // is the only environment that matters. SP3 rows are inserted disabled
-  // because client cert PEMs aren't available here; enable + paste certs
-  // through the dashboard when testing those flows.
+  // SimulatorManager boots them on its 5s poll. target_url must be reachable
+  // from the CSS container, not from where this seed runs, so it cannot
+  // reuse OCPP_SERVER_URL (the host .env points that at localhost). SP3 rows
+  // are inserted disabled because client cert PEMs aren't available here.
+  const ocppWsUrl = process.env['SEED_CSS_TARGET_URL'] ?? 'ws://ocpp:7103';
+  const ocppTlsUrl = process.env['SEED_CSS_TLS_TARGET_URL'] ?? 'wss://ocpp:8443';
   const simulatorRows = stationRows.filter((s) => s.isSimulator);
   if (simulatorRows.length > 0) {
     const cssStationRows = simulatorRows.map((s) => ({
       stationId: s.stationId,
-      targetUrl: s.securityProfile >= 2 ? 'wss://ocpp:8443' : 'ws://ocpp:7103',
+      targetUrl: s.securityProfile >= 2 ? ocppTlsUrl : ocppWsUrl,
       password: s.securityProfile === 3 ? null : 'password',
       sourceType: 'seed',
       enabled: s.securityProfile !== 3,
@@ -1541,10 +1095,9 @@ async function seed(): Promise<void> {
     const is16 = i >= 160;
     // 1.6 stations get 1-2 connectors, each with its own EVSE (1:1 mapping)
     // 2.1 stations get 2-3 EVSEs
-    // IOCHARGER-001 (i=0): single EVSE
-    const numEvses = i === 0 ? 1 : is16 ? randomInt(1, 2) : i % 5 === 0 ? 3 : 2;
-    // For every 10th 2.1 station (except IOCHARGER-001), skip the last EVSE so the simulator triggers auto-creation
-    const maxEvse = !is16 && i % 10 === 0 && i !== 0 ? numEvses - 1 : numEvses;
+    const numEvses = is16 ? randomInt(1, 2) : i % 5 === 0 ? 3 : 2;
+    // For every 10th 2.1 station, skip the last EVSE so the simulator triggers auto-creation
+    const maxEvse = !is16 && i % 10 === 0 ? numEvses - 1 : numEvses;
     if (!is16 && i % 10 === 0) autoCreateGapCount++;
     for (let e = 1; e <= maxEvse; e++) {
       evseRows.push({
@@ -1581,19 +1134,6 @@ async function seed(): Promise<void> {
     const is16 = stationIdx >= 160;
     const modelInfo = at(stationModels, stationIdx);
     const evse = at(createdEvses, i);
-
-    // IOCHARGER-001 (stationIdx=0): Level 2 AC charger with Type1 connector
-    if (stationIdx === 0) {
-      connectorRows.push({
-        evseId: evse.id,
-        connectorId: 1,
-        status: 'unavailable' as const,
-        connectorType: 'Type1',
-        maxPowerKw: '7.68',
-        maxCurrentAmps: 32,
-      });
-      continue;
-    }
 
     // Primary connector
     connectorRows.push({
@@ -1642,6 +1182,8 @@ async function seed(): Promise<void> {
   console.log(`  ${String(connectorRows.length)} connectors created.`);
 
   // ------ Roles ------
+  // Upsert by name: the migrate container's seed:admin step may have already
+  // created the admin role before this script runs.
   const [adminRole] = await db
     .insert(roles)
     .values({
@@ -1649,31 +1191,40 @@ async function seed(): Promise<void> {
       description: 'Full system access',
       permissions: JSON.stringify(['*']),
     })
+    .onConflictDoUpdate({
+      target: roles.name,
+      set: { permissions: JSON.stringify(['*']), updatedAt: new Date() },
+    })
     .returning({ id: roles.id });
 
+  const operatorPermissions = JSON.stringify([
+    'stations:*',
+    'sessions:*',
+    'drivers:*',
+    'sites:*',
+    'pricing:*',
+    'fleets:*',
+    'tokens:*',
+    'dashboard:*',
+    'reservations:*',
+    'notifications:*',
+    'support:*',
+    'ocpi:*',
+    'pnc:*',
+    'payments:*',
+    'load-management:*',
+    'logs:*',
+  ]);
   const [operatorRole] = await db
     .insert(roles)
     .values({
       name: 'operator',
       description: 'Day-to-day operations access',
-      permissions: JSON.stringify([
-        'stations:*',
-        'sessions:*',
-        'drivers:*',
-        'sites:*',
-        'pricing:*',
-        'fleets:*',
-        'tokens:*',
-        'dashboard:*',
-        'reservations:*',
-        'notifications:*',
-        'support:*',
-        'ocpi:*',
-        'pnc:*',
-        'payments:*',
-        'load-management:*',
-        'logs:*',
-      ]),
+      permissions: operatorPermissions,
+    })
+    .onConflictDoUpdate({
+      target: roles.name,
+      set: { permissions: operatorPermissions, updatedAt: new Date() },
     })
     .returning({ id: roles.id });
 
@@ -1682,6 +1233,10 @@ async function seed(): Promise<void> {
     .values({
       name: 'viewer',
       description: 'Read-only access',
+    })
+    .onConflictDoUpdate({
+      target: roles.name,
+      set: { updatedAt: new Date() },
     })
     .returning({ id: roles.id });
 
@@ -1692,10 +1247,11 @@ async function seed(): Promise<void> {
 
   // ------ Users (20) ------
   const passwordHash = await argon2.hash('admin123');
+  const adminPasswordHash = await argon2.hash(initialAdminPassword);
   const userRows = [
     {
-      email: 'admin@evtivity.local',
-      passwordHash,
+      email: initialAdminEmail,
+      passwordHash: adminPasswordHash,
       firstName: 'Admin',
       lastName: 'User',
       roleId: adminRole.id,
@@ -1794,20 +1350,29 @@ async function seed(): Promise<void> {
   console.log(`  ${String(createdDrivers.length)} drivers created.`);
 
   // ------ Portal Test Driver (1) ------
+  // drivers.email has no unique constraint, so select-then-insert: the migrate
+  // container's seed:driver step may have already created this driver.
   const driverPasswordHash = await argon2.hash('driver123');
-  const [portalTestDriver] = await db
-    .insert(drivers)
-    .values({
-      firstName: 'Test',
-      lastName: 'Driver',
-      email: 'driver@evtivity.local',
-      phone: '+15551234567',
-      passwordHash: driverPasswordHash,
-      registrationSource: 'portal',
-      isActive: true,
-      emailVerified: true,
-    })
-    .returning({ id: drivers.id });
+  let [portalTestDriver] = await db
+    .select({ id: drivers.id })
+    .from(drivers)
+    .where(eq(drivers.email, 'driver@evtivity.local'))
+    .limit(1);
+  if (portalTestDriver == null) {
+    [portalTestDriver] = await db
+      .insert(drivers)
+      .values({
+        firstName: 'Test',
+        lastName: 'Driver',
+        email: 'driver@evtivity.local',
+        phone: '+15551234567',
+        passwordHash: driverPasswordHash,
+        registrationSource: 'portal',
+        isActive: true,
+        emailVerified: true,
+      })
+      .returning({ id: drivers.id });
+  }
   if (portalTestDriver == null) throw new Error('Failed to create portal test driver');
   console.log('  Portal test driver created.');
 
@@ -2006,10 +1571,8 @@ async function seed(): Promise<void> {
   }> = [];
 
   for (let i = 0; i < 10000; i++) {
-    let status = pick(sessionStatuses);
+    const status = pick(sessionStatuses);
     const stationIdx = i % createdStations.length;
-    // IOCHARGER-001 (index 0): never seed active sessions to avoid stale session conflicts
-    if (stationIdx === 0 && status === 'active') status = 'completed';
     const stationEvses = createdEvses.filter(
       (e) => e.stationId === at(createdStations, stationIdx).id,
     );
@@ -3006,11 +2569,14 @@ async function seed(): Promise<void> {
   );
 
   // ------ Config Templates (3) with Pushes ------
-  // Look up the IOCHARGER-001 station's filter fields so its default template
-  // can carry a fully-populated targetFilter (site, vendor, model, station).
-  const ioStationId = createdStations[0]?.id ?? null;
-  const [ioStationDetails] =
-    ioStationId != null
+  // Look up one OCPP 1.6 demo station's filter fields so its per-station
+  // template can carry a fully-populated targetFilter (site, vendor, model,
+  // station).
+  const qrStationIdx = stationRows.findIndex((r) => r.ocppProtocol === 'ocpp1.6');
+  const qrStationId = qrStationIdx >= 0 ? at(stationRows, qrStationIdx).stationId : '';
+  const qrStationDbId = qrStationIdx >= 0 ? (createdStations[qrStationIdx]?.id ?? null) : null;
+  const [qrStationDetails] =
+    qrStationDbId != null
       ? await db
           .select({
             id: chargingStations.id,
@@ -3019,7 +2585,7 @@ async function seed(): Promise<void> {
             model: chargingStations.model,
           })
           .from(chargingStations)
-          .where(eq(chargingStations.id, ioStationId))
+          .where(eq(chargingStations.id, qrStationDbId))
           .limit(1)
       : [null];
 
@@ -3062,22 +2628,22 @@ async function seed(): Promise<void> {
       stationsPerPush: 30,
     },
     {
-      name: 'IOCHARGER-001 - Configurations',
-      description: 'Auto generated. IOCHARGER-001 configurations (OCPP 1.6)',
+      name: `${qrStationId} - Configurations`,
+      description: `Auto generated. ${qrStationId} configurations (OCPP 1.6)`,
       ocppVersion: '1.6' as const,
       variables: [
         {
           component: '',
           variable: 'QR0',
-          value: 'http://45.47.131.88:7101/charge/IOCHARGER-001/1',
+          value: `http://localhost:7101/charge/${qrStationId}/1`,
         },
         {
           component: '',
           variable: 'QR1',
-          value: 'http://45.47.131.88:7101/charge/IOCHARGER-001/1',
+          value: `http://localhost:7101/charge/${qrStationId}/1`,
         },
-        { component: '', variable: 'connCode0', value: 'IOCHARGER-001' },
-        { component: '', variable: 'connCode1', value: 'IOCHARGER-001' },
+        { component: '', variable: 'connCode0', value: qrStationId },
+        { component: '', variable: 'connCode1', value: qrStationId },
         { component: '', variable: 'TariffCostCtrlr.Enabled', value: 'false' },
         {
           component: '',
@@ -3085,15 +2651,14 @@ async function seed(): Promise<void> {
           value: 'Welcome to EVtivity Charging. Scan barcode to start.',
         },
       ],
-      // IOCHARGER-001 is the demo seed's index-0 station (createdStations[0]).
-      stationId: ioStationDetails?.id ?? null,
+      stationId: qrStationDetails?.id ?? null,
       targetFilter:
-        ioStationDetails != null
+        qrStationDetails != null
           ? {
-              stationId: ioStationDetails.id,
-              ...(ioStationDetails.siteId != null ? { siteId: ioStationDetails.siteId } : {}),
-              ...(ioStationDetails.vendorId != null ? { vendorId: ioStationDetails.vendorId } : {}),
-              ...(ioStationDetails.model != null ? { model: ioStationDetails.model } : {}),
+              stationId: qrStationDetails.id,
+              ...(qrStationDetails.siteId != null ? { siteId: qrStationDetails.siteId } : {}),
+              ...(qrStationDetails.vendorId != null ? { vendorId: qrStationDetails.vendorId } : {}),
+              ...(qrStationDetails.model != null ? { model: qrStationDetails.model } : {}),
             }
           : null,
       pushCount: 0,
@@ -3369,8 +2934,9 @@ async function seed(): Promise<void> {
   console.log(`  ${String(fleetDriverRows.length)} fleet-driver assignments`);
   console.log(`  ${String(fleetStationRows.length)} fleet-station assignments`);
   console.log(`  ${String(holidayRows.length)} pricing holidays`);
-  console.log(`  ${String(createdPricingGroups.length)} pricing groups`);
-  console.log(`  ${String(tariffRows.length)} tariffs`);
+  console.log(
+    `  ${String(createdPricingGroups.length)} pricing groups (tariffs seeded by migration)`,
+  );
   console.log(`  ${String(pgStationRows.length)} pricing-station assignments`);
   console.log(`  ${String(pgFleetRows.length)} pricing-fleet assignments`);
   console.log(`  ${String(createdSessions.length)} charging sessions`);

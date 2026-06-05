@@ -111,11 +111,9 @@ fi
 while lsof -i :8443 >/dev/null 2>&1; do sleep 1; done
 
 # Bring up data services first so the seed scripts can run against postgres
-# while the simulator/api are still down. Starting the simulator before the
-# seed completes creates a race: the simulator caches css_stations.id at
-# boot, and a subsequent `npm run db:seed` TRUNCATE wipes those rows out from
-# under it, leaving the in-memory config.id stale and every css_transactions
-# INSERT failing with FK violation.
+# while the simulator/api are still down. The simulator caches css_stations.id
+# at boot, so it must start only after the seed has finished inserting the
+# final css_stations rows.
 # All env vars (auto-login, CSS_MODE, CSS_STATION_LIMIT, etc.) are read from
 # .env via docker-compose's automatic .env loading. To enable dev auto-login,
 # set VITE_CSMS_AUTO_LOGIN / VITE_PORTAL_AUTO_LOGIN in .env.
