@@ -6,6 +6,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { inArray } from 'drizzle-orm';
+import { db, settings } from '@evtivity/database';
 import { authorize } from '../middleware/rbac.js';
 import { itemResponse } from '../lib/response-schemas.js';
 
@@ -44,6 +46,29 @@ function envHasValue(key: string, defaultValueIfDev?: string): boolean {
   if (value == null || value === '') return false;
   if (defaultValueIfDev != null && value === defaultValueIfDev) return false;
   return true;
+}
+
+const INTEGRATION_SETTING_KEYS = [
+  'stripe.secretKeyEnc',
+  'smtp.host',
+  'twilio.accountSid',
+  's3.bucket',
+  'security.recaptcha.secretKeyEnc',
+  'pnc.hubject.baseUrl',
+  'googleMaps.apiKeyEnc',
+] as const;
+
+async function loadIntegrationSettings(): Promise<Map<string, unknown>> {
+  const rows = await db
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(inArray(settings.key, [...INTEGRATION_SETTING_KEYS]));
+  return new Map(rows.map((row) => [row.key, row.value]));
+}
+
+function settingHasValue(map: Map<string, unknown>, key: string): boolean {
+  const value = map.get(key);
+  return typeof value === 'string' && value !== '';
 }
 
 const systemInfoResponse = z
@@ -131,17 +156,25 @@ const systemInfoResponse = z
         settingsEncryptionConfigured: z
           .boolean()
           .describe('Whether SETTINGS_ENCRYPTION_KEY is configured'),
-        stripeConfigured: z.boolean().describe('Whether Stripe API credentials are configured'),
+        stripeConfigured: z
+          .boolean()
+          .describe('Whether the Stripe secret key is configured in settings'),
         smtpConfigured: z
           .boolean()
-          .describe('Whether SMTP credentials are configured for email delivery'),
+          .describe('Whether an SMTP host is configured (settings or SMTP_HOST override)'),
         twilioConfigured: z
           .boolean()
-          .describe('Whether Twilio credentials are configured for SMS delivery'),
-        s3Configured: z.boolean().describe('Whether S3 storage is configured'),
-        recaptchaConfigured: z.boolean().describe('Whether reCAPTCHA secret key is configured'),
-        hubjectConfigured: z.boolean().describe('Whether Hubject PnC token is configured'),
-        googleMapsConfigured: z.boolean().describe('Whether Google Maps API key is configured'),
+          .describe('Whether the Twilio account SID is configured in settings'),
+        s3Configured: z.boolean().describe('Whether an S3 bucket is configured in settings'),
+        recaptchaConfigured: z
+          .boolean()
+          .describe('Whether the reCAPTCHA secret key is configured in settings'),
+        hubjectConfigured: z
+          .boolean()
+          .describe('Whether the Hubject base URL is configured in settings'),
+        googleMapsConfigured: z
+          .boolean()
+          .describe('Whether the Google Maps API key is configured in settings'),
       })
       .passthrough()
       .describe('Configured-status flags for secrets (no secret values are returned)'),
@@ -161,63 +194,66 @@ export function systemRoutes(app: FastifyInstance): void {
         response: { 200: itemResponse(systemInfoResponse) },
       },
     },
-    () => ({
-      version: APP_VERSION,
-      nodeEnv: envStr('NODE_ENV') || 'development',
-      logLevel: envStr('LOG_LEVEL') || 'info',
-      network: {
-        bindIp: envOptional('BIND_IP'),
-        apiPort: envStr('API_PORT') || '7102',
-        apiHost: envStr('API_HOST') || '0.0.0.0',
-        ocppPort: envStr('OCPP_PORT') || '7103',
-        ocppHost: envStr('OCPP_HOST') || '0.0.0.0',
-        ocppHealthPort: envStr('OCPP_HEALTH_PORT') || '8081',
-        ocppTlsPort: envOptional('OCPP_TLS_PORT'),
-        ocppTlsEnabled: envHasValue('OCPP_TLS_CERT'),
-        ocpiPort: envOptional('OCPI_PORT'),
-        ocpiHost: envOptional('OCPI_HOST'),
-        metricsPort: envStr('METRICS_PORT') || '9091',
-        csmsUrl: envOptional('CSMS_URL'),
-        portalUrl: envOptional('PORTAL_URL'),
-        cookieDomain: envOptional('COOKIE_DOMAIN'),
-        corsOrigin: envStr('CORS_ORIGIN') || '*',
-      },
-      rateLimits: {
-        rateLimitMax: envStr('RATE_LIMIT_MAX') || '3000',
-        rateLimitWindow: envStr('RATE_LIMIT_WINDOW') || '1 minute',
-        authRateLimitMax: envStr('AUTH_RATE_LIMIT_MAX') || '30',
-        ocppMaxConnectionsPerIp: envOptional('OCPP_MAX_CONNECTIONS_PER_IP'),
-        ocppMaxMessagesPerIpPerSecond: envOptional('OCPP_MAX_MESSAGES_PER_IP_PER_SECOND'),
-      },
-      ocpp: {
-        instanceId: envOptional('OCPP_INSTANCE_ID'),
-        registrationPolicy: envStr('REGISTRATION_POLICY') || 'approval-required',
-      },
-      ocpi: {
-        baseUrl: envOptional('OCPI_BASE_URL'),
-        countryCode: envStr('OCPI_COUNTRY_CODE') || 'US',
-        partyId: envStr('OCPI_PARTY_ID') || 'EVT',
-        businessName: envOptional('OCPI_BUSINESS_NAME'),
-      },
-      simulator: {
-        mode: envStr('CSS_MODE') || 'standby',
-        actionIntervalMs: envOptional('CSS_ACTION_INTERVAL_MS'),
-        stationLimit: envOptional('CSS_STATION_LIMIT'),
-      },
-      seed: {
-        seedDemo: envStr('SEED_DEMO') || 'false',
-      },
-      secrets: {
-        jwtConfigured: envHasValue('JWT_SECRET', 'dev-secret-change-in-production'),
-        settingsEncryptionConfigured: envHasValue('SETTINGS_ENCRYPTION_KEY'),
-        stripeConfigured: envHasValue('STRIPE_SECRET_KEY'),
-        smtpConfigured: envHasValue('SMTP_HOST'),
-        twilioConfigured: envHasValue('TWILIO_ACCOUNT_SID'),
-        s3Configured: envHasValue('S3_BUCKET'),
-        recaptchaConfigured: envHasValue('RECAPTCHA_SECRET_KEY'),
-        hubjectConfigured: envHasValue('HUBJECT_TOKEN'),
-        googleMapsConfigured: envHasValue('GOOGLE_MAPS_API_KEY'),
-      },
-    }),
+    async () => {
+      const integration = await loadIntegrationSettings();
+      return {
+        version: APP_VERSION,
+        nodeEnv: envStr('NODE_ENV') || 'development',
+        logLevel: envStr('LOG_LEVEL') || 'info',
+        network: {
+          bindIp: envOptional('BIND_IP'),
+          apiPort: envStr('API_PORT') || '7102',
+          apiHost: envStr('API_HOST') || '0.0.0.0',
+          ocppPort: envStr('OCPP_PORT') || '7103',
+          ocppHost: envStr('OCPP_HOST') || '0.0.0.0',
+          ocppHealthPort: envStr('OCPP_HEALTH_PORT') || '8081',
+          ocppTlsPort: envOptional('OCPP_TLS_PORT'),
+          ocppTlsEnabled: envHasValue('OCPP_TLS_CERT'),
+          ocpiPort: envOptional('OCPI_PORT'),
+          ocpiHost: envOptional('OCPI_HOST'),
+          metricsPort: envStr('METRICS_PORT') || '9091',
+          csmsUrl: envOptional('CSMS_URL'),
+          portalUrl: envOptional('PORTAL_URL'),
+          cookieDomain: envOptional('COOKIE_DOMAIN'),
+          corsOrigin: envStr('CORS_ORIGIN') || '*',
+        },
+        rateLimits: {
+          rateLimitMax: envStr('RATE_LIMIT_MAX') || '3000',
+          rateLimitWindow: envStr('RATE_LIMIT_WINDOW') || '1 minute',
+          authRateLimitMax: envStr('AUTH_RATE_LIMIT_MAX') || '30',
+          ocppMaxConnectionsPerIp: envOptional('OCPP_MAX_CONNECTIONS_PER_IP'),
+          ocppMaxMessagesPerIpPerSecond: envOptional('OCPP_MAX_MESSAGES_PER_IP_PER_SECOND'),
+        },
+        ocpp: {
+          instanceId: envOptional('OCPP_INSTANCE_ID'),
+          registrationPolicy: envStr('REGISTRATION_POLICY') || 'approval-required',
+        },
+        ocpi: {
+          baseUrl: envOptional('OCPI_BASE_URL'),
+          countryCode: envStr('OCPI_COUNTRY_CODE') || 'US',
+          partyId: envStr('OCPI_PARTY_ID') || 'EVT',
+          businessName: envOptional('OCPI_BUSINESS_NAME'),
+        },
+        simulator: {
+          mode: envStr('CSS_MODE') || 'standby',
+          actionIntervalMs: envOptional('CSS_ACTION_INTERVAL_MS'),
+          stationLimit: envOptional('CSS_STATION_LIMIT'),
+        },
+        seed: {
+          seedDemo: envStr('SEED_DEMO') || 'false',
+        },
+        secrets: {
+          jwtConfigured: envHasValue('JWT_SECRET', 'dev-secret-change-in-production'),
+          settingsEncryptionConfigured: envHasValue('SETTINGS_ENCRYPTION_KEY'),
+          stripeConfigured: settingHasValue(integration, 'stripe.secretKeyEnc'),
+          smtpConfigured: envHasValue('SMTP_HOST') || settingHasValue(integration, 'smtp.host'),
+          twilioConfigured: settingHasValue(integration, 'twilio.accountSid'),
+          s3Configured: settingHasValue(integration, 's3.bucket'),
+          recaptchaConfigured: settingHasValue(integration, 'security.recaptcha.secretKeyEnc'),
+          hubjectConfigured: settingHasValue(integration, 'pnc.hubject.baseUrl'),
+          googleMapsConfigured: settingHasValue(integration, 'googleMaps.apiKeyEnc'),
+        },
+      };
+    },
   );
 }

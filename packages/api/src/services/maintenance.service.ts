@@ -268,7 +268,7 @@ export async function enterMaintenance(
         await sendOcppCommandAndWait(
           station.stationId,
           'ChangeAvailability',
-          { operationalStatus: 'Inoperative', evse: { id: 0 } },
+          { operationalStatus: 'Inoperative' },
           station.ocppProtocol ?? undefined,
         );
       } catch (err) {
@@ -533,7 +533,7 @@ export async function exitMaintenance(
         await sendOcppCommandAndWait(
           station.stationId,
           'ChangeAvailability',
-          { operationalStatus: 'Operative', evse: { id: 0 } },
+          { operationalStatus: 'Operative' },
           station.ocppProtocol ?? undefined,
         );
       } catch (err) {
@@ -844,7 +844,7 @@ export async function addStationsToMaintenance(
           await sendOcppCommandAndWait(
             station.stationId,
             'ChangeAvailability',
-            { operationalStatus: 'Inoperative', evse: { id: 0 } },
+            { operationalStatus: 'Inoperative' },
             station.ocppProtocol ?? undefined,
           );
         } catch (err) {
@@ -1013,7 +1013,7 @@ export async function removeStationsFromMaintenance(
           await sendOcppCommandAndWait(
             station.stationId,
             'ChangeAvailability',
-            { operationalStatus: 'Operative', evse: { id: 0 } },
+            { operationalStatus: 'Operative' },
             station.ocppProtocol ?? undefined,
           );
         } catch (err) {
@@ -1127,7 +1127,7 @@ export async function cancelEvent(
           await sendOcppCommandAndWait(
             station.stationId,
             'ChangeAvailability',
-            { operationalStatus: 'Operative', evse: { id: 0 } },
+            { operationalStatus: 'Operative' },
             station.ocppProtocol ?? undefined,
           );
         } catch (err) {

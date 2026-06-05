@@ -1393,6 +1393,16 @@
       "partially_refunded": "Teilweise erstattet"
     }
   },
+  "systemInfo": {
+    "button": "Systeminformationen",
+    "title": "Systeminformationen",
+    "runtime": "Laufzeit",
+    "network": "Netzwerk",
+    "rateLimits": "Ratenlimits",
+    "simulator": "Simulator",
+    "integrations": "Integrationen",
+    "secretsNote": "Geheime Werte (Passwörter, Token, Verschlüsselungsschlüssel) werden niemals offengelegt. \"Configured\" gibt nur an, ob ein Wert gesetzt ist."
+  },
   "settings": {
     "title": "Einstellungen",
     "subtitle": "Konfigurieren Sie systemweite Einstellungen: Branding, Zahlungen, Integrationen, Sicherheit, API-Schlüssel und Operator-Tools.",

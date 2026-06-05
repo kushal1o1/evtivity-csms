@@ -1425,7 +1425,7 @@
     "rateLimits": "速率限制",
     "simulator": "模擬器",
     "integrations": "整合",
-    "secretsNote": "永遠不會公開密鑰值（密碼、權杖、加密金鑰）。\"Configured\" 僅表示變數是否已設定。"
+    "secretsNote": "永遠不會公開密鑰值（密碼、權杖、加密金鑰）。\"Configured\" 僅表示是否已設定值。"
   },
   "settings": {
     "title": "設定",

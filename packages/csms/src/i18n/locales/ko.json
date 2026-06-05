@@ -1425,7 +1425,7 @@
     "rateLimits": "속도 제한",
     "simulator": "시뮬레이터",
     "integrations": "통합",
-    "secretsNote": "비밀 값(비밀번호, 토큰, 암호화 키)은 절대 노출되지 않습니다. \"Configured\"는 변수가 설정되어 있는지만 표시합니다."
+    "secretsNote": "비밀 값(비밀번호, 토큰, 암호화 키)은 절대 노출되지 않습니다. \"Configured\"는 값이 설정되어 있는지만 표시합니다."
   },
   "settings": {
     "title": "설정",

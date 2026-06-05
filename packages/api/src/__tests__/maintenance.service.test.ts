@@ -425,7 +425,7 @@ describe('createEvent', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Inoperative', evse: { id: 0 } },
+      { operationalStatus: 'Inoperative' },
       'ocpp2.1',
     );
     // slot 9005 pushed
@@ -519,7 +519,7 @@ describe('enterMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Inoperative', evse: { id: 0 } },
+      { operationalStatus: 'Inoperative' },
       'ocpp2.1',
     );
     // RequestStopTransaction for the active session
@@ -851,7 +851,7 @@ describe('enterMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Inoperative', evse: { id: 0 } },
+      { operationalStatus: 'Inoperative' },
       undefined,
     );
   });
@@ -948,7 +948,7 @@ describe('exitMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Operative', evse: { id: 0 } },
+      { operationalStatus: 'Operative' },
       'ocpp2.1',
     );
     expect(h.clearStationMessageSlot).toHaveBeenCalledWith('CS-001', 'ocpp2.1', 9005);
@@ -975,7 +975,7 @@ describe('exitMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Operative', evse: { id: 0 } },
+      { operationalStatus: 'Operative' },
       undefined,
     );
     expect(auditCallsByAction('ended')).toHaveLength(1);
@@ -1278,7 +1278,7 @@ describe('addStationsToMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-002',
       'ChangeAvailability',
-      { operationalStatus: 'Inoperative', evse: { id: 0 } },
+      { operationalStatus: 'Inoperative' },
       'ocpp2.1',
     );
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
@@ -1408,7 +1408,7 @@ describe('removeStationsFromMaintenance', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-002',
       'ChangeAvailability',
-      { operationalStatus: 'Operative', evse: { id: 0 } },
+      { operationalStatus: 'Operative' },
       'ocpp2.1',
     );
     expect(h.clearStationMessageSlot).toHaveBeenCalledWith('CS-002', 'ocpp2.1', 9005);
@@ -1517,7 +1517,7 @@ describe('cancelEvent', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Operative', evse: { id: 0 } },
+      { operationalStatus: 'Operative' },
       'ocpp2.1',
     );
     expect(h.clearStationMessageSlot).toHaveBeenCalledWith('CS-001', 'ocpp2.1', 9005);
@@ -1545,7 +1545,7 @@ describe('cancelEvent', () => {
     expect(h.sendOcppCommandAndWait).toHaveBeenCalledWith(
       'CS-001',
       'ChangeAvailability',
-      { operationalStatus: 'Operative', evse: { id: 0 } },
+      { operationalStatus: 'Operative' },
       undefined,
     );
     expect(auditCallsByAction('cancelled')).toHaveLength(1);

@@ -191,26 +191,14 @@ export function SystemInfoDialog({ open, onOpenChange }: Props): React.JSX.Eleme
                 label="SETTINGS_ENCRYPTION_KEY"
                 value={<Configured on={data.secrets.settingsEncryptionConfigured} />}
               />
+              <Row label="Stripe" value={<Configured on={data.secrets.stripeConfigured} />} />
+              <Row label="SMTP" value={<Configured on={data.secrets.smtpConfigured} />} />
+              <Row label="Twilio" value={<Configured on={data.secrets.twilioConfigured} />} />
+              <Row label="S3" value={<Configured on={data.secrets.s3Configured} />} />
+              <Row label="reCAPTCHA" value={<Configured on={data.secrets.recaptchaConfigured} />} />
+              <Row label="Hubject" value={<Configured on={data.secrets.hubjectConfigured} />} />
               <Row
-                label="STRIPE_SECRET_KEY"
-                value={<Configured on={data.secrets.stripeConfigured} />}
-              />
-              <Row label="SMTP_HOST" value={<Configured on={data.secrets.smtpConfigured} />} />
-              <Row
-                label="TWILIO_ACCOUNT_SID"
-                value={<Configured on={data.secrets.twilioConfigured} />}
-              />
-              <Row label="S3_BUCKET" value={<Configured on={data.secrets.s3Configured} />} />
-              <Row
-                label="RECAPTCHA_SECRET_KEY"
-                value={<Configured on={data.secrets.recaptchaConfigured} />}
-              />
-              <Row
-                label="HUBJECT_TOKEN"
-                value={<Configured on={data.secrets.hubjectConfigured} />}
-              />
-              <Row
-                label="GOOGLE_MAPS_API_KEY"
+                label="Google Maps"
                 value={<Configured on={data.secrets.googleMapsConfigured} />}
               />
             </Section>

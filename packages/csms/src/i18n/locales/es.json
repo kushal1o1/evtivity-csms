@@ -1430,7 +1430,7 @@
     "rateLimits": "Limites de tasa",
     "simulator": "Simulador",
     "integrations": "Integraciones",
-    "secretsNote": "Los valores secretos (contrasenas, tokens, claves de cifrado) nunca se exponen. \"Configurado\" solo indica si la variable esta establecida."
+    "secretsNote": "Los valores secretos (contrasenas, tokens, claves de cifrado) nunca se exponen. \"Configurado\" solo indica si hay un valor establecido."
   },
   "settings": {
     "title": "Configuracion",

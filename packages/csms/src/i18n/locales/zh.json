@@ -1425,7 +1425,7 @@
     "rateLimits": "速率限制",
     "simulator": "模拟器",
     "integrations": "集成",
-    "secretsNote": "永远不会暴露密钥值（密码、令牌、加密密钥）。\"Configured\" 仅表示变量是否已设置。"
+    "secretsNote": "永远不会暴露密钥值（密码、令牌、加密密钥）。\"Configured\" 仅表示是否已设置值。"
   },
   "settings": {
     "title": "设置",

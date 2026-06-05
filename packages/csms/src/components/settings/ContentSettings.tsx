@@ -82,7 +82,13 @@ export function ContentSettings(): React.JSX.Element {
                     : 'text-foreground hover:bg-muted'
                 }`}
               >
-                {lang === 'en' ? 'English' : lang === 'es' ? 'Espa\u00f1ol' : '\u4e2d\u6587'}
+                {lang === 'en'
+                  ? 'English'
+                  : lang === 'de'
+                    ? 'Deutsch'
+                    : lang === 'es'
+                      ? 'Espa\u00f1ol'
+                      : '\u4e2d\u6587'}
               </button>
             ))}
           </div>
