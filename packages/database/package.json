@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc -b",
     "generate": "node --import tsx ../../node_modules/drizzle-kit/bin.cjs generate && node ../../scripts/check-migrations.mjs --fix-last",
-    "migrate": "node --import tsx ../../node_modules/drizzle-kit/bin.cjs migrate && node ../../scripts/verify-migrations-applied.mjs && node --import=tsx/esm src/sync-admin-permissions.ts",
+    "migrate": "node ../../scripts/run-migrations.mjs && node ../../scripts/verify-migrations-applied.mjs && node --import=tsx/esm src/sync-admin-permissions.ts",
     "seed": "node --env-file-if-exists=../../.env --import=tsx/esm src/seed.ts",
     "seed:admin": "node --import=tsx/esm src/seed-admin.ts",
     "seed:driver": "node --import=tsx/esm src/seed-driver.ts",
