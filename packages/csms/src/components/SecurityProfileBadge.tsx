@@ -20,11 +20,13 @@ const PROFILE_KEYS_16: Record<number, 'stations.sp16_0' | 'stations.sp16_1' | 's
   2: 'stations.sp16_2',
 };
 
-const PROFILE_VARIANTS: Record<number, 'outline' | 'secondary' | 'default' | 'destructive'> = {
-  0: 'outline',
-  1: 'secondary',
-  2: 'default',
-  3: 'destructive',
+// Severity ramp by security level: no auth is the dangerous state, mutual TLS
+// the strongest. Same mapping serves OCPP 1.6 (profiles 0-2) and 2.1 (0-3).
+const PROFILE_VARIANTS: Record<number, 'destructive' | 'warning' | 'info' | 'success'> = {
+  0: 'destructive',
+  1: 'warning',
+  2: 'info',
+  3: 'success',
 };
 
 interface SecurityProfileBadgeProps {
@@ -39,7 +41,7 @@ export function SecurityProfileBadge({
   const { t } = useTranslation();
   const keys = ocppProtocol === 'ocpp1.6' ? PROFILE_KEYS_16 : PROFILE_KEYS_21;
   const key = keys[profile] ?? keys[1] ?? 'stations.sp1';
-  const variant = PROFILE_VARIANTS[profile] ?? 'secondary';
+  const variant = PROFILE_VARIANTS[profile] ?? 'warning';
 
   return <Badge variant={variant}>{t(key)}</Badge>;
 }

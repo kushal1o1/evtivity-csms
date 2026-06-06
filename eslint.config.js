@@ -14,6 +14,7 @@ export default tseslint.config(
           allowDefaultProject: [
             'packages/csms/src/lib/__tests__/*.ts',
             'packages/csms/src/hooks/__tests__/*.ts',
+            'packages/csms/src/components/__tests__/*.tsx',
           ],
           defaultProject: './tsconfig.base.json',
         },
