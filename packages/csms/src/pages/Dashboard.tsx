@@ -369,7 +369,7 @@ function ModeToggle({
   });
   const oldestAvailable = availableDates?.[availableDates.length - 1] ?? '';
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex rounded-md border border-border">
         {(['live', 'trend', 'historical'] as const).map((m) => (
           <button
@@ -852,11 +852,11 @@ function AdminDashboard({
     <>
       <div className="relative">
         {mode !== 'live' && (
-          <div className="invisible space-y-4" aria-hidden="true">
+          <div className="hidden lg:block invisible space-y-4" aria-hidden="true">
             {renderLiveStatCards()}
           </div>
         )}
-        <div className={mode !== 'live' ? 'absolute inset-0 space-y-4' : 'space-y-4'}>
+        <div className={mode !== 'live' ? 'space-y-4 lg:absolute lg:inset-0' : 'space-y-4'}>
           {mode === 'live' && renderLiveStatCards()}
           {mode === 'historical' && renderHistoricalStatCards()}
           {mode === 'trend' && renderTrendStatCards()}
@@ -1095,11 +1095,11 @@ function OperatorDashboard({
     <>
       <div className="relative">
         {mode !== 'live' && (
-          <div className="invisible space-y-4" aria-hidden="true">
+          <div className="hidden lg:block invisible space-y-4" aria-hidden="true">
             {renderLiveStatCards()}
           </div>
         )}
-        <div className={mode !== 'live' ? 'absolute inset-0 space-y-4' : 'space-y-4'}>
+        <div className={mode !== 'live' ? 'space-y-4 lg:absolute lg:inset-0' : 'space-y-4'}>
           {mode === 'live' && renderLiveStatCards()}
           {mode === 'historical' && renderHistoricalStatCards()}
           {mode === 'trend' && renderTrendStatCards()}
@@ -1172,7 +1172,7 @@ export function Dashboard(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl md:text-3xl font-bold">{t('dashboard.title')}</h1>
         <ModeToggle mode={mode} onModeChange={setMode} range={historical} />
       </div>

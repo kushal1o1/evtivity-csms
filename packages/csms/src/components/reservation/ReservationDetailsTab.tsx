@@ -312,7 +312,7 @@ export function ReservationDetailsTab({
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{t('common.details')}</CardTitle>
           {!editing && (reservation.status === 'active' || reservation.status === 'scheduled') && (
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2 sm:flex">
               <EditButton label={t('common.edit')} onClick={startEdit} />
               <Button
                 variant="outline"
