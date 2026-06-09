@@ -148,9 +148,14 @@ vi.mock('drizzle-orm', () => {
   };
 });
 
-vi.mock('@evtivity/lib', () => ({
-  isValidTimezone: vi.fn(() => true),
-}));
+vi.mock('@evtivity/lib', async () => {
+  const { z } = await import('zod');
+  return {
+    isValidTimezone: vi.fn(() => true),
+    electricityRateRestrictionsSchema: z.object({}).passthrough(),
+    deriveElectricityRatePriority: vi.fn(() => 0),
+  };
+});
 
 vi.mock('../services/site-import.service.js', () => ({
   exportSitesCsv: vi.fn().mockResolvedValue('name,address\nSite1,123 Main St\n'),

@@ -202,6 +202,24 @@ export const sitePowerLimits = pgTable('site_power_limits', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const siteElectricityRatePeriods = pgTable(
+  'site_electricity_rate_periods',
+  {
+    id: serial('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    ratePerKwh: numeric('rate_per_kwh', { precision: 10, scale: 6 }).notNull(),
+    restrictions: jsonb('restrictions'),
+    priority: integer('priority').notNull().default(0),
+    isDefault: boolean('is_default').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_electricity_rate_periods_site_id').on(table.siteId)],
+);
+
 export const stationImages = pgTable(
   'station_images',
   {

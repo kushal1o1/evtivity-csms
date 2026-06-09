@@ -373,7 +373,12 @@
       "paymentBreakdown": "支付交易状态分布（已捕获、待处理、已退款等）。",
       "peakUsage": "按小时和星期几显示的充电会话启动时间热力图。",
       "activeSessionsTable": "当前活跃充电会话的实时视图。",
-      "siteMap": "显示所有站点位置及充电站数量的地图。"
+      "siteMap": "显示所有站点位置及充电站数量的地图。",
+      "electricityCost": "根据各站点配置的费率，运营商在所有充电中的批发电力成本总额。",
+      "dayElectricityCost": "今日完成充电的批发电力成本。",
+      "profit": "所有充电的总收入减去总电力成本。",
+      "dayProfit": "今日收入减去今日电力成本。",
+      "totalPorts": "所有充电站的连接器端口总数。"
     },
     "historicalInfo": {
       "totalStations": "{{date}} 的注册充电站数量。范围选择显示每日平均值。",
@@ -403,7 +408,13 @@
       "totalSessions": "过去 14 天（{{from}} 至 {{to}}）的平均累计会话数。"
     },
     "co2Avoided": "减少的 CO₂",
-    "co2AvoidedTooltip": "电动汽车充电相比燃油驾驶避免的 CO₂ 排放总量"
+    "co2AvoidedTooltip": "电动汽车充电相比燃油驾驶避免的 CO₂ 排放总量",
+    "electricityCost": "总电费",
+    "profitability": "盈利能力",
+    "profit": "总利润",
+    "dayElectricityCost": "今日电费",
+    "dayProfit": "今日利润",
+    "totalPorts": "总端口数"
   },
   "sites": {
     "title": "站点",
@@ -494,7 +505,26 @@
     "carbonRegionDescription": "选择用于碳强度计算的电网区域。",
     "carbonIntensity": "碳强度",
     "noCarbonRegion": "未分配碳排放区域",
-    "underMaintenanceBadge": "维护中"
+    "underMaintenanceBadge": "维护中",
+    "electricityRates": "电价",
+    "electricityRate": "电价",
+    "addElectricityRate": "添加费率",
+    "electricityRateName": "名称",
+    "ratePerKwh": "费率 ($/kWh)",
+    "electricityRateRestrictions": "适用时段",
+    "electricityRateAlways": "始终（统一费率）",
+    "noElectricityRates": "暂无电价",
+    "noElectricityRatesDescription": "添加费率以跟踪每次充电的批发电力成本。",
+    "deleteElectricityRate": "删除费率",
+    "confirmDeleteElectricityRate": "删除此电价？",
+    "saveElectricityRate": "保存费率",
+    "electricityRateCreated": "电价已创建",
+    "electricityRateUpdated": "电价已更新",
+    "electricityRateDeleted": "电价已删除",
+    "electricityRateTimeOfDay": "时段",
+    "electricityRateDayAndTime": "星期与时段",
+    "electricityRateSeasonal": "日期范围",
+    "electricityRateDaysOfWeek": "星期"
   },
   "stations": {
     "title": "充电站",
@@ -865,7 +895,9 @@
     "guestPreAuthAmount": "预授权金额",
     "guestStripePaymentIntent": "Stripe PaymentIntent",
     "guestCreatedAt": "创建时间",
-    "guestExpiresAt": "过期时间"
+    "guestExpiresAt": "过期时间",
+    "electricityCost": "电费",
+    "electricityCostTooltip": "运营商本次充电的批发电力成本"
   },
   "drivers": {
     "title": "驾驶员",
@@ -2271,7 +2303,8 @@
     "MAINTENANCE_INVALID_RANGE": "维护结束时间必须晚于开始时间",
     "MAINTENANCE_ALREADY_ACTIVE": "维护事件已处于活动状态",
     "MAINTENANCE_ACTIVE": "该站点当前正在维护",
-    "RESERVATION_DURING_MAINTENANCE": "预订时间落在已安排的维护时段内"
+    "RESERVATION_DURING_MAINTENANCE": "预订时间落在已安排的维护时段内",
+    "ELECTRICITY_RATE_NOT_FOUND": "未找到电价"
   },
   "logs": {
     "title": "日志",

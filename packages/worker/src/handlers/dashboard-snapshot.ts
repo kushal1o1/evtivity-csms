@@ -169,6 +169,8 @@ async function snapshotSite(
         COUNT(*) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz) AS day_sessions,
         COALESCE(SUM(cs2.energy_delivered_wh), 0) AS total_energy_wh,
         COALESCE(SUM(cs2.energy_delivered_wh) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz), 0) AS day_energy_wh,
+        COALESCE(SUM(cs2.electricity_cost_cents), 0) AS total_electricity_cost_cents,
+        COALESCE(SUM(cs2.electricity_cost_cents) FILTER (WHERE cs2.started_at >= ${dayStartIso}::timestamptz AND cs2.started_at < ${dayEndIso}::timestamptz), 0) AS day_electricity_cost_cents,
         COUNT(*) FILTER (WHERE cs2.status = 'active') AS active_sessions
       FROM charging_sessions cs2
       INNER JOIN charging_stations cs ON cs.id = cs2.station_id
@@ -211,6 +213,8 @@ async function snapshotSite(
     day_sessions: string;
     total_energy_wh: string;
     day_energy_wh: string;
+    total_electricity_cost_cents: string;
+    day_electricity_cost_cents: string;
     active_sessions: string;
   };
   const revData = revenueRows[0] as {
@@ -230,6 +234,7 @@ async function snapshotSite(
       uptime_percent, active_sessions, total_energy_wh, day_energy_wh,
       total_sessions, day_sessions, connected_stations,
       total_revenue_cents, day_revenue_cents, avg_revenue_cents_per_session,
+      total_electricity_cost_cents, day_electricity_cost_cents,
       total_transactions, day_transactions, total_ports, stations_below_threshold,
       avg_ping_latency_ms, ping_success_rate,
       created_at
@@ -238,6 +243,7 @@ async function snapshotSite(
       ${uptimePercent}, ${Number(sessData.active_sessions)}, ${Number(sessData.total_energy_wh)}, ${Number(sessData.day_energy_wh)},
       ${totalSessionsNum}, ${Number(sessData.day_sessions)}, ${onlineStations},
       ${totalRevCents}, ${Number(revData.day_revenue_cents)}, ${avgRevPerSession},
+      ${Number(sessData.total_electricity_cost_cents)}, ${Number(sessData.day_electricity_cost_cents)},
       ${Number(revData.total_transactions)}, ${Number(revData.day_transactions)}, ${totalPorts}, ${stationsBelowThreshold},
       ${avgPingLatencyMs}, ${pingSuccessRate},
       now()
@@ -256,6 +262,8 @@ async function snapshotSite(
       total_revenue_cents = EXCLUDED.total_revenue_cents,
       day_revenue_cents = EXCLUDED.day_revenue_cents,
       avg_revenue_cents_per_session = EXCLUDED.avg_revenue_cents_per_session,
+      total_electricity_cost_cents = EXCLUDED.total_electricity_cost_cents,
+      day_electricity_cost_cents = EXCLUDED.day_electricity_cost_cents,
       total_transactions = EXCLUDED.total_transactions,
       day_transactions = EXCLUDED.day_transactions,
       total_ports = EXCLUDED.total_ports,

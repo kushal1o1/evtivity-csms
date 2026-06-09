@@ -678,7 +678,8 @@
     "MAINTENANCE_INVALID_RANGE": "Wartungsende muss nach dem Start liegen",
     "MAINTENANCE_ALREADY_ACTIVE": "Wartungsereignis ist bereits aktiv",
     "MAINTENANCE_ACTIVE": "Der Standort befindet sich derzeit in Wartung",
-    "RESERVATION_DURING_MAINTENANCE": "Reservierung fällt in ein geplantes Wartungsfenster"
+    "RESERVATION_DURING_MAINTENANCE": "Reservierung fällt in ein geplantes Wartungsfenster",
+    "ELECTRICITY_RATE_NOT_FOUND": "Stromtarif nicht gefunden"
   },
   "validation": {
     "required": "Dieses Feld ist erforderlich",

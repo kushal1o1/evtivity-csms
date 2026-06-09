@@ -122,6 +122,24 @@ const financialStatsResponse = z
       .min(0)
       .describe('Average revenue per paid session in cents'),
     totalTransactions: z.number().int().min(0).describe('Number of paid transactions'),
+    totalElectricityCostCents: z
+      .number()
+      .int()
+      .min(0)
+      .describe("Operator's total wholesale electricity cost in cents"),
+    dayElectricityCostCents: z
+      .number()
+      .int()
+      .min(0)
+      .describe('Electricity cost from sessions started today, in cents'),
+    totalProfitCents: z
+      .number()
+      .int()
+      .describe('Total revenue minus total electricity cost, in cents (may be negative)'),
+    dayProfitCents: z
+      .number()
+      .int()
+      .describe("Today's revenue minus today's electricity cost, in cents (may be negative)"),
     currency: z.string().length(3).describe('ISO 4217 currency code (e.g. USD, EUR)'),
   })
   .passthrough();
@@ -469,7 +487,22 @@ export function dashboardRoutes(app: FastifyInstance): void {
           .where(inArray(chargingStations.siteId, siteIds));
       }
 
-      const [stationRows, sessionStatsRows] = await Promise.all([
+      // Faults count stations that have at least one faulted connector (the
+      // same derived signal the station list filters on), not the operator-set
+      // charging_stations.availability column, so the dashboard and the station
+      // list agree.
+      const faultedConditions = [sql`${connectors.status} = 'faulted'`];
+      if (siteIds != null) {
+        faultedConditions.push(inArray(chargingStations.siteId, siteIds));
+      }
+      const faultedStationsQueryBuilder = db
+        .select({ faulted: sql<number>`count(distinct ${chargingStations.id})` })
+        .from(chargingStations)
+        .innerJoin(evses, eq(evses.stationId, chargingStations.id))
+        .innerJoin(connectors, eq(connectors.evseId, evses.id))
+        .where(and(...faultedConditions));
+
+      const [stationRows, sessionStatsRows, faultedStationsRows] = await Promise.all([
         db
           .select({
             status: chargingStations.availability,
@@ -485,6 +518,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
             chargingStations.isOnline,
           ),
         sessionQueryBuilder,
+        faultedStationsQueryBuilder,
       ]);
 
       let totalStations = 0;
@@ -509,7 +543,7 @@ export function dashboardRoutes(app: FastifyInstance): void {
         activeSessions: sessionStats?.activeSessions ?? 0,
         totalSessions: sessionStats?.totalSessions ?? 0,
         totalEnergyWh: sessionStats?.totalEnergyWh ?? 0,
-        faultedStations: statusCounts['faulted'] ?? 0,
+        faultedStations: faultedStationsRows[0]?.faulted ?? 0,
         statusCounts,
         onboardingStatusCounts,
       };
@@ -802,6 +836,10 @@ export function dashboardRoutes(app: FastifyInstance): void {
         todayRevenueCents: 0,
         avgRevenueCentsPerSession: 0,
         totalTransactions: 0,
+        totalElectricityCostCents: 0,
+        dayElectricityCostCents: 0,
+        totalProfitCents: 0,
+        dayProfitCents: 0,
         currency: 'USD',
       };
 
@@ -815,6 +853,8 @@ export function dashboardRoutes(app: FastifyInstance): void {
           todayRevenueCents: sql<number>`coalesce(sum(coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents})) filter (where date_trunc('day', ${chargingSessions.startedAt} AT TIME ZONE ${tz}) = date_trunc('day', now() AT TIME ZONE ${tz})), 0)`,
           avgRevenueCentsPerSession: sql<number>`coalesce(avg(coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents})), 0)`,
           totalTransactions: sql<number>`count(*) filter (where coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents}) is not null)`,
+          totalElectricityCostCents: sql<number>`coalesce(sum(${chargingSessions.electricityCostCents}), 0)`,
+          dayElectricityCostCents: sql<number>`coalesce(sum(${chargingSessions.electricityCostCents}) filter (where date_trunc('day', ${chargingSessions.startedAt} AT TIME ZONE ${tz}) = date_trunc('day', now() AT TIME ZONE ${tz})), 0)`,
         })
         .from(chargingSessions);
 
@@ -826,11 +866,20 @@ export function dashboardRoutes(app: FastifyInstance): void {
 
       const [stats] = await query;
 
+      const totalRevenueCents = stats?.totalRevenueCents ?? 0;
+      const todayRevenueCents = stats?.todayRevenueCents ?? 0;
+      const totalElectricityCostCents = stats?.totalElectricityCostCents ?? 0;
+      const dayElectricityCostCents = stats?.dayElectricityCostCents ?? 0;
+
       return {
-        totalRevenueCents: stats?.totalRevenueCents ?? 0,
-        todayRevenueCents: stats?.todayRevenueCents ?? 0,
+        totalRevenueCents,
+        todayRevenueCents,
         avgRevenueCentsPerSession: Math.round(stats?.avgRevenueCentsPerSession ?? 0),
         totalTransactions: stats?.totalTransactions ?? 0,
+        totalElectricityCostCents,
+        dayElectricityCostCents,
+        totalProfitCents: totalRevenueCents - totalElectricityCostCents,
+        dayProfitCents: todayRevenueCents - dayElectricityCostCents,
         currency: 'USD',
       };
     },

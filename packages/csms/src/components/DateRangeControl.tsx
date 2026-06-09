@@ -44,7 +44,7 @@ export function DateRangeControl({
   const displayTo = to ?? derived.to;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
       <Select
         aria-label="Date range"
         value={isCustom ? '' : String(days)}
@@ -62,7 +62,7 @@ export function DateRangeControl({
           </option>
         ))}
       </Select>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
         <input
           type="date"
           aria-label="Start date"

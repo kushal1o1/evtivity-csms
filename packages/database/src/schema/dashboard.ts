@@ -32,6 +32,8 @@ export const dashboardSnapshots = pgTable(
     totalRevenueCents: integer('total_revenue_cents'),
     dayRevenueCents: integer('day_revenue_cents'),
     avgRevenueCentsPerSession: integer('avg_revenue_cents_per_session'),
+    totalElectricityCostCents: integer('total_electricity_cost_cents'),
+    dayElectricityCostCents: integer('day_electricity_cost_cents'),
     totalTransactions: integer('total_transactions'),
     dayTransactions: integer('day_transactions'),
     totalPorts: integer('total_ports'),

@@ -4,8 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { ArrowUp, ArrowDown, ArrowRight, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { api } from '@/lib/api';
@@ -83,6 +82,10 @@ interface FinancialStats {
   todayRevenueCents: number;
   avgRevenueCentsPerSession: number;
   totalTransactions: number;
+  totalElectricityCostCents: number;
+  dayElectricityCostCents: number;
+  totalProfitCents: number;
+  dayProfitCents: number;
   currency: string;
 }
 
@@ -183,6 +186,58 @@ function useAnimatedValue(value: string | number): string {
   return `${prefix}${formatAnimatedValue(display, decimals)}${suffix}`;
 }
 
+function ScrollSnapRow({
+  pages,
+}: {
+  pages: { id: string; content: React.ReactNode }[];
+}): React.JSX.Element {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+
+  function handleScroll(): void {
+    const el = scrollRef.current;
+    if (el == null) return;
+    setActive(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  function goTo(index: number): void {
+    const el = scrollRef.current;
+    if (el == null) return;
+    el.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  }
+
+  return (
+    <div className="space-y-2">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {pages.map((page) => (
+          <div key={page.id} className="w-full shrink-0 snap-start">
+            {page.content}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-center gap-1.5">
+        {pages.map((page, index) => (
+          <button
+            key={page.id}
+            type="button"
+            aria-label={`Show ${page.id}`}
+            onClick={() => {
+              goTo(index);
+            }}
+            className={`h-1.5 rounded-full transition-all ${
+              index === active ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/40'
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({
   title,
   value,
@@ -227,7 +282,6 @@ function StatCard({
       <CardContent>
         <div className="text-lg sm:text-2xl font-bold whitespace-nowrap flex items-center gap-2">
           {animated}
-          {extra}
           {delta != null && tooltipText != null && (
             <InfoTooltip
               content={<div className="whitespace-nowrap">{tooltipText}</div>}
@@ -255,6 +309,7 @@ function StatCard({
             </InfoTooltip>
           )}
         </div>
+        {extra != null && <div className="mt-1.5">{extra}</div>}
       </CardContent>
     </Card>
   );
@@ -368,14 +423,38 @@ function ModeToggle({
     enabled: mode === 'historical',
   });
   const oldestAvailable = availableDates?.[availableDates.length - 1] ?? '';
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close the date-range dropdown when clicking outside the toggle.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onPointerDown(e: MouseEvent): void {
+      if (containerRef.current != null && !containerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [pickerOpen]);
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div ref={containerRef} className="relative inline-flex">
       <div className="inline-flex rounded-md border border-border">
         {(['live', 'trend', 'historical'] as const).map((m) => (
           <button
             key={m}
             onClick={() => {
               onModeChange(m);
+              // Entering historical opens the picker; clicking it again toggles.
+              if (m === 'historical') {
+                setPickerOpen((open) => (mode === 'historical' ? !open : true));
+              } else {
+                setPickerOpen(false);
+              }
             }}
             className={`px-3 py-1.5 text-sm font-medium transition-colors first:rounded-l-md last:rounded-r-md ${
               mode === m
@@ -389,52 +468,38 @@ function ModeToggle({
                 {t('dashboard.live')}
               </span>
             )}
-            {m === 'historical' && t('dashboard.historical')}
+            {m === 'historical' && (
+              <span className="inline-flex items-center gap-1.5">
+                {t('dashboard.historical')}
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform ${
+                    mode === 'historical' && pickerOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </span>
+            )}
             {m === 'trend' && t('dashboard.trend')}
           </button>
         ))}
       </div>
-      {mode === 'historical' && (
-        <DateRangeControl
-          days={range.days}
-          from={range.customFrom}
-          to={range.customTo}
-          onPresetChange={range.handlePreset}
-          onCustomChange={range.handleCustom}
-          minDate={oldestAvailable || undefined}
-          maxDate={today}
-        />
+      {mode === 'historical' && pickerOpen && (
+        <div className="absolute right-0 top-full z-20 mt-2 rounded-md border border-border bg-popover p-3 shadow-md animate-slide-in-from-top">
+          <DateRangeControl
+            days={range.days}
+            from={range.customFrom}
+            to={range.customTo}
+            onPresetChange={range.handlePreset}
+            onCustomChange={range.handleCustom}
+            minDate={oldestAvailable || undefined}
+            maxDate={today}
+          />
+        </div>
       )}
     </div>
   );
 }
 
 const REFETCH_INTERVAL = 60_000;
-
-function OnboardingStatusBadges({
-  counts,
-}: {
-  counts: Record<string, number>;
-}): React.JSX.Element | null {
-  const { t } = useTranslation();
-  const pending = counts['pending'] ?? 0;
-  const blocked = counts['blocked'] ?? 0;
-  if (pending === 0 && blocked === 0) return null;
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {pending > 0 && (
-        <Badge variant="warning">
-          {pending} {t('status.pending')}
-        </Badge>
-      )}
-      {blocked > 0 && (
-        <Badge variant="destructive">
-          {blocked} {t('status.blocked')}
-        </Badge>
-      )}
-    </div>
-  );
-}
 
 function AdminDashboard({
   stats,
@@ -563,16 +628,73 @@ function AdminDashboard({
       : `${(wh / 1000).toFixed(1)}\u00a0kWh`;
 
   function renderLiveStatCards(): React.JSX.Element {
+    const revenueGrid = (
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title={t('dashboard.totalRevenue')}
+          value={formatCurrency(financialStats.data?.totalRevenueCents ?? 0)}
+          info={t('dashboard.info.totalRevenue')}
+          dayDelta={dayDelta(yd?.totalRevenueCents, db?.totalRevenueCents)}
+          deltaLabel={deltaLabel}
+        />
+        <StatCard
+          title={t('dashboard.todayRevenue')}
+          value={formatCurrency(financialStats.data?.todayRevenueCents ?? 0)}
+          info={t('dashboard.info.todayRevenue')}
+          dayDelta={dayDelta(yd?.dayRevenueCents, db?.dayRevenueCents)}
+          deltaLabel={deltaLabel}
+        />
+        <StatCard
+          title={t('dashboard.revenuePerSession')}
+          value={formatCurrency(financialStats.data?.avgRevenueCentsPerSession ?? 0)}
+          info={t('dashboard.info.revenuePerSession')}
+          dayDelta={dayDelta(yd?.avgRevenueCentsPerSession, db?.avgRevenueCentsPerSession)}
+          deltaLabel={deltaLabel}
+        />
+        <StatCard
+          title={t('dashboard.totalTransactions')}
+          value={financialStats.data?.totalTransactions ?? 0}
+          info={t('dashboard.info.totalTransactions')}
+          dayDelta={dayDelta(yd?.totalTransactions, db?.totalTransactions)}
+          deltaLabel={deltaLabel}
+        />
+      </div>
+    );
+
+    const costGrid = (
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title={t('dashboard.electricityCost')}
+          value={formatCurrency(financialStats.data?.totalElectricityCostCents ?? 0)}
+          info={t('dashboard.info.electricityCost')}
+        />
+        <StatCard
+          title={t('dashboard.dayElectricityCost')}
+          value={formatCurrency(financialStats.data?.dayElectricityCostCents ?? 0)}
+          info={t('dashboard.info.dayElectricityCost')}
+        />
+        <StatCard
+          title={t('dashboard.profit')}
+          value={formatCurrency(financialStats.data?.totalProfitCents ?? 0)}
+          info={t('dashboard.info.profit')}
+        />
+        <StatCard
+          title={t('dashboard.dayProfit')}
+          value={formatCurrency(financialStats.data?.dayProfitCents ?? 0)}
+          info={t('dashboard.info.dayProfit')}
+        />
+      </div>
+    );
+
     return (
       <>
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-6">
           <StatCard
             title={t('dashboard.totalStations')}
             value={stats.totalStations}
             info={t('dashboard.info.totalStations')}
             dayDelta={dayDelta(yd?.totalStations, db?.totalStations)}
             deltaLabel={deltaLabel}
-            extra={<OnboardingStatusBadges counts={stats.onboardingStatusCounts} />}
           />
           <StatCard
             title={t('dashboard.online')}
@@ -595,6 +717,12 @@ function AdminDashboard({
             dayDelta={dayDelta(yd?.activeSessions, db?.activeSessions)}
             deltaLabel={deltaLabel}
           />
+          <StatCard
+            title={t('dashboard.faults')}
+            value={stats.faultedStations}
+            info={t('dashboard.info.faults')}
+            positiveIsGood={false}
+          />
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -612,7 +740,7 @@ function AdminDashboard({
           </Card>
         </div>
 
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-6">
           <StatCard
             title={t('dashboard.energyDelivered')}
             value={formatEnergy(stats.totalEnergyWh)}
@@ -649,38 +777,21 @@ function AdminDashboard({
             dayDelta={dayDelta(yd?.pingSuccessRate, db?.pingSuccessRate)}
             deltaLabel={deltaLabel}
           />
+          <StatCard
+            title={t('dashboard.totalPorts')}
+            value={uptimeQuery.data?.totalPorts ?? 0}
+            info={t('dashboard.info.totalPorts')}
+            dayDelta={dayDelta(yd?.totalPorts, db?.totalPorts)}
+            deltaLabel={deltaLabel}
+          />
         </div>
 
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            title={t('dashboard.totalRevenue')}
-            value={formatCurrency(financialStats.data?.totalRevenueCents ?? 0)}
-            info={t('dashboard.info.totalRevenue')}
-            dayDelta={dayDelta(yd?.totalRevenueCents, db?.totalRevenueCents)}
-            deltaLabel={deltaLabel}
-          />
-          <StatCard
-            title={t('dashboard.todayRevenue')}
-            value={formatCurrency(financialStats.data?.todayRevenueCents ?? 0)}
-            info={t('dashboard.info.todayRevenue')}
-            dayDelta={dayDelta(yd?.dayRevenueCents, db?.dayRevenueCents)}
-            deltaLabel={deltaLabel}
-          />
-          <StatCard
-            title={t('dashboard.revenuePerSession')}
-            value={formatCurrency(financialStats.data?.avgRevenueCentsPerSession ?? 0)}
-            info={t('dashboard.info.revenuePerSession')}
-            dayDelta={dayDelta(yd?.avgRevenueCentsPerSession, db?.avgRevenueCentsPerSession)}
-            deltaLabel={deltaLabel}
-          />
-          <StatCard
-            title={t('dashboard.totalTransactions')}
-            value={financialStats.data?.totalTransactions ?? 0}
-            info={t('dashboard.info.totalTransactions')}
-            dayDelta={dayDelta(yd?.totalTransactions, db?.totalTransactions)}
-            deltaLabel={deltaLabel}
-          />
-        </div>
+        <ScrollSnapRow
+          pages={[
+            { id: 'revenue', content: revenueGrid },
+            { id: 'cost', content: costGrid },
+          ]}
+        />
       </>
     );
   }
@@ -973,7 +1084,6 @@ function OperatorDashboard({
             info={t('dashboard.info.totalStations')}
             dayDelta={dayDelta(yd?.totalStations, db?.totalStations)}
             deltaLabel={deltaLabel}
-            extra={<OnboardingStatusBadges counts={stats.onboardingStatusCounts} />}
           />
           <StatCard
             title={t('dashboard.online')}

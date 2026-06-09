@@ -10,6 +10,7 @@ import {
   siteAuditLog,
   configTemplateAuditLog,
   clearFreeVendCache,
+  clearElectricityRateCache,
 } from '@evtivity/database';
 import { getAuditActor } from '../lib/audit-actor.js';
 import { siteNameEq } from '../lib/site-lookup.js';
@@ -31,12 +32,16 @@ import {
   configTemplates,
   carbonIntensityFactors,
   pricingAssignmentAuditLog,
+  siteElectricityRatePeriods,
 } from '@evtivity/database';
 import {
   isValidTimezone,
   FREE_VEND_OCPP_21_VARIABLES,
   FREE_VEND_OCPP_16_KEYS,
+  electricityRateRestrictionsSchema,
+  deriveElectricityRatePriority,
 } from '@evtivity/lib';
+import type { ElectricityRatePeriodRestrictions } from '@evtivity/lib';
 import { zodSchema } from '../lib/zod-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
 import { paginationQuery } from '../lib/pagination.js';
@@ -2404,6 +2409,268 @@ export function siteRoutes(app: FastifyInstance): void {
         db,
         request.log,
       );
+      return { success: true };
+    },
+  );
+
+  const electricityRateItem = z
+    .object({
+      id: z.number().int().describe('Rate period ID'),
+      siteId: z.string().describe('Site ID'),
+      name: z.string().describe('Rate period name'),
+      ratePerKwh: z.number().describe('Wholesale electricity rate in dollars per kWh'),
+      restrictions: z
+        .record(z.unknown())
+        .nullable()
+        .describe(
+          'When the period applies (timeRange/daysOfWeek/dateRange), or null for the default flat rate',
+        ),
+      priority: z.number().int().describe('Resolution priority derived from the restriction shape'),
+      isDefault: z.boolean().describe('True for the flat-rate fallback period'),
+    })
+    .passthrough();
+
+  const electricityRateBody = z.object({
+    name: z.string().min(1).max(100).describe('Rate period name'),
+    ratePerKwh: z.number().nonnegative().describe('Wholesale electricity rate in dollars per kWh'),
+    restrictions: electricityRateRestrictionsSchema
+      .nullable()
+      .optional()
+      .describe('When the period applies, or null/omitted for the default flat rate'),
+  });
+
+  const electricityRateParams = z.object({
+    id: ID_PARAMS.siteId.describe('Site ID'),
+    periodId: z.coerce.number().int().describe('Electricity rate period ID'),
+  });
+
+  app.get(
+    '/sites/:id/electricity-rates',
+    {
+      onRequest: [authorize('sites:read')],
+      schema: {
+        tags: ['Sites'],
+        summary: 'List electricity rate periods for a site',
+        operationId: 'listSiteElectricityRates',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(siteParams),
+        response: {
+          200: arrayResponse(electricityRateItem),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as z.infer<typeof siteParams>;
+      const { userId } = request.user as JwtPayload;
+      const userSiteIds = await getUserSiteIds(userId);
+      if (userSiteIds != null && !userSiteIds.includes(id)) {
+        await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
+        return;
+      }
+      const rows = await db
+        .select()
+        .from(siteElectricityRatePeriods)
+        .where(eq(siteElectricityRatePeriods.siteId, id))
+        .orderBy(desc(siteElectricityRatePeriods.priority), desc(siteElectricityRatePeriods.id));
+      return rows.map((row) => ({
+        id: row.id,
+        siteId: row.siteId,
+        name: row.name,
+        ratePerKwh: parseFloat(row.ratePerKwh),
+        restrictions: row.restrictions as Record<string, unknown> | null,
+        priority: row.priority,
+        isDefault: row.isDefault,
+      }));
+    },
+  );
+
+  app.post(
+    '/sites/:id/electricity-rates',
+    {
+      onRequest: [authorize('sites:write')],
+      schema: {
+        tags: ['Sites'],
+        summary: 'Create an electricity rate period for a site',
+        operationId: 'createSiteElectricityRate',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(siteParams),
+        body: zodSchema(electricityRateBody),
+        response: {
+          201: itemResponse(electricityRateItem),
+          400: errorWith('Invalid rate restrictions', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Site not found', [ERROR_CODES.SITE_NOT_FOUND]),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as z.infer<typeof siteParams>;
+      const body = request.body as z.infer<typeof electricityRateBody>;
+      const { userId } = request.user as JwtPayload;
+      const userSiteIds = await getUserSiteIds(userId);
+      if (userSiteIds != null && !userSiteIds.includes(id)) {
+        await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
+        return;
+      }
+      const restrictions = (body.restrictions ?? null) as ElectricityRatePeriodRestrictions | null;
+      const parsedRestrictions = electricityRateRestrictionsSchema
+        .nullable()
+        .safeParse(restrictions);
+      if (!parsedRestrictions.success) {
+        await reply
+          .status(400)
+          .send({ error: 'Invalid rate restrictions', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const [site] = await db.select({ id: sites.id }).from(sites).where(eq(sites.id, id)).limit(1);
+      if (site == null) {
+        await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
+        return;
+      }
+      const [created] = await db
+        .insert(siteElectricityRatePeriods)
+        .values({
+          siteId: id,
+          name: body.name,
+          ratePerKwh: String(body.ratePerKwh),
+          restrictions,
+          priority: deriveElectricityRatePriority(restrictions),
+          isDefault: restrictions == null,
+        })
+        .returning();
+      if (created == null) {
+        throw new Error('Electricity rate insert returned no row');
+      }
+      clearElectricityRateCache(id);
+      await reply.status(201).send({
+        id: created.id,
+        siteId: created.siteId,
+        name: created.name,
+        ratePerKwh: parseFloat(created.ratePerKwh),
+        restrictions: created.restrictions as Record<string, unknown> | null,
+        priority: created.priority,
+        isDefault: created.isDefault,
+      });
+    },
+  );
+
+  app.patch(
+    '/sites/:id/electricity-rates/:periodId',
+    {
+      onRequest: [authorize('sites:write')],
+      schema: {
+        tags: ['Sites'],
+        summary: 'Update an electricity rate period',
+        operationId: 'updateSiteElectricityRate',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(electricityRateParams),
+        body: zodSchema(electricityRateBody),
+        response: {
+          200: itemResponse(electricityRateItem),
+          400: errorWith('Invalid rate restrictions', [ERROR_CODES.VALIDATION_ERROR]),
+          404: errorWith('Electricity rate not found', [ERROR_CODES.ELECTRICITY_RATE_NOT_FOUND]),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id, periodId } = request.params as z.infer<typeof electricityRateParams>;
+      const body = request.body as z.infer<typeof electricityRateBody>;
+      const { userId } = request.user as JwtPayload;
+      const userSiteIds = await getUserSiteIds(userId);
+      if (userSiteIds != null && !userSiteIds.includes(id)) {
+        await reply
+          .status(404)
+          .send({ error: 'Electricity rate not found', code: 'ELECTRICITY_RATE_NOT_FOUND' });
+        return;
+      }
+      const restrictions = (body.restrictions ?? null) as ElectricityRatePeriodRestrictions | null;
+      const parsedRestrictions = electricityRateRestrictionsSchema
+        .nullable()
+        .safeParse(restrictions);
+      if (!parsedRestrictions.success) {
+        await reply
+          .status(400)
+          .send({ error: 'Invalid rate restrictions', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const [updated] = await db
+        .update(siteElectricityRatePeriods)
+        .set({
+          name: body.name,
+          ratePerKwh: String(body.ratePerKwh),
+          restrictions,
+          priority: deriveElectricityRatePriority(restrictions),
+          isDefault: restrictions == null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(siteElectricityRatePeriods.id, periodId),
+            eq(siteElectricityRatePeriods.siteId, id),
+          ),
+        )
+        .returning();
+      if (updated == null) {
+        await reply
+          .status(404)
+          .send({ error: 'Electricity rate not found', code: 'ELECTRICITY_RATE_NOT_FOUND' });
+        return;
+      }
+      clearElectricityRateCache(id);
+      return {
+        id: updated.id,
+        siteId: updated.siteId,
+        name: updated.name,
+        ratePerKwh: parseFloat(updated.ratePerKwh),
+        restrictions: updated.restrictions as Record<string, unknown> | null,
+        priority: updated.priority,
+        isDefault: updated.isDefault,
+      };
+    },
+  );
+
+  app.delete(
+    '/sites/:id/electricity-rates/:periodId',
+    {
+      onRequest: [authorize('sites:write')],
+      schema: {
+        tags: ['Sites'],
+        summary: 'Delete an electricity rate period',
+        operationId: 'deleteSiteElectricityRate',
+        security: [{ bearerAuth: [] }],
+        params: zodSchema(electricityRateParams),
+        response: {
+          200: successResponse,
+          404: errorWith('Electricity rate not found', [ERROR_CODES.ELECTRICITY_RATE_NOT_FOUND]),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id, periodId } = request.params as z.infer<typeof electricityRateParams>;
+      const { userId } = request.user as JwtPayload;
+      const userSiteIds = await getUserSiteIds(userId);
+      if (userSiteIds != null && !userSiteIds.includes(id)) {
+        await reply
+          .status(404)
+          .send({ error: 'Electricity rate not found', code: 'ELECTRICITY_RATE_NOT_FOUND' });
+        return;
+      }
+      const [deleted] = await db
+        .delete(siteElectricityRatePeriods)
+        .where(
+          and(
+            eq(siteElectricityRatePeriods.id, periodId),
+            eq(siteElectricityRatePeriods.siteId, id),
+          ),
+        )
+        .returning();
+      if (deleted == null) {
+        await reply
+          .status(404)
+          .send({ error: 'Electricity rate not found', code: 'ELECTRICITY_RATE_NOT_FOUND' });
+        return;
+      }
+      clearElectricityRateCache(id);
       return { success: true };
     },
   );

@@ -373,7 +373,12 @@
       "paymentBreakdown": "Verteilung der Status von Zahlungstransaktionen (eingezogen, ausstehend, erstattet usw.).",
       "peakUsage": "Heatmap der Startzeiten von Ladevorgängen nach Stunde und Wochentag.",
       "activeSessionsTable": "Echtzeitansicht der derzeit aktiven Ladevorgänge.",
-      "siteMap": "Karte mit allen Standorten und Stationsanzahlen."
+      "siteMap": "Karte mit allen Standorten und Stationsanzahlen.",
+      "electricityCost": "Gesamte Strombezugskosten des Betreibers über alle Ladevorgänge, aus den pro Standort konfigurierten Tarifen.",
+      "dayElectricityCost": "Strombezugskosten aus heute abgeschlossenen Ladevorgängen.",
+      "profit": "Gesamtumsatz abzüglich der gesamten Stromkosten über alle Ladevorgänge.",
+      "dayProfit": "Heutiger Umsatz abzüglich der heutigen Stromkosten.",
+      "totalPorts": "Gesamtzahl der Anschlüsse über alle Stationen."
     },
     "historicalInfo": {
       "totalStations": "Registrierte Stationen am {{date}}. Bei Zeitraumauswahl wird der Tagesdurchschnitt angezeigt.",
@@ -403,7 +408,13 @@
       "totalSessions": "Durchschnittliche kumulierte Vorgangsanzahl über die letzten 14 Tage ({{from}} bis {{to}})."
     },
     "co2Avoided": "Vermiedenes CO₂",
-    "co2AvoidedTooltip": "Insgesamt vermiedene CO₂-Emissionen durch EV-Laden gegenüber Benzinfahrt"
+    "co2AvoidedTooltip": "Insgesamt vermiedene CO₂-Emissionen durch EV-Laden gegenüber Benzinfahrt",
+    "electricityCost": "Gesamtstromkosten",
+    "profitability": "Rentabilität",
+    "profit": "Gesamtgewinn",
+    "dayElectricityCost": "Heutige Stromkosten",
+    "dayProfit": "Heutiger Gewinn",
+    "totalPorts": "Anschlüsse gesamt"
   },
   "sites": {
     "title": "Standorte",
@@ -494,7 +505,26 @@
     "carbonRegionDescription": "Wählen Sie die Netzregion für CO₂-Intensitätsberechnungen aus.",
     "carbonIntensity": "CO₂-Intensität",
     "noCarbonRegion": "Keine CO₂-Region zugewiesen",
-    "underMaintenanceBadge": "Wartung"
+    "underMaintenanceBadge": "Wartung",
+    "electricityRates": "Stromtarife",
+    "electricityRate": "Stromtarif",
+    "addElectricityRate": "Tarif hinzufügen",
+    "electricityRateName": "Name",
+    "ratePerKwh": "Tarif ($/kWh)",
+    "electricityRateRestrictions": "Gilt wann",
+    "electricityRateAlways": "Immer (Pauschaltarif)",
+    "noElectricityRates": "Keine Stromtarife",
+    "noElectricityRatesDescription": "Fügen Sie einen Tarif hinzu, um die Strombezugskosten pro Ladevorgang zu erfassen.",
+    "deleteElectricityRate": "Tarif löschen",
+    "confirmDeleteElectricityRate": "Diesen Stromtarif löschen?",
+    "saveElectricityRate": "Tarif speichern",
+    "electricityRateCreated": "Stromtarif erstellt",
+    "electricityRateUpdated": "Stromtarif aktualisiert",
+    "electricityRateDeleted": "Stromtarif gelöscht",
+    "electricityRateTimeOfDay": "Tageszeit",
+    "electricityRateDayAndTime": "Tag und Zeit",
+    "electricityRateSeasonal": "Datumsbereich",
+    "electricityRateDaysOfWeek": "Wochentage"
   },
   "stations": {
     "title": "Ladestationen",
@@ -841,7 +871,9 @@
     "noMeterValues": "Keine Zählerstände",
     "freeVend": "Freies Laden",
     "co2Avoided": "Vermiedenes CO₂",
-    "co2AvoidedLabel": "Vermiedenes CO₂"
+    "co2AvoidedLabel": "Vermiedenes CO₂",
+    "electricityCost": "Stromkosten",
+    "electricityCostTooltip": "Strombezugskosten des Betreibers für diesen Ladevorgang"
   },
   "drivers": {
     "title": "Fahrer",
@@ -2255,7 +2287,8 @@
     "MAINTENANCE_INVALID_RANGE": "Wartungsende muss nach dem Start liegen",
     "MAINTENANCE_ALREADY_ACTIVE": "Wartungsereignis ist bereits aktiv",
     "MAINTENANCE_ACTIVE": "Der Standort befindet sich derzeit in Wartung",
-    "RESERVATION_DURING_MAINTENANCE": "Reservierung fällt in ein geplantes Wartungsfenster"
+    "RESERVATION_DURING_MAINTENANCE": "Reservierung fällt in ein geplantes Wartungsfenster",
+    "ELECTRICITY_RATE_NOT_FOUND": "Stromtarif nicht gefunden"
   },
   "logs": {
     "title": "Protokolle",

@@ -682,7 +682,8 @@
     "MAINTENANCE_INVALID_RANGE": "El fin del mantenimiento debe ser posterior al inicio",
     "MAINTENANCE_ALREADY_ACTIVE": "El evento de mantenimiento ya está activo",
     "MAINTENANCE_ACTIVE": "El sitio está actualmente en mantenimiento",
-    "RESERVATION_DURING_MAINTENANCE": "La reserva cae dentro de una ventana de mantenimiento programado"
+    "RESERVATION_DURING_MAINTENANCE": "La reserva cae dentro de una ventana de mantenimiento programado",
+    "ELECTRICITY_RATE_NOT_FOUND": "Tarifa de electricidad no encontrada"
   },
   "validation": {
     "required": "Este campo es obligatorio",

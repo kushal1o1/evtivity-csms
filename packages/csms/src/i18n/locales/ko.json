@@ -373,7 +373,12 @@
       "paymentBreakdown": "결제 거래 상태 분포(캡처, 대기 중, 환불 등)입니다.",
       "peakUsage": "요일 및 시간별 충전 세션 시작 시간 히트맵입니다.",
       "activeSessionsTable": "현재 활성 충전 세션의 실시간 보기입니다.",
-      "siteMap": "충전기 수와 함께 모든 사이트 위치를 표시하는 지도입니다."
+      "siteMap": "충전기 수와 함께 모든 사이트 위치를 표시하는 지도입니다.",
+      "electricityCost": "구성된 사이트별 요금에 따른 전체 세션의 운영자 도매 전기 비용 합계입니다.",
+      "dayElectricityCost": "오늘 완료된 세션의 도매 전기 비용입니다.",
+      "profit": "전체 세션의 총수익에서 총 전기 비용을 뺀 값입니다.",
+      "dayProfit": "오늘 수익에서 오늘 전기 비용을 뺀 값입니다.",
+      "totalPorts": "모든 충전소의 커넥터 포트 총 개수입니다."
     },
     "historicalInfo": {
       "totalStations": "{{date}} 등록된 충전기입니다. 범위 선택 시 일일 평균을 표시합니다.",
@@ -403,7 +408,13 @@
       "totalSessions": "최근 14일간 평균 누적 세션 수 ({{from}} ~ {{to}})."
     },
     "co2Avoided": "CO₂ 절감량",
-    "co2AvoidedTooltip": "EV 충전으로 휘발유 주행 대비 절감된 총 CO₂ 배출량"
+    "co2AvoidedTooltip": "EV 충전으로 휘발유 주행 대비 절감된 총 CO₂ 배출량",
+    "electricityCost": "총 전기 비용",
+    "profitability": "수익성",
+    "profit": "총 이익",
+    "dayElectricityCost": "오늘 전기 비용",
+    "dayProfit": "오늘 이익",
+    "totalPorts": "총 포트"
   },
   "sites": {
     "title": "사이트",
@@ -494,7 +505,26 @@
     "carbonRegionDescription": "탄소 집약도 계산을 위한 전력망 지역을 선택하세요.",
     "carbonIntensity": "탄소 집약도",
     "noCarbonRegion": "탄소 지역이 할당되지 않았습니다",
-    "underMaintenanceBadge": "유지보수"
+    "underMaintenanceBadge": "유지보수",
+    "electricityRates": "전기 요금",
+    "electricityRate": "전기 요금",
+    "addElectricityRate": "요금 추가",
+    "electricityRateName": "이름",
+    "ratePerKwh": "요금 ($/kWh)",
+    "electricityRateRestrictions": "적용 시점",
+    "electricityRateAlways": "항상 (기본 요금)",
+    "noElectricityRates": "전기 요금 없음",
+    "noElectricityRatesDescription": "세션별 도매 전기 비용을 추적하려면 요금을 추가하세요.",
+    "deleteElectricityRate": "요금 삭제",
+    "confirmDeleteElectricityRate": "이 전기 요금을 삭제하시겠습니까?",
+    "saveElectricityRate": "요금 저장",
+    "electricityRateCreated": "전기 요금이 생성되었습니다",
+    "electricityRateUpdated": "전기 요금이 업데이트되었습니다",
+    "electricityRateDeleted": "전기 요금이 삭제되었습니다",
+    "electricityRateTimeOfDay": "시간대",
+    "electricityRateDayAndTime": "요일 및 시간",
+    "electricityRateSeasonal": "기간",
+    "electricityRateDaysOfWeek": "요일"
   },
   "stations": {
     "title": "충전기",
@@ -865,7 +895,9 @@
     "guestPreAuthAmount": "사전 승인 금액",
     "guestStripePaymentIntent": "Stripe PaymentIntent",
     "guestCreatedAt": "생성됨",
-    "guestExpiresAt": "만료"
+    "guestExpiresAt": "만료",
+    "electricityCost": "전기 비용",
+    "electricityCostTooltip": "이 세션에 대한 운영자의 도매 전기 비용"
   },
   "drivers": {
     "title": "드라이버",
@@ -2260,7 +2292,8 @@
     "MAINTENANCE_INVALID_RANGE": "유지보수 종료 시간은 시작 시간 이후여야 합니다",
     "MAINTENANCE_ALREADY_ACTIVE": "유지보수 이벤트가 이미 활성 상태입니다",
     "MAINTENANCE_ACTIVE": "사이트가 현재 유지보수 중입니다",
-    "RESERVATION_DURING_MAINTENANCE": "예약이 예정된 유지보수 기간에 포함됩니다"
+    "RESERVATION_DURING_MAINTENANCE": "예약이 예정된 유지보수 기간에 포함됩니다",
+    "ELECTRICITY_RATE_NOT_FOUND": "전기 요금을 찾을 수 없습니다"
   },
   "logs": {
     "title": "로그",

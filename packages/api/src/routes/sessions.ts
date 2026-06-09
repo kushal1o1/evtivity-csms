@@ -58,6 +58,11 @@ const sessionListItem = z
       .nullable()
       .describe('Total energy delivered in Watt-hours'),
     co2AvoidedKg: z.coerce.number().nullable().describe('CO2 avoided vs gasoline in kg'),
+    electricityCostCents: z
+      .number()
+      .int()
+      .nullable()
+      .describe("Operator's wholesale electricity cost in cents (null when no rate configured)"),
     currentCostCents: z
       .number()
       .int()
@@ -151,6 +156,11 @@ const sessionDetail = z
       .nullable()
       .describe('Total energy delivered in Watt-hours'),
     co2AvoidedKg: z.coerce.number().nullable().describe('CO2 avoided vs gasoline in kg'),
+    electricityCostCents: z
+      .number()
+      .int()
+      .nullable()
+      .describe("Operator's wholesale electricity cost in cents (null when no rate configured)"),
     currentCostCents: z
       .number()
       .int()
@@ -366,6 +376,7 @@ export function sessionRoutes(app: FastifyInstance): void {
           idleStartedAt: chargingSessions.idleStartedAt,
           energyDeliveredWh: chargingSessions.energyDeliveredWh,
           co2AvoidedKg: chargingSessions.co2AvoidedKg,
+          electricityCostCents: chargingSessions.electricityCostCents,
           currentCostCents: chargingSessions.currentCostCents,
           finalCostCents: chargingSessions.finalCostCents,
           currency: chargingSessions.currency,
@@ -434,6 +445,7 @@ export function sessionRoutes(app: FastifyInstance): void {
           idleStartedAt: chargingSessions.idleStartedAt,
           energyDeliveredWh: chargingSessions.energyDeliveredWh,
           co2AvoidedKg: chargingSessions.co2AvoidedKg,
+          electricityCostCents: chargingSessions.electricityCostCents,
           currentCostCents: chargingSessions.currentCostCents,
           finalCostCents: chargingSessions.finalCostCents,
           currency: chargingSessions.currency,

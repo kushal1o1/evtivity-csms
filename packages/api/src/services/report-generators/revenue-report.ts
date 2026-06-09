@@ -55,6 +55,7 @@ interface RevenueByDay {
   date: string;
   currency: string;
   revenueCents: number;
+  electricityCostCents: number;
   sessionCount: number;
 }
 
@@ -62,6 +63,7 @@ interface RevenueBySite {
   siteName: string;
   currency: string;
   revenueCents: number;
+  electricityCostCents: number;
   sessionCount: number;
   energyKwh: number;
 }
@@ -86,6 +88,7 @@ async function queryRevenueByDay(filters: Filters, tz: string): Promise<RevenueB
       date: sql<string>`date_trunc('day', ${chargingSessions.startedAt} AT TIME ZONE ${tz})::date::text`,
       currency: sql<string>`coalesce(${chargingSessions.currency}, 'USD')`,
       revenueCents: sql<number>`coalesce(sum(coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents})), 0)::float8`,
+      electricityCostCents: sql<number>`coalesce(sum(${chargingSessions.electricityCostCents}), 0)::float8`,
       sessionCount: count(),
     })
     .from(chargingSessions);
@@ -123,6 +126,7 @@ async function queryRevenueBySite(filters: Filters, tz: string): Promise<Revenue
       siteName: sql<string>`coalesce(${sites.name}, 'No Site')`,
       currency: sql<string>`coalesce(${chargingSessions.currency}, 'USD')`,
       revenueCents: sql<number>`coalesce(sum(coalesce(${chargingSessions.finalCostCents}, ${chargingSessions.currentCostCents})), 0)::float8`,
+      electricityCostCents: sql<number>`coalesce(sum(${chargingSessions.electricityCostCents}), 0)::float8`,
       sessionCount: count(),
       energyKwh: sql<number>`coalesce(sum(${chargingSessions.energyDeliveredWh}::numeric / 1000), 0)::float8`,
     })
@@ -182,27 +186,44 @@ export async function generateRevenueReport(
   // (we deliberately do not flatten cross-currency totals into a single
   // number; that misrepresents revenue in mixed-currency networks).
   const totalsByCurrency = new Map<string, number>();
+  const electricityByCurrency = new Map<string, number>();
   for (const r of bySite) {
     totalsByCurrency.set(r.currency, (totalsByCurrency.get(r.currency) ?? 0) + r.revenueCents);
+    electricityByCurrency.set(
+      r.currency,
+      (electricityByCurrency.get(r.currency) ?? 0) + r.electricityCostCents,
+    );
   }
 
   const dateLabel = [filters.dateFrom, filters.dateTo].filter(Boolean).join(' to ') || 'All time';
 
   if (format === 'csv') {
-    const headers = ['Date', 'Currency', 'Revenue', 'Sessions'];
+    const headers = ['Date', 'Currency', 'Revenue', 'Electricity Cost', 'Profit', 'Sessions'];
     const rows: unknown[][] = byDay.map((r) => [
       r.date,
       r.currency,
       formatCents(r.revenueCents, r.currency),
+      formatCents(r.electricityCostCents, r.currency),
+      formatCents(r.revenueCents - r.electricityCostCents, r.currency),
       r.sessionCount,
     ]);
     rows.push([]);
-    rows.push(['Site', 'Currency', 'Revenue', 'Sessions', 'Energy (kWh)']);
+    rows.push([
+      'Site',
+      'Currency',
+      'Revenue',
+      'Electricity Cost',
+      'Profit',
+      'Sessions',
+      'Energy (kWh)',
+    ]);
     for (const r of bySite) {
       rows.push([
         r.siteName,
         r.currency,
         formatCents(r.revenueCents, r.currency),
+        formatCents(r.electricityCostCents, r.currency),
+        formatCents(r.revenueCents - r.electricityCostCents, r.currency),
         r.sessionCount,
         r.energyKwh.toFixed(1),
       ]);
@@ -222,21 +243,33 @@ export async function generateRevenueReport(
     const data = await buildXlsx([
       {
         name: 'By Day',
-        headers: ['Date', 'Currency', 'Revenue', 'Sessions'],
+        headers: ['Date', 'Currency', 'Revenue', 'Electricity Cost', 'Profit', 'Sessions'],
         rows: byDay.map((r) => [
           r.date,
           r.currency,
           formatCents(r.revenueCents, r.currency),
+          formatCents(r.electricityCostCents, r.currency),
+          formatCents(r.revenueCents - r.electricityCostCents, r.currency),
           r.sessionCount,
         ]),
       },
       {
         name: 'By Site',
-        headers: ['Site', 'Currency', 'Revenue', 'Sessions', 'Energy (kWh)'],
+        headers: [
+          'Site',
+          'Currency',
+          'Revenue',
+          'Electricity Cost',
+          'Profit',
+          'Sessions',
+          'Energy (kWh)',
+        ],
         rows: bySite.map((r) => [
           r.siteName,
           r.currency,
           formatCents(r.revenueCents, r.currency),
+          formatCents(r.electricityCostCents, r.currency),
+          formatCents(r.revenueCents - r.electricityCostCents, r.currency),
           r.sessionCount,
           r.energyKwh.toFixed(1),
         ]),
@@ -261,20 +294,38 @@ export async function generateRevenueReport(
   pdf.addSubtitle(`Period: ${dateLabel}`);
   for (const [currency, cents] of totalsByCurrency) {
     pdf.addSummaryRow(`Total Revenue (${currency}):`, formatCents(cents, currency));
+    const electricityCents = electricityByCurrency.get(currency) ?? 0;
+    pdf.addSummaryRow(
+      `Total Electricity Cost (${currency}):`,
+      formatCents(electricityCents, currency),
+    );
+    pdf.addSummaryRow(
+      `Total Profit (${currency}):`,
+      formatCents(cents - electricityCents, currency),
+    );
   }
   pdf.addSummaryRow('Total Sessions:', String(totalSessions));
 
   pdf.addTable(
-    ['Date', 'Currency', 'Revenue', 'Sessions'],
-    byDay.map((r) => [r.date, r.currency, formatCents(r.revenueCents, r.currency), r.sessionCount]),
+    ['Date', 'Currency', 'Revenue', 'Electricity Cost', 'Profit', 'Sessions'],
+    byDay.map((r) => [
+      r.date,
+      r.currency,
+      formatCents(r.revenueCents, r.currency),
+      formatCents(r.electricityCostCents, r.currency),
+      formatCents(r.revenueCents - r.electricityCostCents, r.currency),
+      r.sessionCount,
+    ]),
   );
 
   pdf.addTable(
-    ['Site', 'Currency', 'Revenue', 'Sessions', 'Energy (kWh)'],
+    ['Site', 'Currency', 'Revenue', 'Electricity Cost', 'Profit', 'Sessions', 'Energy (kWh)'],
     bySite.map((r) => [
       r.siteName,
       r.currency,
       formatCents(r.revenueCents, r.currency),
+      formatCents(r.electricityCostCents, r.currency),
+      formatCents(r.revenueCents - r.electricityCostCents, r.currency),
       r.sessionCount,
       r.energyKwh.toFixed(1),
     ]),

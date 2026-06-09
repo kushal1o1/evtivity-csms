@@ -8,6 +8,10 @@ export { isRoamingEnabled, clearRoamingCache } from './lib/roaming-setting.js';
 export { isPncEnabled, clearPncSettingsCache } from './lib/pnc-setting.js';
 export { isSiteFreeVendEnabledByStation, clearFreeVendCache } from './lib/free-vend-setting.js';
 export {
+  getElectricityRatePeriodsForSite,
+  clearElectricityRateCache,
+} from './lib/electricity-rate.js';
+export {
   isReservationEnabled,
   getReservationSettings,
   invalidateReservationSettingsCache,

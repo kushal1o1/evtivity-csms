@@ -373,7 +373,12 @@
       "paymentBreakdown": "支付交易狀態分佈（已捕獲、待處理、已退款等）。",
       "peakUsage": "按小時和星期幾顯示的充電會話啟動時間熱力圖。",
       "activeSessionsTable": "當前活躍充電會話的實時檢視。",
-      "siteMap": "顯示所有站點位置及充電站數量的地圖。"
+      "siteMap": "顯示所有站點位置及充電站數量的地圖。",
+      "electricityCost": "根據各站點設定的費率，營運商在所有充電中的批發電力成本總額。",
+      "dayElectricityCost": "今日完成充電的批發電力成本。",
+      "profit": "所有充電的總收入減去總電力成本。",
+      "dayProfit": "今日收入減去今日電力成本。",
+      "totalPorts": "所有充電站的連接器埠總數。"
     },
     "historicalInfo": {
       "totalStations": "{{date}} 的註冊充電站數量。範圍選擇顯示每日平均值。",
@@ -403,7 +408,13 @@
       "totalSessions": "過去 14 天（{{from}} 至 {{to}}）的平均累計會話數。"
     },
     "co2Avoided": "減少的 CO₂",
-    "co2AvoidedTooltip": "電動汽車充電相比燃油駕駛避免的 CO₂ 排放總量"
+    "co2AvoidedTooltip": "電動汽車充電相比燃油駕駛避免的 CO₂ 排放總量",
+    "electricityCost": "總電費",
+    "profitability": "獲利能力",
+    "profit": "總利潤",
+    "dayElectricityCost": "今日電費",
+    "dayProfit": "今日利潤",
+    "totalPorts": "總埠數"
   },
   "sites": {
     "title": "站點",
@@ -494,7 +505,26 @@
     "carbonRegionDescription": "選擇用於碳強度計算的電網區域。",
     "carbonIntensity": "碳強度",
     "noCarbonRegion": "未分配碳排放區域",
-    "underMaintenanceBadge": "維護中"
+    "underMaintenanceBadge": "維護中",
+    "electricityRates": "電價",
+    "electricityRate": "電價",
+    "addElectricityRate": "新增費率",
+    "electricityRateName": "名稱",
+    "ratePerKwh": "費率 ($/kWh)",
+    "electricityRateRestrictions": "適用時段",
+    "electricityRateAlways": "一律（統一費率）",
+    "noElectricityRates": "尚無電價",
+    "noElectricityRatesDescription": "新增費率以追蹤每次充電的批發電力成本。",
+    "deleteElectricityRate": "刪除費率",
+    "confirmDeleteElectricityRate": "刪除此電價？",
+    "saveElectricityRate": "儲存費率",
+    "electricityRateCreated": "電價已建立",
+    "electricityRateUpdated": "電價已更新",
+    "electricityRateDeleted": "電價已刪除",
+    "electricityRateTimeOfDay": "時段",
+    "electricityRateDayAndTime": "星期與時段",
+    "electricityRateSeasonal": "日期範圍",
+    "electricityRateDaysOfWeek": "星期"
   },
   "stations": {
     "title": "充電站",
@@ -865,7 +895,9 @@
     "guestPreAuthAmount": "預授權金額",
     "guestStripePaymentIntent": "Stripe PaymentIntent",
     "guestCreatedAt": "建立時間",
-    "guestExpiresAt": "到期時間"
+    "guestExpiresAt": "到期時間",
+    "electricityCost": "電費",
+    "electricityCostTooltip": "營運商本次充電的批發電力成本"
   },
   "drivers": {
     "title": "駕駛員",
@@ -2260,7 +2292,8 @@
     "MAINTENANCE_INVALID_RANGE": "維護結束時間必須晚於開始時間",
     "MAINTENANCE_ALREADY_ACTIVE": "維護事件已啟用",
     "MAINTENANCE_ACTIVE": "站點目前正在維護中",
-    "RESERVATION_DURING_MAINTENANCE": "預約時間落在已排定的維護時段內"
+    "RESERVATION_DURING_MAINTENANCE": "預約時間落在已排定的維護時段內",
+    "ELECTRICITY_RATE_NOT_FOUND": "找不到電價"
   },
   "logs": {
     "title": "日誌",

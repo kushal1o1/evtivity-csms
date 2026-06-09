@@ -116,6 +116,9 @@ vi.mock('../middleware/rbac.js', () => ({
 import { registerAuth } from '../plugins/auth.js';
 import { dashboardRoutes } from '../routes/dashboard.js';
 import { db } from '@evtivity/database';
+import { getUserSiteIds } from '../lib/site-access.js';
+
+const getUserSiteIdsMock = getUserSiteIds as ReturnType<typeof vi.fn>;
 
 const VALID_USER_ID = 'usr_000000000001';
 const VALID_ROLE_ID = 'rol_000000000001';
@@ -177,12 +180,14 @@ describe('Dashboard routes', () => {
   it('GET /v1/dashboard/stats returns station and session statistics', async () => {
     // First query: station rows grouped by availability and isOnline
     // Second query: session stats
+    // Third query: count of stations with a faulted connector (drives faultedStations)
     setupDbResults(
       [
         { status: 'available', isOnline: true, count: 5 },
         { status: 'faulted', isOnline: false, count: 1 },
       ],
       [{ activeSessions: 3, totalSessions: 100, totalEnergyWh: 500000 }],
+      [{ faulted: 1 }],
     );
     const response = await app.inject({
       method: 'GET',
@@ -306,13 +311,15 @@ describe('Dashboard routes', () => {
     expect(body[0]).toHaveProperty('count');
   });
 
-  it('GET /v1/dashboard/financial-stats returns revenue data', async () => {
+  it('GET /v1/dashboard/financial-stats returns revenue, electricity cost, and profit data', async () => {
     setupDbResults([
       {
         totalRevenueCents: 500000,
         todayRevenueCents: 10000,
         avgRevenueCentsPerSession: 500,
         totalTransactions: 1000,
+        totalElectricityCostCents: 120000,
+        dayElectricityCostCents: 3000,
       },
     ]);
     const response = await app.inject({
@@ -326,7 +333,26 @@ describe('Dashboard routes', () => {
     expect(body).toHaveProperty('todayRevenueCents', 10000);
     expect(body).toHaveProperty('avgRevenueCentsPerSession', 500);
     expect(body).toHaveProperty('totalTransactions', 1000);
+    expect(body).toHaveProperty('totalElectricityCostCents', 120000);
+    expect(body).toHaveProperty('dayElectricityCostCents', 3000);
+    // Profit = revenue - electricity cost
+    expect(body).toHaveProperty('totalProfitCents', 380000);
+    expect(body).toHaveProperty('dayProfitCents', 7000);
     expect(body).toHaveProperty('currency', 'USD');
+  });
+
+  it('GET /v1/dashboard/financial-stats returns zeroed financials when the user has no site access', async () => {
+    getUserSiteIdsMock.mockResolvedValueOnce([]);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/dashboard/financial-stats',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.totalElectricityCostCents).toBe(0);
+    expect(body.totalProfitCents).toBe(0);
+    expect(body.dayProfitCents).toBe(0);
   });
 
   it('GET /v1/dashboard/revenue-history returns daily revenue data', async () => {

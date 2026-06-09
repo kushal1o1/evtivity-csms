@@ -31,6 +31,7 @@ import {
   pricingGroupSites,
   pricingGroupDrivers,
   pricingHolidays,
+  siteElectricityRatePeriods,
   drivers,
   driverTokens,
   vehicles,
@@ -1602,6 +1603,35 @@ async function seed(): Promise<void> {
   }
   console.log(`  ${String(pgSiteRows.length)} pricing-group-site assignments created.`);
 
+  // ------ Electricity rate periods (one default + one weekday peak per site) ------
+  const electricityRateRows = createdSites.flatMap((site) => [
+    {
+      siteId: site.id,
+      name: 'Standard',
+      ratePerKwh: '0.120000',
+      restrictions: null,
+      priority: 0,
+      isDefault: true,
+    },
+    {
+      siteId: site.id,
+      name: 'Weekday Peak',
+      ratePerKwh: '0.220000',
+      restrictions: {
+        timeRange: { startTime: '16:00', endTime: '21:00' },
+        daysOfWeek: [1, 2, 3, 4, 5],
+      },
+      priority: 20,
+      isDefault: false,
+    },
+  ]);
+  for (let i = 0; i < electricityRateRows.length; i += 500) {
+    await db.insert(siteElectricityRatePeriods).values(electricityRateRows.slice(i, i + 500));
+  }
+  console.log(
+    `  ${String(electricityRateRows.length)} electricity rate periods created across ${String(createdSites.length)} sites.`,
+  );
+
   // ------ VIP Pricing Group Driver assignment ------
   await db.insert(pricingGroupDrivers).values({
     pricingGroupId: at(createdPricingGroups, 5).id,
@@ -1646,6 +1676,7 @@ async function seed(): Promise<void> {
     stoppedReason: string | null;
     currentCostCents: number | null;
     finalCostCents: number | null;
+    electricityCostCents: number | null;
   }> = [];
 
   for (let i = 0; i < 10000; i++) {
@@ -1665,6 +1696,8 @@ async function seed(): Promise<void> {
     const meterStop = status !== 'active' ? meterStart + energyWh : null;
     // Cost: ~$0.15-0.30/kWh, so cents = energyWh / 1000 * 15-30
     const costCents = Math.round((energyWh / 1000) * randomInt(15, 30));
+    // Operator electricity cost at the seeded $0.12/kWh Standard rate.
+    const electricityCostCents = status !== 'active' ? Math.round((energyWh / 1000) * 12) : null;
 
     sessionRows.push({
       stationId: at(createdStations, stationIdx).id,
@@ -1681,6 +1714,7 @@ async function seed(): Promise<void> {
       stoppedReason: status === 'completed' ? pick(stopReasons) : null,
       currentCostCents: status === 'active' ? costCents : null,
       finalCostCents: status !== 'active' ? costCents : null,
+      electricityCostCents,
     });
   }
 

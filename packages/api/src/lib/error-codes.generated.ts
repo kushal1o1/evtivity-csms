@@ -52,6 +52,7 @@ export const ERROR_CODES = {
   DUPLICATE_PARTNER: 'DUPLICATE_PARTNER',
   DUPLICATE_SITE_NAME: 'DUPLICATE_SITE_NAME',
   DUPLICATE_STATION_ID: 'DUPLICATE_STATION_ID',
+  ELECTRICITY_RATE_NOT_FOUND: 'ELECTRICITY_RATE_NOT_FOUND',
   EMAIL_EXISTS: 'EMAIL_EXISTS',
   EMAIL_NOT_CONFIGURED: 'EMAIL_NOT_CONFIGURED',
   EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
@@ -284,6 +285,7 @@ export type ErrorCode =
   | 'DUPLICATE_PARTNER'
   | 'DUPLICATE_SITE_NAME'
   | 'DUPLICATE_STATION_ID'
+  | 'ELECTRICITY_RATE_NOT_FOUND'
   | 'EMAIL_EXISTS'
   | 'EMAIL_NOT_CONFIGURED'
   | 'EMAIL_NOT_VERIFIED'
@@ -523,6 +525,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   DUPLICATE_PARTNER: 'Partner with this country code and party ID already exists',
   DUPLICATE_SITE_NAME: 'A site with this name already exists',
   DUPLICATE_STATION_ID: 'Station ID already exists',
+  ELECTRICITY_RATE_NOT_FOUND: 'Electricity rate not found',
   EMAIL_EXISTS: 'Email already registered',
   EMAIL_NOT_CONFIGURED: 'Email provider not configured',
   EMAIL_NOT_VERIFIED: 'Email not verified',

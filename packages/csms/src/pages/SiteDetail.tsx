@@ -31,6 +31,7 @@ import { SiteQrCodesTab } from '@/components/site/SiteQrCodesTab';
 import { SitePricingTab } from '@/components/site/SitePricingTab';
 import { SiteFreeVendTab } from '@/components/site/SiteFreeVendTab';
 import { SiteMaintenanceTab } from '@/components/SiteMaintenanceTab';
+import { SiteElectricityRatesTab } from '@/components/SiteElectricityRatesTab';
 import { LoadingLogo } from '@/components/loading-logo';
 
 interface Site {
@@ -204,6 +205,7 @@ export function SiteDetail(): React.JSX.Element {
           <TabsTrigger value="load-management">{t('sites.loadManagement')}</TabsTrigger>
           <TabsTrigger value="qr-codes">{t('stations.qrCodes')}</TabsTrigger>
           <TabsTrigger value="pricing">{t('sites.pricing')}</TabsTrigger>
+          <TabsTrigger value="electricity-rates">{t('sites.electricityRates')}</TabsTrigger>
           {reservationEnabled && (
             <TabsTrigger value="reservations">{t('reservations.title')}</TabsTrigger>
           )}
@@ -390,6 +392,10 @@ export function SiteDetail(): React.JSX.Element {
         )}
 
         <SiteFreeVendTab site={site} siteId={id ?? ''} />
+
+        <TabsContent value="electricity-rates">
+          <SiteElectricityRatesTab siteId={id ?? ''} />
+        </TabsContent>
 
         {canReadMaintenance && (
           <TabsContent value="maintenance">

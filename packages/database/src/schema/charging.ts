@@ -76,6 +76,7 @@ export const chargingSessions = pgTable(
     metadata: jsonb('metadata'),
     freeVend: boolean('free_vend').notNull().default(false),
     co2AvoidedKg: numeric('co2_avoided_kg'),
+    electricityCostCents: integer('electricity_cost_cents'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -373,7 +373,12 @@
       "paymentBreakdown": "Distribucion de estados de transacciones de pago (capturadas, pendientes, reembolsadas, etc.).",
       "peakUsage": "Mapa de calor de horarios de inicio de sesiones de carga por hora y dia de la semana.",
       "activeSessionsTable": "Vista en tiempo real de las sesiones de carga actualmente activas.",
-      "siteMap": "Mapa que muestra las ubicaciones de todos los sitios con el conteo de estaciones."
+      "siteMap": "Mapa que muestra las ubicaciones de todos los sitios con el conteo de estaciones.",
+      "electricityCost": "Costo mayorista total de electricidad del operador en todas las sesiones, según las tarifas configuradas por sitio.",
+      "dayElectricityCost": "Costo mayorista de electricidad de las sesiones completadas hoy.",
+      "profit": "Ingresos totales menos el costo total de electricidad en todas las sesiones.",
+      "dayProfit": "Ingresos de hoy menos el costo de electricidad de hoy.",
+      "totalPorts": "Número total de puertos de conexión en todas las estaciones."
     },
     "historicalInfo": {
       "totalStations": "Estaciones registradas para {{date}}. Rangos muestran el promedio diario.",
@@ -403,7 +408,13 @@
       "totalSessions": "Promedio de conteo acumulado de sesiones en los ultimos 14 dias ({{from}} a {{to}})."
     },
     "co2Avoided": "CO₂ Evitado",
-    "co2AvoidedTooltip": "Total de emisiones de CO₂ evitadas por la carga de vehiculos electricos en comparacion con la conduccion a gasolina"
+    "co2AvoidedTooltip": "Total de emisiones de CO₂ evitadas por la carga de vehiculos electricos en comparacion con la conduccion a gasolina",
+    "electricityCost": "Costo total de electricidad",
+    "profitability": "Rentabilidad",
+    "profit": "Ganancia total",
+    "dayElectricityCost": "Costo de electricidad de hoy",
+    "dayProfit": "Ganancia de hoy",
+    "totalPorts": "Puertos totales"
   },
   "sites": {
     "title": "Sitios",
@@ -494,7 +505,26 @@
     "carbonRegionDescription": "Seleccione la region de la red para los calculos de intensidad de carbono.",
     "carbonIntensity": "Intensidad de Carbono",
     "noCarbonRegion": "Sin region de carbono asignada",
-    "underMaintenanceBadge": "Mantenimiento"
+    "underMaintenanceBadge": "Mantenimiento",
+    "electricityRates": "Tarifas de electricidad",
+    "electricityRate": "Tarifa de electricidad",
+    "addElectricityRate": "Agregar tarifa",
+    "electricityRateName": "Nombre",
+    "ratePerKwh": "Tarifa ($/kWh)",
+    "electricityRateRestrictions": "Se aplica cuando",
+    "electricityRateAlways": "Siempre (tarifa plana)",
+    "noElectricityRates": "Sin tarifas de electricidad",
+    "noElectricityRatesDescription": "Agregue una tarifa para registrar el costo mayorista de electricidad por sesión.",
+    "deleteElectricityRate": "Eliminar tarifa",
+    "confirmDeleteElectricityRate": "¿Eliminar esta tarifa de electricidad?",
+    "saveElectricityRate": "Guardar tarifa",
+    "electricityRateCreated": "Tarifa de electricidad creada",
+    "electricityRateUpdated": "Tarifa de electricidad actualizada",
+    "electricityRateDeleted": "Tarifa de electricidad eliminada",
+    "electricityRateTimeOfDay": "Hora del día",
+    "electricityRateDayAndTime": "Día y hora",
+    "electricityRateSeasonal": "Rango de fechas",
+    "electricityRateDaysOfWeek": "Días de la semana"
   },
   "stations": {
     "title": "Estaciones",
@@ -870,7 +900,9 @@
     "guestPreAuthAmount": "Monto Pre-Autorizado",
     "guestStripePaymentIntent": "Stripe PaymentIntent",
     "guestCreatedAt": "Creado",
-    "guestExpiresAt": "Expira"
+    "guestExpiresAt": "Expira",
+    "electricityCost": "Costo de electricidad",
+    "electricityCostTooltip": "Costo mayorista de electricidad del operador para esta sesión"
   },
   "drivers": {
     "title": "Conductores",
@@ -2276,7 +2308,8 @@
     "MAINTENANCE_INVALID_RANGE": "El fin del mantenimiento debe ser posterior al inicio",
     "MAINTENANCE_ALREADY_ACTIVE": "El evento de mantenimiento ya está activo",
     "MAINTENANCE_ACTIVE": "El sitio está actualmente en mantenimiento",
-    "RESERVATION_DURING_MAINTENANCE": "La reserva cae dentro de una ventana de mantenimiento programado"
+    "RESERVATION_DURING_MAINTENANCE": "La reserva cae dentro de una ventana de mantenimiento programado",
+    "ELECTRICITY_RATE_NOT_FOUND": "Tarifa de electricidad no encontrada"
   },
   "logs": {
     "title": "Registros",

@@ -3,6 +3,10 @@
 
 import { z } from 'zod';
 
+import { getZonedComponents, isInDateRange, isInTimeRange, timeToMinutes } from './time-window.js';
+
+export { timeToMinutes };
+
 export interface TariffRestrictions {
   timeRange?: { startTime: string; endTime: string };
   daysOfWeek?: number[];
@@ -95,93 +99,6 @@ export function derivePriority(restrictions: TariffRestrictions | null): number 
   if (restrictions.daysOfWeek != null && restrictions.timeRange != null) return 20;
   if (restrictions.timeRange != null) return 10;
   return 0;
-}
-
-export function timeToMinutes(time: string): number {
-  const [hoursStr, minutesStr] = time.split(':');
-  return Number(hoursStr) * 60 + Number(minutesStr);
-}
-
-interface ZonedComponents {
-  hour: number;
-  minute: number;
-  dayOfWeek: number;
-  monthDay: string;
-  isoDate: string;
-}
-
-const WEEKDAY_INDEX: Record<string, number> = {
-  Sun: 0,
-  Mon: 1,
-  Tue: 2,
-  Wed: 3,
-  Thu: 4,
-  Fri: 5,
-  Sat: 6,
-};
-
-/**
- * Extract calendar components in the given timezone. Without a timezone the
- * server's local time is used (the historic behaviour). Pass the site's
- * timezone -- typically `sites.timezone`, e.g. 'America/Los_Angeles' -- so
- * tariff windows and holiday boundaries are evaluated where the driver
- * actually plugs in, not where the server happens to live.
- */
-function getZonedComponents(now: Date, timezone?: string): ZonedComponents {
-  if (timezone == null) {
-    return {
-      hour: now.getHours(),
-      minute: now.getMinutes(),
-      dayOfWeek: now.getDay(),
-      monthDay: `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
-      isoDate: `${String(now.getFullYear())}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
-    };
-  }
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    weekday: 'short',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = fmt.formatToParts(now);
-  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
-  // Intl returns "24" for midnight in some locales when hour12 is false; clamp.
-  const hour = Number(get('hour')) % 24;
-  return {
-    hour,
-    minute: Number(get('minute')),
-    dayOfWeek: WEEKDAY_INDEX[get('weekday')] ?? 0,
-    monthDay: `${get('month')}-${get('day')}`,
-    isoDate: `${get('year')}-${get('month')}-${get('day')}`,
-  };
-}
-
-function isInTimeRange(zc: ZonedComponents, startTime: string, endTime: string): boolean {
-  const currentMinutes = zc.hour * 60 + zc.minute;
-  const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(endTime);
-
-  if (startMinutes < endMinutes) {
-    // Normal range (e.g., 09:00-17:00)
-    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-  }
-  // Midnight-crossing range (e.g., 22:00-06:00)
-  return currentMinutes >= startMinutes || currentMinutes < endMinutes;
-}
-
-function isInDateRange(zc: ZonedComponents, startDate: string, endDate: string): boolean {
-  const currentMD = zc.monthDay;
-
-  if (startDate <= endDate) {
-    // Normal range (e.g., 06-01 to 09-30)
-    return currentMD >= startDate && currentMD <= endDate;
-  }
-  // Wrapping range (e.g., 11-01 to 03-31)
-  return currentMD >= startDate || currentMD <= endDate;
 }
 
 function holidayIsoDate(holiday: Date): string {

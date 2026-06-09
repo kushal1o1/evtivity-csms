@@ -27,6 +27,7 @@ import {
   stationAuditLog,
   isAutoDisableOnCriticalEnabled,
   isSiteFreeVendEnabledByStation,
+  getElectricityRatePeriodsForSite,
 } from '@evtivity/database';
 import { getSecuritySeverity } from '../lib/security-severity.js';
 import {
@@ -42,6 +43,8 @@ import {
   dispatchOneShotStationMessage,
   FREE_VEND_OCPP_21_VARIABLES,
   FREE_VEND_OCPP_16_KEYS,
+  resolveElectricityRate,
+  calculateElectricityCostCents,
 } from '@evtivity/lib';
 import type {
   TariffInput,
@@ -1437,6 +1440,27 @@ export function registerProjections(
       }
     }
 
+    // Reflect connector fault state on the station's availability: a faulted
+    // connector faults the station, and clearing the last connector fault
+    // returns it to available. An operator/security/firmware 'unavailable' is
+    // left untouched, and the write is skipped when the value would not change.
+    await sql`
+      WITH fault AS (
+        SELECT EXISTS (
+          SELECT 1 FROM connectors c
+          JOIN evses e ON e.id = c.evse_id
+          WHERE e.station_id = ${stationUuid} AND c.status = 'faulted'
+        ) AS has_fault
+      )
+      UPDATE charging_stations cs
+      SET availability = (CASE WHEN fault.has_fault THEN 'faulted' ELSE 'available' END)::charging_station_status,
+          updated_at = now()
+      FROM fault
+      WHERE cs.id = ${stationUuid}
+        AND cs.availability <> 'unavailable'
+        AND cs.availability <> (CASE WHEN fault.has_fault THEN 'faulted' ELSE 'available' END)::charging_station_status
+    `;
+
     const siteId = await resolveSiteId(stationUuid);
     await notifyChange('station.status', stationUuid, siteId);
     if (siteId != null) {
@@ -2499,6 +2523,43 @@ export function registerProjections(
         }
 
         const siteId = await resolveSiteId(stationUuid);
+
+        // Electricity cost (operator's wholesale cost). Forward-only: computed
+        // once at session end against the site's TOU rate periods, never
+        // backfilled. Fail-open: a missing rate config or any error leaves the
+        // column null and never blocks session completion.
+        if (siteId != null) {
+          try {
+            const periods = await getElectricityRatePeriodsForSite(siteId);
+            if (periods.length > 0) {
+              const [ctxRow] = await sql`
+                SELECT cs.ended_at, s.timezone
+                FROM charging_sessions cs
+                JOIN sites s ON s.id = ${siteId}
+                WHERE cs.id = ${sessionId}
+              `;
+              const timezone = (ctxRow?.['timezone'] as string | null) ?? undefined;
+              const endedAtValue = ctxRow?.['ended_at'] as string | Date | null | undefined;
+              const ratedAt = endedAtValue != null ? new Date(endedAtValue) : new Date();
+              const rate = resolveElectricityRate(periods, ratedAt, timezone);
+              const sessionEnergyWh = Number(sessionRow.energy_delivered_wh ?? 0);
+              if (rate != null && sessionEnergyWh > 0) {
+                const electricityCostCents = calculateElectricityCostCents(
+                  sessionEnergyWh,
+                  rate.ratePerKwh,
+                );
+                await sql`
+                  UPDATE charging_sessions
+                  SET electricity_cost_cents = ${electricityCostCents}, updated_at = now()
+                  WHERE id = ${sessionId} AND electricity_cost_cents IS NULL
+                `;
+              }
+            }
+          } catch (electricityErr: unknown) {
+            logger.warn({ err: electricityErr, sessionId }, 'electricity cost calculation failed');
+          }
+        }
+
         await notifyChange('session.ended', stationUuid, siteId, sessionId);
         await notifyOcpiPush('session', { sessionId });
 

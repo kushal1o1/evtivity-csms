@@ -159,3 +159,14 @@ export type {
   CssConfigDefaultsEvse,
   CssConfigDefault,
 } from './css-config-defaults.js';
+
+export {
+  resolveElectricityRate,
+  calculateElectricityCostCents,
+  deriveElectricityRatePriority,
+  electricityRateRestrictionsSchema,
+} from './electricity-rate.js';
+export type {
+  ElectricityRatePeriod,
+  ElectricityRatePeriodRestrictions,
+} from './electricity-rate.js';

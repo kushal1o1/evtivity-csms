@@ -34,6 +34,8 @@ interface SiteData {
     day_sessions: string;
     total_energy_wh: string;
     day_energy_wh: string;
+    total_electricity_cost_cents: string;
+    day_electricity_cost_cents: string;
     active_sessions: string;
   };
   revenue?: {
@@ -53,6 +55,8 @@ const DEFAULT_SITE_DATA: Required<Omit<SiteData, 'uptime'>> & Pick<SiteData, 'up
     day_sessions: '12',
     total_energy_wh: '50000',
     day_energy_wh: '6000',
+    total_electricity_cost_cents: '1200',
+    day_electricity_cost_cents: '150',
     active_sessions: '3',
   },
   revenue: {
@@ -216,6 +220,8 @@ describe('dashboardSnapshotHandler', () => {
       250000, // totalRevCents
       30000, // dayRevenueCents
       2500, // avgRevPerSession = round(250000/100)
+      1200, // totalElectricityCostCents
+      150, // dayElectricityCostCents
       90, // totalTransactions
       11, // dayTransactions
       20, // totalPorts
@@ -241,8 +247,8 @@ describe('dashboardSnapshotHandler', () => {
     await dashboardSnapshotHandler(log);
 
     const values = upsertFor('sit_1');
-    expect(values[19]).toBe(0); // avgPingLatencyMs default
-    expect(values[20]).toBe(100); // pingSuccessRate default
+    expect(values[21]).toBe(0); // avgPingLatencyMs default
+    expect(values[22]).toBe(100); // pingSuccessRate default
   });
 
   it('handles zero stations: onlinePercent and avgRevPerSession both 0, uptime/ports default', async () => {
@@ -256,6 +262,8 @@ describe('dashboardSnapshotHandler', () => {
           day_sessions: '0',
           total_energy_wh: '0',
           day_energy_wh: '0',
+          total_electricity_cost_cents: '0',
+          day_electricity_cost_cents: '0',
           active_sessions: '0',
         },
         revenue: {
@@ -277,8 +285,8 @@ describe('dashboardSnapshotHandler', () => {
     expect(values[4]).toBe(0); // onlinePercent -> 0 (no divide-by-zero)
     expect(values[5]).toBe(100); // uptimePercent default when row missing
     expect(values[14]).toBe(0); // avgRevPerSession -> 0 (no sessions)
-    expect(values[17]).toBe(0); // totalPorts default
-    expect(values[18]).toBe(0); // stationsBelowThreshold default
+    expect(values[19]).toBe(0); // totalPorts default
+    expect(values[20]).toBe(0); // stationsBelowThreshold default
   });
 
   it('snapshots every site across batch boundaries (CONCURRENCY=5)', async () => {
