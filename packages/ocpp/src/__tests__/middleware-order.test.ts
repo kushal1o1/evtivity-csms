@@ -43,10 +43,12 @@ function makeCtx(
 }
 
 // The OcppServer pipeline registers boot-guard before validate (ocpp-server.ts).
-// These tests pin that contract: a non-booted station's malformed CALL must
-// surface SecurityError (OCPP 2.1 B02.FR.02), not a schema error. An empty
-// object is an invalid StatusNotificationRequest (required timestamp,
-// connectorStatus, evseId, connectorId), so validate would throw on it.
+// These tests pin that contract: a non-booted (Pending/Rejected) station's malformed
+// CALL must surface SecurityError (OCPP 2.1 B01.FR.10, and the Pending-specific
+// B02.FR.09 - the CSMS-side rules; B02.FR.02 is the mirror Charging-Station "SHALL NOT
+// send" obligation), not a schema error. An empty object is an invalid
+// StatusNotificationRequest (required timestamp, connectorStatus, evseId,
+// connectorId), so validate would throw on it.
 describe('middleware order: boot-guard before validate', () => {
   const INVALID_STATUS = {};
 

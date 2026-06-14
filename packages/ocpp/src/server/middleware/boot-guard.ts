@@ -6,12 +6,15 @@ import { OcppErrorCode } from '../../protocol/error-codes.js';
 import type { HandlerContext, NextFunction } from './pipeline.js';
 
 /**
- * Per OCPP 2.1 spec B02.FR.02: when the CSMS responds with Pending or Rejected
- * to BootNotification, it MUST respond to all CALL messages other than
- * BootNotification with a SecurityError CALLERROR until a BootNotification is
- * Accepted.
+ * Per OCPP 2.1 spec B01.FR.10 (and the Pending-specific B02.FR.09): once a
+ * BootNotificationResponse with a status other than Accepted has been sent, the
+ * CSMS SHALL respond with a SecurityError CALLERROR to any CALL other than
+ * BootNotificationRequest (or one triggered by TriggerMessage / GetBaseReport /
+ * GetReport) until a BootNotification is Accepted. B02.FR.02 is the mirror
+ * Charging-Station obligation ("SHALL NOT send" those CALLs), not the CSMS rule.
  *
- * The spec scopes this rule to the Pending/Rejected case. It does NOT mandate
+ * The spec scopes this to the Pending/Rejected case (its precondition is that a
+ * non-Accepted BootNotificationResponse was already sent). It does NOT mandate
  * rejection when bootStatus is null (no BootNotification has arrived yet).
  * Real stations commonly send Heartbeat or StatusNotification in parallel
  * with BootNotification because of WebSocket frame queuing — extending the
