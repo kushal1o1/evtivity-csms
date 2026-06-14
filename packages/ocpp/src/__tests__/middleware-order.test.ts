@@ -12,6 +12,7 @@ function makeCtx(
   action: string,
   bootStatus: HandlerContext['session']['bootStatus'],
   payload: Record<string, unknown>,
+  protocolVersion: 'ocpp1.6' | 'ocpp2.1' = 'ocpp2.1',
 ): HandlerContext {
   return {
     stationId: 'CS-ORDER',
@@ -19,14 +20,14 @@ function makeCtx(
     session: {
       stationId: 'CS-ORDER',
       stationDbId: null,
-      ocppProtocol: 'ocpp2.1',
+      ocppProtocol: protocolVersion,
       connectedAt: new Date(),
       lastHeartbeat: new Date(),
       authenticated: true,
       pendingMessages: new Map(),
       bootStatus,
     },
-    protocolVersion: 'ocpp2.1',
+    protocolVersion,
     messageId: 'msg-order',
     action,
     payload,
@@ -42,6 +43,32 @@ function makeCtx(
   };
 }
 
+// Run a ctx through the boot-guard + validate pair and return the thrown error
+// (or undefined). 'validate-first' reproduces the pre-fix order so a test can
+// show what that order would have leaked.
+async function runOrdered(
+  ctx: HandlerContext,
+  order: 'guard-first' | 'validate-first' = 'guard-first',
+): Promise<unknown> {
+  const pipeline = new MiddlewarePipeline();
+  const middlewares =
+    order === 'guard-first'
+      ? [createBootGuardMiddleware(), validateMiddleware]
+      : [validateMiddleware, createBootGuardMiddleware()];
+  for (const mw of middlewares) pipeline.use(mw);
+  return pipeline.execute(ctx).catch((e: unknown) => e);
+}
+
+function expectSecurityError(err: unknown): void {
+  expect(err).toBeInstanceOf(OcppError);
+  expect((err as OcppError).errorCode).toBe('SecurityError');
+}
+
+function expectValidationError(err: unknown): void {
+  expect(err).toBeInstanceOf(OcppError);
+  expect((err as OcppError).errorCode).not.toBe('SecurityError');
+}
+
 // The OcppServer pipeline registers boot-guard before validate (ocpp-server.ts).
 // These tests pin that contract: a non-booted (Pending/Rejected) station's malformed
 // CALL must surface SecurityError (OCPP 2.1 B01.FR.10, and the Pending-specific
@@ -52,55 +79,33 @@ function makeCtx(
 describe('middleware order: boot-guard before validate', () => {
   const INVALID_STATUS = {};
 
-  it('non-booted (Pending) station with a malformed payload gets SecurityError', async () => {
-    const pipeline = new MiddlewarePipeline();
-    pipeline.use(createBootGuardMiddleware());
-    pipeline.use(validateMiddleware);
-
-    const err = await pipeline
-      .execute(makeCtx('StatusNotification', 'Pending', INVALID_STATUS))
-      .catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(OcppError);
-    expect((err as OcppError).errorCode).toBe('SecurityError');
+  it('2.1: non-booted (Pending) station with a malformed payload gets SecurityError', async () => {
+    expectSecurityError(await runOrdered(makeCtx('StatusNotification', 'Pending', INVALID_STATUS)));
   });
 
-  it('reversed order leaks a validation error for the same station (why the order matters)', async () => {
-    const pipeline = new MiddlewarePipeline();
-    pipeline.use(validateMiddleware);
-    pipeline.use(createBootGuardMiddleware());
-
-    const err = await pipeline
-      .execute(makeCtx('StatusNotification', 'Pending', INVALID_STATUS))
-      .catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(OcppError);
-    expect((err as OcppError).errorCode).not.toBe('SecurityError');
+  it('2.1: reversed order leaks a validation error for the same station (why the order matters)', async () => {
+    expectValidationError(
+      await runOrdered(makeCtx('StatusNotification', 'Pending', INVALID_STATUS), 'validate-first'),
+    );
   });
 
-  it('booted (Accepted) station still gets schema validation', async () => {
-    const pipeline = new MiddlewarePipeline();
-    pipeline.use(createBootGuardMiddleware());
-    pipeline.use(validateMiddleware);
-
-    const err = await pipeline
-      .execute(makeCtx('StatusNotification', 'Accepted', INVALID_STATUS))
-      .catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(OcppError);
-    expect((err as OcppError).errorCode).not.toBe('SecurityError');
+  it('2.1: booted (Accepted) station still gets schema validation', async () => {
+    expectValidationError(
+      await runOrdered(makeCtx('StatusNotification', 'Accepted', INVALID_STATUS)),
+    );
   });
 
-  it('BootNotification is never blocked by boot-guard and is still validated', async () => {
-    const pipeline = new MiddlewarePipeline();
-    pipeline.use(createBootGuardMiddleware());
-    pipeline.use(validateMiddleware);
+  it('2.1: BootNotification is never blocked by boot-guard and is still validated', async () => {
+    expectValidationError(await runOrdered(makeCtx('BootNotification', 'Pending', {})));
+  });
 
-    const err = await pipeline
-      .execute(makeCtx('BootNotification', 'Pending', {}))
-      .catch((e: unknown) => e);
+  it('1.6: non-booted (Pending) station with a malformed payload gets SecurityError', async () => {
+    expectSecurityError(await runOrdered(makeCtx('StatusNotification', 'Pending', {}, 'ocpp1.6')));
+  });
 
-    expect(err).toBeInstanceOf(OcppError);
-    expect((err as OcppError).errorCode).not.toBe('SecurityError');
+  it('1.6: booted (Accepted) station still gets schema validation', async () => {
+    expectValidationError(
+      await runOrdered(makeCtx('StatusNotification', 'Accepted', {}, 'ocpp1.6')),
+    );
   });
 });
