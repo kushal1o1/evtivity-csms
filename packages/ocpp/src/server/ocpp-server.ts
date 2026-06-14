@@ -128,8 +128,11 @@ export class OcppServer {
     this.pipeline.use(createRateLimitMiddleware());
     this.pipeline.use(createDedupMiddleware());
     this.pipeline.use(logMiddleware);
-    this.pipeline.use(validateMiddleware);
+    // Boot guard precedes validate: a non-booted (Pending/Rejected) station must get
+    // SecurityError for any non-BootNotification CALL, even one whose payload is malformed
+    // (OCPP 2.1 B01.FR.10, and the Pending-specific B02.FR.09).
     this.pipeline.use(createBootGuardMiddleware());
+    this.pipeline.use(validateMiddleware);
     this.pipeline.use(this.router.asMiddleware());
 
     // Register handlers
