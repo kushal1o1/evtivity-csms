@@ -133,6 +133,7 @@ import { requestStationMessageRepush } from '@evtivity/services/station-message.
 import {
   STORAGE_PROVIDERS,
   parseStorageAllowedPrivateHosts,
+  validateR2Endpoint,
   validateStorageEndpoint,
 } from '@evtivity/services/storage';
 import { factorProof } from '../lib/mfa-factor-proof.js';
@@ -673,7 +674,7 @@ const s3StatusResponse = z
     configured: z
       .boolean()
       .describe(
-        'Whether storage is fully configured (bucket, region and credentials present, and for an S3-compatible provider the endpoint)',
+        'Whether storage is fully configured (bucket, region and credentials present, and for an S3-compatible provider or Cloudflare R2 the endpoint)',
       ),
   })
   .loose();
@@ -1352,8 +1353,10 @@ export function settingsRoutes(app: FastifyInstance): void {
       const accessKeyIdEnc = map.get('s3.accessKeyIdEnc') as string | undefined;
       const secretAccessKeyEnc = map.get('s3.secretAccessKeyEnc') as string | undefined;
       const endpoint = map.get('s3.endpoint') as string | undefined;
+      const provider = map.get('s3.provider');
+      const needsEndpoint = provider === 's3-compatible' || provider === 'r2';
       const configured =
-        (map.get('s3.provider') !== 's3-compatible' || (endpoint != null && endpoint !== '')) &&
+        (!needsEndpoint || (endpoint != null && endpoint !== '')) &&
         bucket != null &&
         bucket !== '' &&
         region != null &&
@@ -1370,9 +1373,15 @@ export function settingsRoutes(app: FastifyInstance): void {
     provider: z
       .enum(STORAGE_PROVIDERS)
       .optional()
-      .describe('Storage provider: s3 (AWS S3, the default) or s3-compatible (a custom endpoint)'),
+      .describe(
+        'Storage provider: s3 (AWS S3, the default), s3-compatible (a custom endpoint) or r2 (Cloudflare R2)',
+      ),
     bucket: z.string().min(1),
-    region: z.string().min(1),
+    region: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Bucket region, required for s3 and s3-compatible. Cloudflare R2 always uses auto'),
     accessKeyId: z.string().min(1),
     secretAccessKey: z.string().min(1),
     endpoint: z
@@ -1380,7 +1389,7 @@ export function settingsRoutes(app: FastifyInstance): void {
       .max(2048)
       .optional()
       .describe(
-        'S3-compatible endpoint URL without a path, required for s3-compatible. https on a public host, or a host in allowedPrivateHosts (which may use http)',
+        'Endpoint URL, required for s3-compatible and r2. s3-compatible: without a path, https on a public host, or a host in allowedPrivateHosts (which may use http). r2: the S3 API URL of the account, https://<account id>.r2.cloudflarestorage.com (or its eu or fedramp jurisdiction); a bucket name after it is dropped',
       ),
     forcePathStyle: z
       .boolean()
@@ -1405,6 +1414,19 @@ export function settingsRoutes(app: FastifyInstance): void {
     code: 'PRIVATE_URL',
   };
 
+  const invalidR2EndpointError = {
+    error:
+      'The endpoint must be the S3 API URL of a Cloudflare R2 account: https://<account id>.r2.cloudflarestorage.com',
+    code: 'VALIDATION_ERROR',
+    field: 'endpoint',
+  };
+
+  const missingStorageRegionError = {
+    error: 'region is required for AWS S3 and S3-compatible storage',
+    code: 'VALIDATION_ERROR',
+    field: 'region',
+  };
+
   const invalidStorageAllowedHostsError = {
     error: `allowedPrivateHosts must be at most ${String(MAX_ALLOWED_PRIVATE_HOSTS)} hostnames or IP addresses without scheme or port, and no link-local, cloud metadata or other unroutable address`,
     code: 'VALIDATION_ERROR',
@@ -1427,14 +1449,16 @@ export function settingsRoutes(app: FastifyInstance): void {
         response: {
           200: successResponse,
           400: errorWith(
-            'Invalid storage endpoint or private hosts, or a missing or wrong proof',
+            'Invalid storage endpoint or private hosts, a missing region, or a missing or wrong proof',
             [ERROR_CODES.PRIVATE_URL, ...SESSION_PROOF_ERROR_CODES],
             {
               ...sessionProofErrorFields,
               field: z
-                .literal('allowedPrivateHosts')
+                .enum(['allowedPrivateHosts', 'endpoint', 'region'])
                 .optional()
-                .describe('The refused field, when the private hosts list was refused'),
+                .describe(
+                  'The refused field: the private hosts list, an R2 endpoint, or a missing region',
+                ),
             },
           ),
           403: errorWith('API key changing the provider or endpoint', [
@@ -1461,7 +1485,21 @@ export function settingsRoutes(app: FastifyInstance): void {
       const provider = body.provider ?? 's3';
       let endpoint = '';
       let allowedPrivateHosts: string[] = [];
-      if (provider === 's3-compatible') {
+      // R2 has a single region, auto; the other providers need one.
+      const region = provider === 'r2' ? 'auto' : body.region;
+      if (region == null) {
+        await reply.status(400).send(missingStorageRegionError);
+        return;
+      }
+      if (provider === 'r2') {
+        // One public host per account, so no private hosts list applies.
+        const validEndpoint = validateR2Endpoint(body.endpoint);
+        if (validEndpoint == null) {
+          await reply.status(400).send(invalidR2EndpointError);
+          return;
+        }
+        endpoint = validEndpoint;
+      } else if (provider === 's3-compatible') {
         const hosts = parseStorageAllowedPrivateHosts(body.allowedPrivateHosts ?? []);
         if (hosts == null) {
           await reply.status(400).send(invalidStorageAllowedHostsError);
@@ -1494,7 +1532,7 @@ export function settingsRoutes(app: FastifyInstance): void {
         },
         { key: 's3.allowedPrivateHosts', value: allowedPrivateHosts },
         { key: 's3.bucket', value: body.bucket },
-        { key: 's3.region', value: body.region },
+        { key: 's3.region', value: region },
         { key: 's3.accessKeyIdEnc', value: encryptString(body.accessKeyId, encryptionKey) },
         { key: 's3.secretAccessKeyEnc', value: encryptString(body.secretAccessKey, encryptionKey) },
       ];

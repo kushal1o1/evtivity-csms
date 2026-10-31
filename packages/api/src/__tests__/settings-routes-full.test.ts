@@ -867,6 +867,30 @@ describe('Settings routes - full coverage', () => {
       expect(res.json().configured).toBe(true);
     });
 
+    it.each([
+      ['without', '', false],
+      ['with', 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com', true],
+    ])(
+      'returns configured for Cloudflare R2 only with an endpoint (%s)',
+      async (_, endpoint, configured) => {
+        setupDbResults([
+          { key: 's3.provider', value: 'r2' },
+          { key: 's3.endpoint', value: endpoint },
+          { key: 's3.bucket', value: 'my-bucket' },
+          { key: 's3.region', value: 'auto' },
+          { key: 's3.accessKeyIdEnc', value: 'enc-key-id' },
+          { key: 's3.secretAccessKeyEnc', value: 'enc-secret' },
+        ]);
+        const res = await app.inject({
+          method: 'GET',
+          url: '/settings/s3/status',
+          headers: { authorization: `Bearer ${operatorToken}` },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().configured).toBe(configured);
+      },
+    );
+
     it('ignores non-s3 settings in the result set', async () => {
       setupDbResults([
         { key: 'smtp.host', value: 'mail.example.com' },
@@ -1246,6 +1270,72 @@ describe('Settings routes - full coverage', () => {
         's3.forcePathStyle': false,
         's3.allowedPrivateHosts': [],
       });
+    });
+
+    describe('Cloudflare R2', () => {
+      const R2_ENDPOINT = 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com';
+
+      it('saves the S3 API URL with region auto, no private hosts and no path-style setting', async () => {
+        const res = await putS3({
+          proof: PROOF,
+          provider: 'r2',
+          region: undefined,
+          endpoint: `${R2_ENDPOINT}/my-bucket`,
+          forcePathStyle: true,
+          allowedPrivateHosts: ['minio.internal'],
+        });
+        expect(res.statusCode).toBe(200);
+        expect(upserted()).toMatchObject({
+          's3.provider': 'r2',
+          's3.endpoint': R2_ENDPOINT,
+          's3.region': 'auto',
+          's3.forcePathStyle': false,
+          's3.allowedPrivateHosts': [],
+          's3.bucket': 'my-bucket',
+        });
+        expect(mockClearObjectStorageCache).toHaveBeenCalled();
+      });
+
+      it('stores auto even when a region is sent', async () => {
+        const res = await putS3({ proof: PROOF, provider: 'r2', endpoint: R2_ENDPOINT });
+        expect(res.statusCode).toBe(200);
+        expect(upserted()['s3.region']).toBe('auto');
+      });
+
+      it.each([
+        undefined,
+        'https://storage.example.com',
+        'https://files.example.com',
+        'https://my-bucket.0123456789abcdef0123456789abcdef.r2.dev',
+        'http://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+        'https://10.0.0.5',
+      ])('refuses the endpoint %s with VALIDATION_ERROR and writes nothing', async (endpoint) => {
+        const res = await putS3({ proof: PROOF, provider: 'r2', endpoint });
+        expect(res.statusCode).toBe(400);
+        expect(res.json()).toMatchObject({ code: 'VALIDATION_ERROR', field: 'endpoint' });
+        expect(db.insert).not.toHaveBeenCalled();
+      });
+
+      it('asks a session for the proof when it switches to R2', async () => {
+        proofState.calls = 0;
+        const res = await putS3({ provider: 'r2', endpoint: R2_ENDPOINT });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().proofKinds).toEqual(['password']);
+        expect(proofState.calls).toBe(1);
+        expect(db.insert).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each(['s3', 's3-compatible'])('requires a region for %s', async (provider) => {
+      const res = await putS3({
+        proof: PROOF,
+        provider,
+        region: undefined,
+        endpoint: 'https://s3.wasabisys.com',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ code: 'VALIDATION_ERROR', field: 'region' });
+      expect(db.insert).not.toHaveBeenCalled();
     });
   });
 
