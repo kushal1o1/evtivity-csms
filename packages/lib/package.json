@@ -110,6 +110,9 @@
     "./account-avatar": {
       "import": "./src/account-avatar.ts"
     },
+    "./storage-upload": {
+      "import": "./src/storage-upload.ts"
+    },
     "./languages": {
       "import": "./src/languages.ts"
     },
