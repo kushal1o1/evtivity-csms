@@ -265,6 +265,86 @@ describe('IntegrationsSettings storage tab', () => {
     });
   });
 
+  describe('Cloudflare R2', () => {
+    const R2_ENDPOINT = 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com';
+    const R2_SETTINGS = {
+      ...AWS_SETTINGS,
+      's3.provider': 'r2',
+      's3.region': 'auto',
+      's3.endpoint': R2_ENDPOINT,
+    };
+
+    it('loads and saves the S3 API URL without a region or private hosts', async () => {
+      renderStorageTab(R2_SETTINGS);
+      expect(valueOf('settings.s3Provider')).toBe('r2');
+      expect(valueOf('settings.s3R2Endpoint')).toBe(R2_ENDPOINT);
+      expect(screen.queryByLabelText('settings.s3Region')).toBeNull();
+      expect(screen.queryByLabelText('settings.s3ForcePathStyle')).toBeNull();
+      expect(screen.queryByLabelText('settings.s3AllowedPrivateHosts')).toBeNull();
+      screen.getByText('settings.s3R2ImageOriginHint');
+
+      save();
+      await waitFor(() => {
+        expect(apiMock.put).toHaveBeenCalledWith('/v1/settings/s3', {
+          provider: 'r2',
+          bucket: 'my-bucket',
+          accessKeyId: 'AKIA123',
+          secretAccessKey: 'secret123',
+          endpoint: R2_ENDPOINT,
+        });
+      });
+    });
+
+    it('needs the S3 API URL but no region before it can be saved', () => {
+      renderStorageTab({ ...AWS_SETTINGS, 's3.region': '' });
+      fireEvent.change(screen.getByLabelText('settings.s3Provider'), { target: { value: 'r2' } });
+      expect(saveButton().disabled).toBe(true);
+
+      fireEvent.change(screen.getByLabelText('settings.s3R2Endpoint'), {
+        target: { value: `${R2_ENDPOINT}/my-bucket` },
+      });
+      expect(saveButton().disabled).toBe(false);
+    });
+
+    it('drops the auto region when switching from R2 to another provider', () => {
+      renderStorageTab(R2_SETTINGS);
+      fireEvent.change(screen.getByLabelText('settings.s3Provider'), { target: { value: 's3' } });
+      expect(valueOf('settings.s3Region')).toBe('');
+      expect(saveButton().disabled).toBe(true);
+    });
+
+    it('says why a refused S3 API URL was not saved', async () => {
+      apiMock.put.mockRejectedValue(
+        new ApiError(400, { error: 'refused', code: 'VALIDATION_ERROR', field: 'endpoint' }),
+      );
+      renderStorageTab({ ...R2_SETTINGS, 's3.endpoint': 'https://files.example.com' });
+      save();
+      await screen.findByText('settings.s3R2EndpointRefused');
+    });
+
+    it('sends no proof when the URL is pasted again with the bucket name', async () => {
+      proofKinds(['password']);
+      renderStorageTab(R2_SETTINGS);
+      fireEvent.change(screen.getByLabelText('settings.s3R2Endpoint'), {
+        target: { value: `${R2_ENDPOINT}/my-bucket` },
+      });
+      save();
+      await waitFor(() => {
+        expect(apiMock.put).toHaveBeenCalled();
+      });
+      expect(apiMock.put.mock.calls[0]?.[1]).not.toHaveProperty('proof');
+    });
+
+    it('shows the R2 token guide and a CORS rule for PUT', () => {
+      renderStorageTab(R2_SETTINGS);
+      fireEvent.click(screen.getByText('settings.s3R2TokenTitle'));
+      screen.getByText('settings.s3R2TokenDescription');
+      fireEvent.click(screen.getByText('settings.s3CorsTitle'));
+      screen.getByText('settings.s3R2CorsDescription');
+      expect(screen.getByTestId('s3-cors-example').textContent).toContain('"PUT"');
+    });
+  });
+
   it('shows the generic message for other save errors', async () => {
     apiMock.put.mockRejectedValue(new ApiError(500, { error: 'boom', code: 'INTERNAL' }));
     renderStorageTab(AWS_SETTINGS);

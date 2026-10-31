@@ -43,11 +43,18 @@ function storedEndpointForm(value: string): string {
   return URL.parse(value.trim())?.origin ?? value.trim();
 }
 
-/** Whether a failed S3 save refused the private hosts list. */
-function isS3AllowedHostsRefusal(err: unknown): boolean {
-  if (!(err instanceof ApiError)) return false;
+type StorageProvider = 's3' | 's3-compatible' | 'r2';
+
+/** A stored or picked provider; anything else is AWS S3, the default. */
+function storageProviderOf(value: unknown): StorageProvider {
+  return value === 's3-compatible' || value === 'r2' ? value : 's3';
+}
+
+/** The field a failed S3 save refused with VALIDATION_ERROR, if any. */
+function s3RefusedField(err: unknown): unknown {
+  if (!(err instanceof ApiError)) return undefined;
   const body = err.body as { code?: unknown; field?: unknown } | null;
-  return body?.code === 'VALIDATION_ERROR' && body.field === 'allowedPrivateHosts';
+  return body?.code === 'VALIDATION_ERROR' ? body.field : undefined;
 }
 
 interface IntegrationsSettingsProps {
@@ -68,7 +75,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
   const [ftpPath, setFtpPath] = useState('');
 
   // S3 state
-  const [s3Provider, setS3Provider] = useState<'s3' | 's3-compatible'>('s3');
+  const [s3Provider, setS3Provider] = useState<StorageProvider>('s3');
   const [s3Endpoint, setS3Endpoint] = useState('');
   const [s3ForcePathStyle, setS3ForcePathStyle] = useState(false);
   const [s3AllowedHosts, setS3AllowedHosts] = useState('');
@@ -84,12 +91,14 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
   const [s3ProofFailure, setS3ProofFailure] = useState<ProofRejection | null>(null);
   const [s3ProofAsked, setS3ProofAsked] = useState(false);
   const [s3ProofRound, setS3ProofRound] = useState(0);
-  const storedS3Provider = settings?.['s3.provider'] === 's3-compatible' ? 's3-compatible' : 's3';
+  const storedS3Provider = storageProviderOf(settings?.['s3.provider']);
+  // An S3-compatible service and Cloudflare R2 are reached at s3.endpoint.
+  const s3HasEndpoint = s3Provider !== 's3';
   const storedS3Endpoint =
     typeof settings?.['s3.endpoint'] === 'string' ? settings['s3.endpoint'] : '';
   const s3DestinationChanged =
     s3Provider !== storedS3Provider ||
-    (s3Provider === 's3-compatible' && storedEndpointForm(s3Endpoint) !== storedS3Endpoint);
+    (s3HasEndpoint && storedEndpointForm(s3Endpoint) !== storedS3Endpoint);
   const s3NeedsProof = s3ProofKinds.length > 0 && s3DestinationChanged;
   const [s3CorsOpen, setS3CorsOpen] = useState(false);
 
@@ -179,7 +188,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
     setFtpUsername(s('ftp.username'));
     setFtpPassword(s('ftp.passwordEnc'));
     setFtpPath(s('ftp.path'));
-    setS3Provider(settings['s3.provider'] === 's3-compatible' ? 's3-compatible' : 's3');
+    setS3Provider(storageProviderOf(settings['s3.provider']));
     setS3Endpoint(s('s3.endpoint'));
     setS3ForcePathStyle(settings['s3.forcePathStyle'] === true);
     const s3Hosts = settings['s3.allowedPrivateHosts'];
@@ -256,9 +265,9 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
 
   const s3Mutation = useMutation({
     mutationFn: (vals: {
-      provider: 's3' | 's3-compatible';
+      provider: StorageProvider;
       bucket: string;
-      region: string;
+      region?: string;
       accessKeyId: string;
       secretAccessKey: string;
       endpoint?: string;
@@ -1243,13 +1252,34 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                   id="s3-provider"
                   value={s3Provider}
                   onChange={(e) => {
-                    setS3Provider(e.target.value === 's3-compatible' ? 's3-compatible' : 's3');
+                    const next = storageProviderOf(e.target.value);
+                    setS3Provider(next);
+                    // R2 stores the region auto, which means nothing elsewhere.
+                    if (next !== 'r2' && s3Region === 'auto') setS3Region('');
                   }}
                 >
                   <option value="s3">{t('settings.s3ProviderAws')}</option>
                   <option value="s3-compatible">{t('settings.s3ProviderCompatible')}</option>
+                  <option value="r2">{t('settings.s3ProviderR2')}</option>
                 </Select>
               </div>
+
+              {s3Provider === 'r2' && (
+                <div className="space-y-2">
+                  <Label htmlFor="s3-endpoint" className="leading-6">
+                    {t('settings.s3R2Endpoint')}
+                  </Label>
+                  <Input
+                    id="s3-endpoint"
+                    value={s3Endpoint}
+                    onChange={(e) => {
+                      setS3Endpoint(e.target.value);
+                    }}
+                    placeholder="https://<account id>.r2.cloudflarestorage.com"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('settings.s3R2EndpointHint')}</p>
+                </div>
+              )}
 
               {s3Provider === 's3-compatible' && (
                 <div className="space-y-2">
@@ -1282,19 +1312,21 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="s3-region" className="leading-6">
-                  {t('settings.s3Region')}
-                </Label>
-                <Input
-                  id="s3-region"
-                  value={s3Region}
-                  onChange={(e) => {
-                    setS3Region(e.target.value);
-                  }}
-                  placeholder="us-east-1"
-                />
-              </div>
+              {s3Provider !== 'r2' && (
+                <div className="space-y-2">
+                  <Label htmlFor="s3-region" className="leading-6">
+                    {t('settings.s3Region')}
+                  </Label>
+                  <Input
+                    id="s3-region"
+                    value={s3Region}
+                    onChange={(e) => {
+                      setS3Region(e.target.value);
+                    }}
+                    placeholder="us-east-1"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="s3-access-key" className="leading-6">
@@ -1367,6 +1399,10 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               </>
             )}
 
+            {s3Provider === 'r2' && (
+              <p className="text-sm text-muted-foreground">{t('settings.s3R2ImageOriginHint')}</p>
+            )}
+
             {s3NeedsProof && (
               <FactorProofField
                 key={`s3-${String(s3ProofRound)}`}
@@ -1386,10 +1422,10 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 type="button"
                 disabled={
                   s3Bucket === '' ||
-                  s3Region === '' ||
+                  (s3Provider !== 'r2' && s3Region === '') ||
                   s3AccessKeyId === '' ||
                   s3SecretAccessKey === '' ||
-                  (s3Provider === 's3-compatible' && s3Endpoint.trim() === '')
+                  (s3HasEndpoint && s3Endpoint.trim() === '')
                 }
                 onClick={() => {
                   if (s3NeedsProof && s3Proof == null) {
@@ -1400,9 +1436,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                     ...(s3NeedsProof && s3Proof != null ? { proof: s3Proof } : {}),
                     provider: s3Provider,
                     bucket: s3Bucket,
-                    region: s3Region,
+                    // R2 has a single region (auto), which the server sets.
+                    ...(s3Provider !== 'r2' ? { region: s3Region } : {}),
                     accessKeyId: s3AccessKeyId,
                     secretAccessKey: s3SecretAccessKey,
+                    ...(s3Provider === 'r2' ? { endpoint: s3Endpoint.trim() } : {}),
                     ...(s3Provider === 's3-compatible'
                       ? {
                           endpoint: s3Endpoint.trim(),
@@ -1435,9 +1473,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 {s3Mutation.error instanceof ApiError &&
                 (s3Mutation.error.body as { code?: unknown } | null)?.code === 'PRIVATE_URL'
                   ? t('settings.s3EndpointRefused')
-                  : isS3AllowedHostsRefusal(s3Mutation.error)
+                  : s3RefusedField(s3Mutation.error) === 'allowedPrivateHosts'
                     ? t('settings.s3AllowedHostsRefused')
-                    : t('settings.s3SaveFailed')}
+                    : s3RefusedField(s3Mutation.error) === 'endpoint'
+                      ? t('settings.s3R2EndpointRefused')
+                      : t('settings.s3SaveFailed')}
               </p>
             )}
             {s3TestMutation.isSuccess && (
@@ -1458,9 +1498,19 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 <ChevronDown
                   className={`h-4 w-4 transition-transform ${s3PolicyOpen ? 'rotate-180' : ''}`}
                 />
-                {t('settings.s3PolicyTitle')}
+                {s3Provider === 'r2' ? t('settings.s3R2TokenTitle') : t('settings.s3PolicyTitle')}
               </button>
-              {s3PolicyOpen && (
+              {s3PolicyOpen && s3Provider === 'r2' && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.s3R2TokenDescription')}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.s3BucketPrivateNote')}
+                  </p>
+                </div>
+              )}
+              {s3PolicyOpen && s3Provider !== 'r2' && (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm text-muted-foreground">
                     {t('settings.s3PolicyDescription')}
@@ -1507,12 +1557,20 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               </button>
               {s3CorsOpen && (
                 <div className="mt-3 space-y-2">
-                  <p className="text-sm text-muted-foreground">{t('settings.s3CorsDescription')}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {s3Provider === 'r2'
+                      ? t('settings.s3R2CorsDescription')
+                      : t('settings.s3CorsDescription')}
+                  </p>
                   <pre
                     className="overflow-x-auto rounded-md bg-muted p-4 text-xs"
                     data-testid="s3-cors-example"
                   >
-                    {buildS3CorsExample(window.location.origin, PORTAL_BASE_URL)}
+                    {buildS3CorsExample(
+                      window.location.origin,
+                      PORTAL_BASE_URL,
+                      s3Provider === 'r2' ? 'PUT' : 'POST',
+                    )}
                   </pre>
                 </div>
               )}

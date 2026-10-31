@@ -15,20 +15,25 @@ export function originOrPlaceholder(url: string | null | undefined, placeholder:
 }
 
 /**
- * The S3 bucket CORS rule for browser uploads. Uploads are presigned POST
- * forms (station images and support attachments from the CSMS, driver photos
- * from the portal), and downloads are presigned GET links, so both origins need
- * POST and GET.
+ * The bucket CORS rule for browser uploads (station images and support
+ * attachments from the CSMS, driver photos from the portal) and downloads
+ * (presigned GET links), so both origins need the upload method and GET.
+ * Uploads are presigned POST forms, or on Cloudflare R2 (`uploadMethod` PUT)
+ * a PUT that sends a Content-Type header.
  */
-export function buildS3CorsExample(csmsUrl: string | null, portalUrl: string | null): string {
+export function buildS3CorsExample(
+  csmsUrl: string | null,
+  portalUrl: string | null,
+  uploadMethod: 'POST' | 'PUT' = 'POST',
+): string {
   const origins = [
     originOrPlaceholder(csmsUrl, CSMS_ORIGIN_PLACEHOLDER),
     originOrPlaceholder(portalUrl, PORTAL_ORIGIN_PLACEHOLDER),
   ];
   const rule = [
     {
-      AllowedHeaders: ['*'],
-      AllowedMethods: ['POST', 'GET'],
+      AllowedHeaders: uploadMethod === 'PUT' ? ['content-type'] : ['*'],
+      AllowedMethods: [uploadMethod, 'GET'],
       AllowedOrigins: [...new Set(origins)],
       ExposeHeaders: [],
       MaxAgeSeconds: 300,
