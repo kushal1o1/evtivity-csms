@@ -55,6 +55,17 @@ describe('production Dockerfiles', () => {
     expect(runtimeStage(dockerfile('database'))).toMatch(/^USER node$/m);
   });
 
+  it('copies scripts/ before an image builds lib with tsc, which compiles a test importing scripts/lib', () => {
+    for (const pkg of IMAGES) {
+      const text = dockerfile(pkg);
+      const build = text.indexOf('npm run build --workspace=packages/lib');
+      if (build === -1) continue;
+      const copy = text.search(/^COPY scripts\/ scripts\/$/m);
+      expect(copy, pkg).toBeGreaterThan(-1);
+      expect(copy, pkg).toBeLessThan(build);
+    }
+  });
+
   it('keeps local env files, seed configs and test certificates out of the build context', () => {
     const ignored = readFileSync(join(ROOT, '.dockerignore'), 'utf8').split('\n');
     // A package-level env file too.
