@@ -21,6 +21,7 @@ import { db, client } from './config.js';
 import { sql, eq, and, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { sessionSiteIdSql } from './lib/session-site.js';
+import { demoVehicleLook } from './seed-demo-vehicles.js';
 import {
   getCompanyCurrency,
   getCompanyTaxBasis,
@@ -368,12 +369,12 @@ const LAST_NAMES = [
 
 const EV_MAKES: Array<{ make: string; models: string[] }> = [
   { make: 'Tesla', models: ['Model 3', 'Model Y', 'Model S', 'Model X'] },
-  { make: 'Chevrolet', models: ['Bolt EV', 'Bolt EUV', 'Equinox EV'] },
-  { make: 'Ford', models: ['Mustang Mach-E', 'F-150 Lightning'] },
+  { make: 'Chevrolet', models: ['Bolt EV', 'Bolt EUV', 'Equinox EV', 'Silverado EV'] },
+  { make: 'Ford', models: ['Mustang Mach-E', 'F-150 Lightning', 'E-Transit'] },
   { make: 'Hyundai', models: ['Ioniq 5', 'Ioniq 6', 'Kona Electric'] },
   { make: 'Kia', models: ['EV6', 'EV9', 'Niro EV'] },
   { make: 'BMW', models: ['iX', 'i4', 'i7'] },
-  { make: 'Mercedes-Benz', models: ['EQS', 'EQE', 'EQB'] },
+  { make: 'Mercedes-Benz', models: ['EQS', 'EQE', 'EQB', 'eSprinter'] },
   { make: 'Volkswagen', models: ['ID.4', 'ID.Buzz'] },
   { make: 'Rivian', models: ['R1T', 'R1S'] },
   { make: 'Nissan', models: ['Leaf', 'Ariya'] },
@@ -1729,10 +1730,12 @@ async function seed(): Promise<void> {
   // ------ Vehicles (120) ------
   const vehicleRows = createdDrivers.slice(0, 120).map((driver, i) => {
     const evMake = pick(EV_MAKES);
+    const model = pick(evMake.models);
     return {
       driverId: driver.id,
       make: evMake.make,
-      model: pick(evMake.models),
+      model,
+      ...demoVehicleLook(model, driver.id),
       year: String(randomInt(2020, 2025)),
       vin: `${String(i + 1).padStart(4, '0')}ABCDEF${String(randomInt(10000, 99999))}`.slice(0, 17),
       licensePlate: `${String.fromCharCode(65 + randomInt(0, 25))}${String.fromCharCode(65 + randomInt(0, 25))}${String.fromCharCode(65 + randomInt(0, 25))}-${padNum(randomInt(1000, 9999), 4)}`,
@@ -2873,7 +2876,7 @@ async function seed(): Promise<void> {
       actorUserId: featureActor?.id ?? null,
     });
     console.log(
-      `  Demo features created (${String(features.pncSessions)} Plug and Charge sessions, ${String(features.freeVendSessions)} free vend sessions, ${String(features.sims)} SIMs, ${String(features.terminalPayments)} terminal payments, ${String(features.layoutStations)} site layout demo stations, ${String(features.driverAvatars)} demo driver avatars).`,
+      `  Demo features created (${String(features.pncSessions)} Plug and Charge sessions, ${String(features.freeVendSessions)} free vend sessions, ${String(features.sims)} SIMs, ${String(features.terminalPayments)} terminal payments, ${String(features.layoutStations)} site layout demo stations, ${String(features.driverAvatars)} demo driver avatars, ${String(features.vehicleLooks)} demo vehicle looks, ${String(features.vehicleSessions)} sessions linked to their vehicle).`,
     );
   }
 
@@ -3508,6 +3511,8 @@ async function seed(): Promise<void> {
     make: 'Tesla',
     model: 'Model 3',
     year: '2024',
+    color: 'white',
+    bodyType: 'sedan',
   });
 
   // Portal driver RFID tokens

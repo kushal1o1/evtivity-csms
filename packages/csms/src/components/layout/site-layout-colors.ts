@@ -16,7 +16,6 @@ export const SCENE_COLORS = {
     curb: '#c9ccd1',
     paint: '#f4f4f2',
     shell: '#e8ebef',
-    car: '#c3cad4',
     signPlate: '#f8fafc',
     signText: '#1f2937',
     transformer: '#5f7a63',
@@ -43,7 +42,6 @@ export const SCENE_COLORS = {
     curb: '#7d848f',
     paint: '#d9dbd8',
     shell: '#c9ced6',
-    car: '#8e97a5',
     signPlate: '#d9dde3',
     signText: '#111827',
     transformer: '#4a6250',
@@ -90,4 +88,6 @@ export const SCENE_COLORS = {
   terminalScreen: '#3b82f6',
   terminalOnline: '#22c55e',
   terminalOffline: '#6b7280',
+  /** Unpainted white panels of large vehicles: a semi trailer's van body, bus roof pods. */
+  vehiclePanel: '#eceff2',
 } as const;

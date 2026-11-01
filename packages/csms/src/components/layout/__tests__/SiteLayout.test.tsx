@@ -271,6 +271,56 @@ describe('SiteLayout 2D cards', () => {
     );
   });
 
+  it('draws the street of a curbside site between its sides, and no outline for a side without chargers', async () => {
+    const curb = {
+      ...effectiveLayoutSettings(null),
+      siteType: 'curbside',
+      chargersLeft: 0,
+      chargersRight: 3,
+    };
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/layout')
+          ? STATIONS
+          : url === '/v1/sites/sit_1'
+            ? { id: 'sit_1', name: 'Main Street', layoutSettings: curb }
+            : { config: null, hierarchy: [], stations: [] },
+      ),
+    );
+    window.localStorage.setItem('site-layout-view', '2d');
+    wrap();
+    const board = await screen.findByTestId('site-layout-2d');
+    expect(await within(board).findByTestId('site-layout-2d-street')).toBeDefined();
+    expect(within(board).queryByTestId('site-layout-2d-side-left')).toBeNull();
+    expect(within(board).getByTestId('site-layout-2d-side-right')).toBeDefined();
+    expect(within(board).queryByTestId('site-layout-2d-lot')).toBeNull();
+    expect(within(board).queryByTestId('site-layout-2d-building')).toBeNull();
+    expect(screen.getByTestId('site-layout-street-legend').textContent).toContain(
+      'sites.layoutView.street',
+    );
+  });
+
+  it('names the AC chargers by site type and shows energy assets in the legend on a parking lot only', async () => {
+    const curb = {
+      ...effectiveLayoutSettings(null),
+      siteType: 'curbside',
+      energyAssets: [{ id: 'bat-1', type: 'battery', name: null, capacityKwh: 200, x: -4, z: 2 }],
+    };
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/layout')
+          ? STATIONS
+          : url === '/v1/sites/sit_1'
+            ? { id: 'sit_1', name: 'Main Street', layoutSettings: curb }
+            : { config: null, hierarchy: [], stations: [] },
+      ),
+    );
+    wrap();
+    const legend = await screen.findByTestId('site-layout-state-legend');
+    expect(await within(legend).findByText('sites.layoutView.acPost')).toBeDefined();
+    expect(within(legend).queryByTestId('site-layout-battery-legend')).toBeNull();
+  });
+
   it('draws no building edge on a parking lot', async () => {
     window.localStorage.setItem('site-layout-view', '2d');
     wrap();
@@ -279,7 +329,7 @@ describe('SiteLayout 2D cards', () => {
     expect(screen.queryByTestId('site-layout-building-legend')).toBeNull();
   });
 
-  it('keeps the power draw panel out of the board, above it on a phone and over its corner from sm', async () => {
+  it('keeps the power draw panel out of the board, above it at every width', async () => {
     getMock.mockImplementation((url: string) =>
       Promise.resolve(
         url.endsWith('/layout')
@@ -300,7 +350,8 @@ describe('SiteLayout 2D cards', () => {
     expect(panel.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(panel.className).toContain('mb-3');
     expect(panel.className).not.toMatch(/(^|\s)absolute(\s|$)/);
-    expect(panel.className).toContain('sm:absolute');
+    // Above the board at every width: never over a station card.
+    expect(panel.className).not.toMatch(/absolute/);
   });
 
   it('opens the same station popup as the 3D view: level from the connector rule, Escape closes it', async () => {
@@ -335,6 +386,77 @@ describe('SiteLayout 2D cards', () => {
     popup = screen.getByTestId('station-layout-popup');
     expect(popup.textContent).toContain('Terra · sites.layoutView.dcFast');
     expect(screen.getAllByTestId('station-layout-popup')).toHaveLength(1);
+  });
+});
+
+describe('SiteLayout custom site 2D', () => {
+  const custom = { ...effectiveLayoutSettings(null), siteType: 'custom' };
+  const freeStations = [
+    { ...STATIONS[0], freePosition: { x: 0, z: 0, rotationDeg: 0 } },
+    { ...STATIONS[1], freePosition: { x: 8, z: 0, rotationDeg: 90 } },
+  ];
+  beforeEach(() => {
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/layout')
+          ? freeStations
+          : url === '/v1/sites/sit_1'
+            ? { id: 'sit_1', name: 'Willow Creek', layoutSettings: custom }
+            : { config: null, hierarchy: [], stations: [] },
+      ),
+    );
+    window.localStorage.setItem('site-layout-view', '2d');
+  });
+
+  it('draws every station with its spots, turns one with R and saves the free positions', async () => {
+    permissions.add('sites:write');
+    putMock.mockResolvedValue({});
+    wrap();
+    const board = await screen.findByTestId('site-layout-2d');
+    expect(await within(board).findByTestId('site-layout-2d-custom')).toBeDefined();
+    expect(within(board).getByTestId('site-layout-2d-spots-sta_ac')).toBeDefined();
+    expect(within(board).queryByTestId('site-layout-2d-lot')).toBeNull();
+    expect(screen.getByTestId('site-layout-spot-legend')).toBeDefined();
+    expect(screen.getByTestId('site-layout-2d-custom-hint').textContent).toBe(
+      'sites.layoutView.hintEditCustom',
+    );
+    const chip = within(board).getByTestId('site-layout-2d-station-sta_ac');
+    fireEvent.keyDown(chip, { key: 'r' });
+    fireEvent.keyDown(chip, { key: 'ArrowUp' });
+    fireEvent.click(screen.getByRole('button', { name: /common\.save/ }));
+    await waitFor(() => {
+      expect(putMock).toHaveBeenCalled();
+    });
+    expect(putMock).toHaveBeenCalledWith(
+      '/v1/sites/sit_1/layout',
+      expect.objectContaining({
+        positions: [
+          {
+            stationId: 'sta_ac',
+            positionX: 20,
+            positionY: 20,
+            freePosition: { x: 0, z: -0.5, rotationDeg: 15 },
+          },
+          {
+            stationId: 'sta_dc',
+            positionX: 220,
+            positionY: 20,
+            freePosition: { x: 8, z: 0, rotationDeg: 90 },
+          },
+        ],
+      }),
+    );
+  });
+
+  it('refuses a move onto another station and says why', async () => {
+    wrap();
+    const board = await screen.findByTestId('site-layout-2d');
+    const chip = await within(board).findByTestId('site-layout-2d-station-sta_dc');
+    // sta_dc turned 90 degrees lies toward -x, onto the spots of sta_ac after a few steps left.
+    for (let i = 0; i < 8; i++) fireEvent.keyDown(chip, { key: 'ArrowLeft' });
+    expect(within(board).getByTestId('site-layout-2d-notice').textContent).toBe(
+      'sites.layoutView.spotsOverlap:CS-DC',
+    );
   });
 });
 

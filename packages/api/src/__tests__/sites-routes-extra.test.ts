@@ -116,6 +116,7 @@ vi.mock('@evtivity/database', async () => {
     readSiteLayoutSettings: vi.fn(async () =>
       (await import('@evtivity/lib/site-layout')).effectiveLayoutSettings(null),
     ),
+    readSiteStationCounts: vi.fn(() => Promise.resolve({ total: 0, bus: 0, truck: 0 })),
     db: {
       select: vi.fn(() => makeChain()),
       selectDistinct: vi.fn(() => makeChain()),
@@ -168,7 +169,9 @@ vi.mock('drizzle-orm', () => {
       identifier: vi.fn(sqlFn),
     }),
     getTableName: vi.fn(() => 'charging_stations'),
+    gt: vi.fn(),
     gte: vi.fn(),
+    isNull: vi.fn(),
     lte: vi.fn(),
     desc: vi.fn(),
     count: vi.fn(),

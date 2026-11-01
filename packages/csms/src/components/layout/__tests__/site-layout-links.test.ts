@@ -13,11 +13,9 @@ import {
   PANEL_PAD_GAP_M,
   PANEL_PAD_PITCH_M,
   placePanels,
-  WALL_CIRCUIT_OUT_M,
-  WALL_PANEL_START_X,
   type LinkPanel,
 } from '../site-layout-links';
-import { FACADE_Z, lotOf, WALL_PANEL_PITCH_M } from '../site-layout-grid';
+import { lotOf } from '../site-layout-grid';
 import { terminalSide, terminalsByStation } from '../layout-terminals';
 import type { PaymentTerminal } from '@/components/payment-terminals/payment-terminal-types';
 
@@ -49,7 +47,6 @@ const stations = new Map([
 ]);
 
 const LOT = lotOf(DEFAULT_LAYOUT_GRID);
-const OFFICE = lotOf({ ...DEFAULT_LAYOUT_GRID, siteType: 'office_retail' });
 
 describe('load management panels', () => {
   it('stands one switchboard per panel on the grass left of a parking lot, a sub-panel next to its parent', () => {
@@ -57,10 +54,10 @@ describe('load management panels', () => {
       [panel('p', [circuit('1', ['a'])], [panel('q', [])]), panel('r', [])],
       LOT,
     );
-    expect(placed.map((p) => [p.id, p.parentId, p.mount])).toEqual([
-      ['p', null, 'pad'],
-      ['q', 'p', 'pad'],
-      ['r', null, 'pad'],
+    expect(placed.map((p) => [p.id, p.parentId])).toEqual([
+      ['p', null],
+      ['q', 'p'],
+      ['r', null],
     ]);
     expect(placed[0]?.point).toEqual({ x: -PANEL_PAD_GAP_M, z: LOT.depth / 2 });
     expect(placed[1]?.point).toEqual({
@@ -70,15 +67,6 @@ describe('load management panels', () => {
     // Every cabinet stands off the lot (x < 0), whatever its place in the list.
     for (const p of placed) expect(p.point.x).toBeLessThan(0);
     expect(placed[0]).toMatchObject({ name: 'Panel p', amps: 400, kw: 230.4 });
-  });
-
-  it('hangs the panels of an office or retail site on the facade left of the first spot', () => {
-    const placed = placePanels([panel('p', [], [panel('q', [])])], OFFICE);
-    expect(placed.map((p) => p.mount)).toEqual(['wall', 'wall']);
-    expect(placed.map((p) => p.point)).toEqual([
-      { x: WALL_PANEL_START_X, z: FACADE_Z },
-      { x: WALL_PANEL_START_X - WALL_PANEL_PITCH_M, z: FACADE_Z },
-    ]);
   });
 
   it('places nothing without load management panels', () => {
@@ -112,13 +100,6 @@ describe('load management links', () => {
     const feeder = links.segments.find((s) => s.id === 'panel:q');
     expect(feeder).toMatchObject({ from: placed[0]?.point, to: placed[1]?.point });
     expect(links.segments.map((s) => s.id)).toContain('station:c');
-  });
-
-  it('stands the circuit node of a wall panel out over the sidewalk', () => {
-    const hierarchy = [panel('p', [circuit('1', ['a', 'b'])])];
-    const links = loadLinks(hierarchy, placePanels(hierarchy, OFFICE), stations);
-    const node = links.labels.find((l) => l.id === 'circuit:1');
-    expect(node?.point.z).toBeCloseTo(FACADE_Z + WALL_CIRCUIT_OUT_M);
   });
 
   it('labels every panel, and leaves out circuits without a station on the lot', () => {

@@ -5,6 +5,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { like } from 'drizzle-orm';
 import { db, settings } from '@evtivity/database';
 import { decryptSettingOrNull } from '@evtivity/lib';
+import { effectiveStorageRegion } from '@evtivity/lib/object-storage-region';
 import type { ObjectStorage } from './object-storage.js';
 import { S3ObjectStorage } from './s3-object-storage.js';
 import {
@@ -16,7 +17,8 @@ import {
 /**
  * The configured object storage, shared by the API and the worker (the
  * worker deletes expired AI attachments and avatars). Settings: `s3.provider`
- * (`s3` when unset), `s3.bucket`, `s3.region`, `s3.accessKeyIdEnc`,
+ * (`s3` when unset), `s3.bucket`, `s3.region` (optional for `s3-compatible`,
+ * `us-east-1` when empty), `s3.accessKeyIdEnc`,
  * `s3.secretAccessKeyEnc`, and for `s3-compatible` also `s3.endpoint`,
  * `s3.forcePathStyle` and `s3.allowedPrivateHosts`.
  */
@@ -72,9 +74,10 @@ export async function loadObjectStorage(encryptionKey: string): Promise<ObjectSt
 
   const provider = map.get('s3.provider') ?? 's3';
   const bucket = map.get('s3.bucket') as string | undefined;
-  const region = map.get('s3.region') as string | undefined;
-  // A cleared field is stored as an empty string: not configured.
-  if (bucket == null || bucket === '' || region == null || region === '') {
+  // A cleared field is stored as an empty string: not configured. An
+  // S3-compatible provider without a region signs with us-east-1.
+  const region = effectiveStorageRegion(provider, map.get('s3.region'));
+  if (bucket == null || bucket === '' || region == null) {
     return null;
   }
   // No stored keys (no row, or the empty string the seed and a cleared field

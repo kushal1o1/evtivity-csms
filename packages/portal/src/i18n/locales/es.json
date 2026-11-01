@@ -1165,7 +1165,33 @@
     "newVehicle": "Vehículo nuevo",
     "makeModelRequired": "Introduzca la marca y el modelo.",
     "lastSeen": "Visto por última vez",
-    "lastSeenValue": "{{station}}, {{time}}"
+    "lastSeenValue": "{{station}}, {{time}}",
+    "color": "Color",
+    "bodyType": "Tipo de Carrocería",
+    "notSet": "Sin Definir",
+    "colors": {
+      "white": "Blanco",
+      "black": "Negro",
+      "silver": "Plata",
+      "grey": "Gris",
+      "blue": "Azul",
+      "red": "Rojo",
+      "green": "Verde",
+      "brown_beige": "Marrón o Beige",
+      "yellow_orange": "Amarillo o Naranja",
+      "other": "Otro"
+    },
+    "bodyTypes": {
+      "sedan": "Sedán",
+      "hatchback": "Hatchback",
+      "suv": "SUV",
+      "pickup_truck": "Camioneta Pickup",
+      "van": "Furgoneta",
+      "box_truck": "Camión de Caja",
+      "bus": "Autobús",
+      "semi_truck": "Tractocamión"
+    },
+    "saveFailed": "No se pudo guardar el vehículo. Inténtelo de nuevo."
   },
   "notifications": {
     "title": "Notificaciones",

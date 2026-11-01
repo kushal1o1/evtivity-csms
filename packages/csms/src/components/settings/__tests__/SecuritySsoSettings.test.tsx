@@ -55,25 +55,29 @@ beforeEach(() => {
     if (url === '/v1/users/me/mfa') {
       return Promise.resolve({ factorProofKinds: ['password'], mfaMethod: null });
     }
-    if (url === '/v1/sso/settings') return Promise.resolve(STORED);
+    if (url === '/v1/sso/settings') return Promise.resolve(stored);
     return Promise.resolve([]);
   });
   api.put.mockResolvedValue({ success: true });
 });
 
 afterEach(() => {
+  stored = STORED;
   cleanup();
   vi.clearAllMocks();
 });
 
-function renderForm(): void {
+function renderForm(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <SecuritySsoSettings settings={undefined} />
     </QueryClientProvider>,
   );
+  return client;
 }
+
+let stored: Record<string, unknown> = STORED;
 
 describe('SecuritySsoSettings', () => {
   it('saves the provider hint alone without a proof', async () => {
@@ -103,5 +107,51 @@ describe('SecuritySsoSettings', () => {
     const body = api.put.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(body['entryPoint']).toBe('https://idp2.example.com/sso');
     expect(body['proof']).toEqual({ kind: 'password', password: 'secret' });
+  });
+});
+
+describe('SecuritySsoSettings settings reload', () => {
+  async function reload(client: QueryClient, next: Record<string, unknown>): Promise<void> {
+    stored = next;
+    const calls = api.get.mock.calls.filter(([url]) => url === '/v1/sso/settings').length;
+    await client.invalidateQueries({ queryKey: ['sso-settings'] });
+    await waitFor(() => {
+      expect(api.get.mock.calls.filter(([url]) => url === '/v1/sso/settings').length).toBe(
+        calls + 1,
+      );
+    });
+  }
+
+  it('keeps unsaved edits when the settings reload', async () => {
+    const client = renderForm();
+    const entry = await screen.findByDisplayValue('https://idp.example.com/sso');
+    fireEvent.change(entry, { target: { value: 'https://edited.example.com/sso' } });
+    await reload(client, { ...STORED, 'sso.entryPoint': 'https://other.example.com/sso' });
+    expect(screen.getByDisplayValue('https://edited.example.com/sso')).toBeTruthy();
+  });
+
+  it('takes the reloaded values while the form is clean', async () => {
+    const client = renderForm();
+    await screen.findByDisplayValue('https://idp.example.com/sso');
+    await reload(client, { ...STORED, 'sso.entryPoint': 'https://reloaded.example.com/sso' });
+    expect(await screen.findByDisplayValue('https://reloaded.example.com/sso')).toBeTruthy();
+  });
+
+  it('takes the stored values after its own save', async () => {
+    api.put.mockImplementation(() => {
+      // The server stores the domains as a list.
+      stored = { ...STORED, 'sso.allowedDomains': ['a.example', 'b.example'] };
+      return Promise.resolve({ success: true });
+    });
+    const client = renderForm();
+    await screen.findByDisplayValue('https://idp.example.com/sso');
+    fireEvent.change(screen.getByLabelText('settings.ssoAllowedDomains'), {
+      target: { value: 'a.example b.example' },
+    });
+    fireEvent.click(screen.getByText('give-proof'));
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(await screen.findByDisplayValue('a.example, b.example')).toBeTruthy();
+    await reload(client, { ...STORED, 'sso.allowedDomains': ['c.example'] });
+    expect(await screen.findByDisplayValue('c.example')).toBeTruthy();
   });
 });

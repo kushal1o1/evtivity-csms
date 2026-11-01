@@ -70,16 +70,6 @@ describe('EnergyAssetsSettings', () => {
     expect(second.map((a: LayoutEnergyAsset) => a.type)).toEqual(['solar']);
   });
 
-  it('offers no solar canopy on an office or retail site and says the stored ones stay hidden', () => {
-    renderPanel({
-      ...BASE,
-      siteType: 'office_retail',
-      energyAssets: [{ id: 'pv-1', type: 'solar', name: null, capacityKwp: 50, row: 0 }],
-    });
-    expect(screen.queryByRole('button', { name: /sites.layoutSettings.addSolar/ })).toBeNull();
-    expect(screen.getByTestId('layout-solar-hidden')).toBeDefined();
-  });
-
   it('holds Save for an invalid capacity and saves a valid one', () => {
     const settings: SiteLayoutSettings = {
       ...BASE,

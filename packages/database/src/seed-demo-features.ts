@@ -25,6 +25,7 @@ import { ensureSiteElectricityRates } from './seed-electricity-rates.js';
 import { sessionSiteIdSql } from './lib/session-site.js';
 import { loadDemoStationPlace } from './seed-fleet-billing.js';
 import { seedLayoutDemo } from './seed-demo-layout.js';
+import { seedDemoVehicleLooks } from './seed-demo-vehicles.js';
 import { seedDemoDriverAvatars } from './seed-demo-avatars.js';
 
 // Demo data of four features that are off or empty in a fresh demo: Plug and
@@ -1320,6 +1321,10 @@ export interface DemoFeatureCounts {
   layoutStations: number;
   /** Demo drivers given a generated avatar (seed-demo-avatars.ts). */
   driverAvatars: number;
+  /** Demo vehicles given a color and body type (seed-demo-vehicles.ts). */
+  vehicleLooks: number;
+  /** Demo sessions linked to their driver's only vehicle (seed-demo-vehicles.ts). */
+  vehicleSessions: number;
 }
 
 /**
@@ -1351,6 +1356,7 @@ export async function seedDemoFeatures(
   const terminalPayments = await seedPaymentTerminalDemo(sql, ctx);
   const layout = await seedLayoutDemo(sql, ctx, vendor?.id ?? null);
   const driverAvatars = await seedDemoDriverAvatars(sql, ctx.actorUserId);
+  const vehicleLooks = await seedDemoVehicleLooks(sql, ctx.actorUserId);
   await enableDemoFeatureSettings(sql);
   return {
     pncSessions,
@@ -1359,5 +1365,7 @@ export async function seedDemoFeatures(
     terminalPayments,
     layoutStations: layout.stations,
     driverAvatars,
+    vehicleLooks: vehicleLooks.vehicles,
+    vehicleSessions: vehicleLooks.sessions,
   };
 }

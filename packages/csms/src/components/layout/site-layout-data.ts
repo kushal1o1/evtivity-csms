@@ -17,6 +17,7 @@ import {
 import { api } from '@/lib/api';
 import { useHasPermission } from '@/lib/auth';
 import type { LayoutStation } from './StationCard';
+import { layoutStationCountsOf } from './site-layout-free';
 import type { LinkPanel } from './site-layout-links';
 import { useSiteTerminals, type LayoutTerminal } from './layout-terminals';
 import {
@@ -137,6 +138,7 @@ export function useSiteLayoutView(siteId: string, live: boolean): SiteLayoutView
       effectiveLayoutSettings(
         site.data?.layoutSettings,
         stations.map((s) => positionToBay({ x: s.positionX, y: s.positionY })),
+        layoutStationCountsOf(stations),
       ),
     [site.data, stations],
   );

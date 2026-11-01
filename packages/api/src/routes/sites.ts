@@ -4,7 +4,21 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { invalidateAutochargeCaches } from '../lib/autocharge-invalidation.js';
-import { eq, or, ilike, sql, gte, lte, and, desc, count, inArray, isNotNull } from 'drizzle-orm';
+import {
+  eq,
+  or,
+  ilike,
+  sql,
+  gt,
+  gte,
+  lte,
+  and,
+  desc,
+  count,
+  inArray,
+  isNotNull,
+  isNull,
+} from 'drizzle-orm';
 import {
   db,
   writeAudit,
@@ -27,8 +41,13 @@ import {
   readStationDataPlans,
   saveSiteLayout,
   readSiteLayoutSettings,
+  readSiteStationCounts,
+  readSiteLayoutPositions,
+  setSiteLayoutType,
   LayoutGridTooSmallError,
+  LayoutSpotsOverlapError,
 } from '@evtivity/database';
+import type { SiteTypeChange } from '@evtivity/database';
 import type { SiteInsightSuppressionSource } from '@evtivity/database';
 import {
   resumeSiteAiInsights,
@@ -78,7 +97,15 @@ import {
   siteDataPlanImpact,
 } from '@evtivity/services/station-data-plan.service';
 import type { ElectricityRatePeriodRestrictions } from '@evtivity/lib';
-import { freeSlotsFor } from '@evtivity/lib/site-layout';
+import {
+  firstFreePlacement,
+  freeSlotsFor,
+  freeSpotCount,
+  SITE_TYPES,
+  usesFreePositions,
+  type FreePlacement,
+} from '@evtivity/lib/site-layout';
+import { VEHICLE_BODY_TYPES, VEHICLE_COLORS } from '@evtivity/lib/vehicle-appearance';
 import { avatarItem } from '../lib/avatar-item.js';
 import { readLayoutStationSessions } from '../lib/site-layout-sessions.js';
 import type { LayoutStationSession } from '../lib/site-layout-sessions.js';
@@ -89,7 +116,7 @@ import {
   readSiteLayoutReplay,
   replayDayBounds,
 } from '../lib/site-layout-replay.js';
-import { siteLayoutSettingsSchema } from '@evtivity/lib/site-layout-schema';
+import { freePlacementSchema, siteLayoutSettingsSchema } from '@evtivity/lib/site-layout-schema';
 import { parseZodRequest, rejectUnknownBodyKeys, zodSchema } from '../lib/zod-schema.js';
 import { connectorCurrentAmpsSchema } from '../lib/connector-rating-schema.js';
 import { ID_PARAMS } from '../lib/id-validation.js';
@@ -241,6 +268,14 @@ const hoursOfOperationField = z
 const COUNTRY_MESSAGE = 'Unknown country: use an ISO 3166-1 code or the English country name';
 const emptyOrCountry = (value: string): boolean => value.trim() === '' || isKnownCountry(value);
 
+// The site type of the layout (layoutSettings.siteType), set on the site form.
+const siteTypeField = z
+  .enum(SITE_TYPES)
+  .optional()
+  .describe(
+    'Site type of the layout: parking_lot, office_retail, curbside, depot or custom. Stored in layoutSettings.siteType; every other layout setting is kept, so switching back restores it. A station outside the new layout moves to the nearest free spot; one with no free spot keeps its position (off the layout). Switching to depot puts the stations with an MCS connector into truck lanes and the others into bus bays. Switching to custom gives every station a free position where it stands now (stations whose spots would overlap slide along their row); switching from custom returns the stations to their grid spots. Omitted keeps the type',
+  );
+
 const createSiteBody = z.object({
   name: z
     .string()
@@ -271,6 +306,7 @@ const createSiteBody = z.object({
   contactIsPublic: z.boolean().optional(),
   hoursOfOperation: hoursOfOperationField,
   metadata: z.record(z.string(), z.unknown()).optional(),
+  siteType: siteTypeField,
 });
 
 // An optional site field that an update can clear: null or an empty string
@@ -374,6 +410,7 @@ const updateSiteBody = z.object({
     .describe(
       "The site's data plan (wifi_or_wired or cellular), null for not set. Stations without their own plan and without a confirmed SIM run it; online ones get the settings at once",
     ),
+  siteType: siteTypeField,
 });
 
 /** Site fields only a user with access to every site may change (a restricted user gets 404). */
@@ -536,7 +573,7 @@ const siteItem = z
     layoutSettings: siteLayoutSettingsSchema
       .nullable()
       .describe(
-        'Layout settings of the site (the site type, the paved lot and the transformers on the grass), null when never saved: the layout then shows a parking lot of 2 rows of 10 spots of 3.2 by 5.6 m with a 6 m lane, facing 0, grown to hold the stations, and one transformer. A missing siteType reads as parking_lot. Changed through PUT /v1/sites/{id}/layout',
+        'Layout settings of the site (the site type and the fields of every type), null when never saved: the layout then shows a parking lot of 2 rows of 10 standard spots, facing 0, grown to hold the stations, and one transformer. A missing siteType reads as parking_lot. Changed through PUT /v1/sites/{id}/layout, the site type also through the siteType field of POST /v1/sites and PATCH /v1/sites/{id}',
       ),
     aiMonthlyTokenBudget: z
       .number()
@@ -926,6 +963,22 @@ const layoutSession = z
       .describe(
         'The driver of the session, null without drivers:read, for a session without a driver, or for an erased driver',
       ),
+    vehicle: z
+      .object({
+        color: z
+          .enum(VEHICLE_COLORS)
+          .nullable()
+          .describe('Color group of the vehicle, null when not set'),
+        bodyType: z
+          .enum(VEHICLE_BODY_TYPES)
+          .nullable()
+          .describe('Body type of the vehicle, null when not set'),
+      })
+      .loose()
+      .nullable()
+      .describe(
+        "The car the layout draws: the session's vehicle, else the driver's only vehicle, else the driver's most recently used vehicle; null when none (the layout draws a grey sedan). Color and body type only, shown without drivers:read",
+      ),
   })
   .loose();
 
@@ -961,7 +1014,12 @@ const layoutStation = z
     placed: z
       .boolean()
       .describe(
-        'True when the position is saved for this site; false when it is a free slot the server picked, saved by the next layout save',
+        'True when the position is saved for this site; false when it is a free slot the server picked, saved by the next layout save. On a custom site, false also while the free position is one the server picked',
+      ),
+    freePosition: freePlacementSchema
+      .nullable()
+      .describe(
+        'Custom site: where the station stands (meters and turn), the saved one or, with placed false, one the server picked right of the others (saved by the next layout save). Null on the other site types',
       ),
     chargingKind: z
       .enum(['ac', 'dc'])
@@ -979,7 +1037,9 @@ const layoutStation = z
     displayMessage: z
       .string()
       .nullable()
-      .describe('Most recent accepted display message text shown on the station, if any'),
+      .describe(
+        'Text of the newest display message the station accepted that is active now (started, not ended), if any',
+      ),
     evses: z.array(layoutEvse).describe('EVSEs installed on this station'),
     session: layoutSession
       .nullable()
@@ -1613,7 +1673,7 @@ export function siteRoutes(app: FastifyInstance): void {
       ) {
         return;
       }
-      const body = parseZodRequest(createSiteBody, request.body);
+      const { siteType, ...body } = parseZodRequest(createSiteBody, request.body);
 
       // Pre-check the unique name constraint (case-insensitive) so duplicate
       // names return a clean 409 instead of a Postgres unique-violation 500.
@@ -1632,10 +1692,27 @@ export function siteRoutes(app: FastifyInstance): void {
       let site: typeof sites.$inferSelect | undefined;
       try {
         // A site created while only selected sites are analyzed starts unselected.
-        [site] = await db
-          .insert(sites)
-          .values({ ...body, aiInsightsEnabled: await initialSiteAiInsightsSelected() })
-          .returning();
+        const aiInsightsEnabled = await initialSiteAiInsightsSelected();
+        if (siteType === undefined) {
+          [site] = await db
+            .insert(sites)
+            .values({ ...body, aiInsightsEnabled })
+            .returning();
+        } else {
+          // The site type goes through the layout writer, like every layout
+          // setting, in the transaction of the insert.
+          site = await db.transaction(async (tx) => {
+            const [created] = await tx
+              .insert(sites)
+              .values({ ...body, aiInsightsEnabled })
+              .returning();
+            if (created == null) return created;
+            const change = await setSiteLayoutType(tx, created.id, siteType);
+            if (!change.changed) return created;
+            const [withType] = await tx.select().from(sites).where(eq(sites.id, created.id));
+            return withType ?? created;
+          });
+        }
       } catch (err) {
         // A concurrent create took the name after the check above.
         if (!isSiteNameUniqueViolation(err)) throw err;
@@ -1700,7 +1777,7 @@ export function siteRoutes(app: FastifyInstance): void {
         await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
         return;
       }
-      const { dataPlan, ...body } = parseZodRequest(updateSiteBody, request.body);
+      const { dataPlan, siteType, ...body } = parseZodRequest(updateSiteBody, request.body);
       // A restricted operator cannot change company-wide AI controls of its own site.
       if (ALL_SITE_FIELDS.some((field) => body[field] !== undefined) && siteIds !== null) {
         await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
@@ -1726,12 +1803,33 @@ export function siteRoutes(app: FastifyInstance): void {
       }
 
       let site: typeof sites.$inferSelect | undefined;
+      let typeChange: SiteTypeChange | null = null;
+      // The stored positions before a site type change moves stations.
+      const positionsBefore =
+        siteType !== undefined ? await readSiteLayoutPositions(id) : ([] as const);
       try {
-        [site] = await db
-          .update(sites)
-          .set({ ...body, updatedAt: new Date() })
-          .where(eq(sites.id, id))
-          .returning();
+        if (siteType === undefined) {
+          [site] = await db
+            .update(sites)
+            .set({ ...body, updatedAt: new Date() })
+            .where(eq(sites.id, id))
+            .returning();
+        } else {
+          // The site type goes through the layout writer, like every layout
+          // setting, in the transaction of the update.
+          site = await db.transaction(async (tx) => {
+            const [updated] = await tx
+              .update(sites)
+              .set({ ...body, updatedAt: new Date() })
+              .where(eq(sites.id, id))
+              .returning();
+            if (updated == null) return updated;
+            typeChange = await setSiteLayoutType(tx, id, siteType);
+            if (!typeChange.changed) return updated;
+            const [withType] = await tx.select().from(sites).where(eq(sites.id, id));
+            return withType ?? updated;
+          });
+        }
       } catch (err) {
         // A concurrent write took the name after the check above.
         if (!isSiteNameUniqueViolation(err)) throw err;
@@ -1745,8 +1843,19 @@ export function siteRoutes(app: FastifyInstance): void {
         return;
       }
       const actor = getAuditActor(request);
+      const change = typeChange as SiteTypeChange | null;
+      const typeChanged = change?.changed === true;
       // A body with only a data plan is audited by the data plan service alone.
-      if (dataPlan === undefined || Object.keys(body).length > 0) {
+      if (dataPlan === undefined || Object.keys(body).length > 0 || typeChanged) {
+        // A site type change carries the stations it moved, with their positions before.
+        const movedIds = new Set((change?.moved ?? []).map((m) => m.stationId));
+        const moved =
+          change != null && change.moved.length > 0
+            ? {
+                before: positionsBefore.filter((p) => movedIds.has(p.stationId)),
+                after: change.moved,
+              }
+            : null;
         await writeAudit(
           { table: siteAuditLog, idColumn: 'site_id' },
           {
@@ -1754,8 +1863,14 @@ export function siteRoutes(app: FastifyInstance): void {
             entityIdSnapshot: site.id,
             action: 'updated',
             ...actor,
-            before: before ?? null,
-            after: site,
+            before:
+              before == null
+                ? null
+                : moved != null
+                  ? { ...before, layoutPositions: moved.before }
+                  : before,
+            after: moved != null ? { ...site, layoutPositions: moved.after } : site,
+            ...(typeChanged ? { notes: 'site type changed' } : {}),
           },
           db,
           request.log,
@@ -2678,6 +2793,9 @@ export function siteRoutes(app: FastifyInstance): void {
           securityProfile: chargingStations.securityProfile,
           positionX: stationLayoutPositions.positionX,
           positionY: stationLayoutPositions.positionY,
+          freeXM: stationLayoutPositions.freeXM,
+          freeZM: stationLayoutPositions.freeZM,
+          freeRotationDeg: stationLayoutPositions.freeRotationDeg,
           inMaintenance: buildUnderMaintenanceSubquery(
             chargingStations.id,
             chargingStations.siteId,
@@ -2705,11 +2823,9 @@ export function siteRoutes(app: FastifyInstance): void {
         .filter((s) => s.positionX != null && s.positionY != null)
         .map((s) => ({ x: Number(s.positionX), y: Number(s.positionY) }));
       const unplaced = stationRows.filter((s) => s.positionX == null || s.positionY == null);
-      const freeSlots = freeSlotsFor(
-        unplaced.length,
-        placedPoints,
-        await readSiteLayoutSettings(id),
-      );
+      // The station counts by depot kind (a depot's default bus bays and truck lanes).
+      const layoutSettings = await readSiteLayoutSettings(id, db, await readSiteStationCounts(id));
+      const freeSlots = freeSlotsFor(unplaced.length, placedPoints, layoutSettings);
       const slotByStation = new Map<string, { x: number; y: number }>();
       unplaced.forEach((s, i) => {
         const slot = freeSlots[i];
@@ -2770,6 +2886,12 @@ export function siteRoutes(app: FastifyInstance): void {
             and(
               inArray(displayMessages.stationId, stationUuids),
               eq(displayMessages.status, 'accepted'),
+              // Active now: started and not ended.
+              or(
+                isNull(displayMessages.startDateTime),
+                lte(displayMessages.startDateTime, sql`now()`),
+              ),
+              or(isNull(displayMessages.endDateTime), gt(displayMessages.endDateTime, sql`now()`)),
             ),
           )
           .orderBy(desc(displayMessages.createdAt)),
@@ -2798,6 +2920,32 @@ export function siteRoutes(app: FastifyInstance): void {
         }
       }
 
+      // A custom site: every station stands at a free position; one without a
+      // saved position gets one right of the others, in order (spots from its EVSEs).
+      const freeByStation = new Map<string, { placement: FreePlacement; picked: boolean }>();
+      if (usesFreePositions(layoutSettings)) {
+        const spotsOf = (stationId: string): number =>
+          freeSpotCount((evsesByStation.get(stationId) ?? []).length);
+        const known: Array<{ placement: FreePlacement; spots: number }> = [];
+        for (const station of stationRows) {
+          if (station.freeXM == null || station.freeZM == null || station.freeRotationDeg == null)
+            continue;
+          const placement: FreePlacement = {
+            x: Number(station.freeXM),
+            z: Number(station.freeZM),
+            rotationDeg: Number(station.freeRotationDeg),
+          };
+          freeByStation.set(station.id, { placement, picked: false });
+          known.push({ placement, spots: spotsOf(station.id) });
+        }
+        for (const station of stationRows) {
+          if (freeByStation.has(station.id)) continue;
+          const placement = firstFreePlacement(known, spotsOf(station.id));
+          freeByStation.set(station.id, { placement, picked: true });
+          known.push({ placement, spots: spotsOf(station.id) });
+        }
+      }
+
       // First accepted message per station (ordered by createdAt desc)
       const displayMessageByStation = new Map<string, string>();
       for (const msg of displayMessageRows) {
@@ -2819,7 +2967,8 @@ export function siteRoutes(app: FastifyInstance): void {
           securityProfile: station.securityProfile,
           positionX: slotByStation.get(station.id)?.x ?? Number(station.positionX ?? '0'),
           positionY: slotByStation.get(station.id)?.y ?? Number(station.positionY ?? '0'),
-          placed: !slotByStation.has(station.id),
+          placed: !slotByStation.has(station.id) && freeByStation.get(station.id)?.picked !== true,
+          freePosition: freeByStation.get(station.id)?.placement ?? null,
           chargingKind: dataPlan?.chargingKind ?? 'ac',
           cellular: dataPlan != null && (dataPlan.plan === 'cellular' || dataPlan.hasConfirmedSim),
           inMaintenance: station.inMaintenance,
@@ -2913,6 +3062,12 @@ export function siteRoutes(app: FastifyInstance): void {
           stationId: ID_PARAMS.stationId.describe('Station ID'),
           positionX: z.number().describe('X coordinate on the layout board in px'),
           positionY: z.number().describe('Y coordinate on the layout board in px'),
+          freePosition: freePlacementSchema
+            .nullable()
+            .optional()
+            .describe(
+              'Custom site: where the station stands (meters and turn). Omitted keeps the saved one; null clears it (the station then gets one right of the others). Spots that overlap another station answer 400 VALIDATION_ERROR naming the stations (details.stations)',
+            ),
         }),
       )
       .describe('Station positions to save'),
@@ -2920,7 +3075,7 @@ export function siteRoutes(app: FastifyInstance): void {
       .nullable()
       .optional()
       .describe(
-        'New layout settings of the site (site type, lot and transformers); null resets them to the default, omitted keeps them. A station outside the lot moves to the nearest free spot inside, a transformer on the lot moves to the grass beside it; when the lot has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
+        'New layout settings of the site (the site type and the fields of every type); null resets them to the default, omitted keeps them. A station outside the layout moves to the nearest free spot, a transformer or battery on the lot moves to the grass beside it; when the layout has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
       ),
   });
 
@@ -2946,15 +3101,21 @@ export function siteRoutes(app: FastifyInstance): void {
                       stationId: z.string().describe('Station ID'),
                       positionX: z.number().describe('New X coordinate in px'),
                       positionY: z.number().describe('New Y coordinate in px'),
+                      freePosition: freePlacementSchema
+                        .nullable()
+                        .describe('Custom site: the free position the save gave the station'),
                     }),
                   )
-                  .describe('Stations the lot moved to a free spot inside it'),
+                  .describe(
+                    'Stations the lot moved to a free spot inside it, or (custom site) that got a free position',
+                  ),
               })
               .loose(),
           ),
-          400: errorWith('Invalid settings, or the lot has no free spot for every station', [
-            ERROR_CODES.VALIDATION_ERROR,
-          ]),
+          400: errorWith(
+            'Invalid settings, the lot has no free spot for every station, or the parking spots of stations on a custom site overlap',
+            [ERROR_CODES.VALIDATION_ERROR],
+          ),
           404: errorWith('Site or station not found', [
             ERROR_CODES.SITE_NOT_FOUND,
             ERROR_CODES.STATION_NOT_FOUND,
@@ -2970,7 +3131,14 @@ export function siteRoutes(app: FastifyInstance): void {
         await reply.status(404).send({ error: 'Site not found', code: 'SITE_NOT_FOUND' });
         return;
       }
-      const { positions } = request.body as z.infer<typeof layoutBody>;
+      const { positions: bodyPositions } = request.body as z.infer<typeof layoutBody>;
+      // undefined keeps a saved free position, null clears it.
+      const positions = bodyPositions.map((p) => ({
+        stationId: p.stationId,
+        positionX: p.positionX,
+        positionY: p.positionY,
+        ...(p.freePosition !== undefined ? { free: p.freePosition } : {}),
+      }));
       // Ajv checks the ranges; the Zod schema also checks the 10 cm steps and
       // the unique transformer ids.
       const rawSettings = (request.body as { settings?: unknown }).settings;
@@ -3004,6 +3172,9 @@ export function siteRoutes(app: FastifyInstance): void {
           stationId: stationLayoutPositions.stationId,
           positionX: stationLayoutPositions.positionX,
           positionY: stationLayoutPositions.positionY,
+          freeXM: stationLayoutPositions.freeXM,
+          freeZM: stationLayoutPositions.freeZM,
+          freeRotationDeg: stationLayoutPositions.freeRotationDeg,
         })
         .from(stationLayoutPositions)
         .where(
@@ -3030,11 +3201,21 @@ export function siteRoutes(app: FastifyInstance): void {
           });
           return;
         }
+        if (err instanceof LayoutSpotsOverlapError) {
+          await reply.status(400).send({
+            error: `The parking spots of these stations overlap another station: ${err.stations.join(', ')}`,
+            code: 'VALIDATION_ERROR',
+            details: { stations: err.stations },
+          });
+          return;
+        }
         throw err;
       }
 
-      const after = new Map(positions.map((p) => [p.stationId, p]));
-      for (const m of saved.moved) after.set(m.stationId, m);
+      const after = new Map<string, (typeof saved.moved)[number]>(
+        positions.map((p) => [p.stationId, p]),
+      );
+      for (const m of saved.moved) after.set(m.stationId, { ...after.get(m.stationId), ...m });
       const settingsChanged = saved.settingsChanged;
       if (after.size > 0 || settingsChanged) {
         const previousPositions = previousRows
@@ -3043,6 +3224,15 @@ export function siteRoutes(app: FastifyInstance): void {
             stationId: row.stationId,
             positionX: Number(row.positionX),
             positionY: Number(row.positionY),
+            ...(row.freeXM != null && row.freeZM != null && row.freeRotationDeg != null
+              ? {
+                  free: {
+                    x: Number(row.freeXM),
+                    z: Number(row.freeZM),
+                    rotationDeg: Number(row.freeRotationDeg),
+                  },
+                }
+              : {}),
           }));
         await writeAudit(
           { table: siteAuditLog, idColumn: 'site_id' },
@@ -3074,6 +3264,7 @@ export function siteRoutes(app: FastifyInstance): void {
           stationId: m.stationId,
           positionX: m.positionX,
           positionY: m.positionY,
+          freePosition: m.free ?? null,
         })),
       };
     },

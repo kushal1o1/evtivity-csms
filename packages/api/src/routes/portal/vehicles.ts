@@ -10,6 +10,8 @@ import { getAuditActor } from '../../lib/audit-actor.js';
 import * as vehicleService from '../../services/vehicle.service.js';
 import {
   replyVehicleServiceError,
+  vehicleAppearanceBodyFields,
+  vehicleAppearanceItemFields,
   vehicleAutochargeFields,
   vehicleLastSeen,
 } from '../../lib/vehicle-response.js';
@@ -30,6 +32,7 @@ const vehicleItem = z
       .regex(/^\d{4}$/)
       .nullable()
       .describe('Vehicle year (4-digit)'),
+    ...vehicleAppearanceItemFields,
     ...vehicleAutochargeFields,
     autochargeBlocked: z
       .boolean()
@@ -62,6 +65,7 @@ const updateVehicleBody = z.object({
     .nullable()
     .optional()
     .describe('Model year (4-digit). Null removes it.'),
+  ...vehicleAppearanceBodyFields,
   ...vehicleIdFields,
   autochargeEnabled: z
     .boolean()
@@ -82,6 +86,8 @@ function portalVehicle(
     make: v.make,
     model: v.model,
     year: v.year,
+    color: v.color,
+    bodyType: v.bodyType,
     vin: v.vin,
     evccid: v.evccid,
     autochargeEnabled: v.autochargeEnabled,
@@ -99,6 +105,7 @@ const createVehicleBody = z.object({
     .regex(/^\d{4}$/)
     .optional()
     .describe('Model year (4-digit)'),
+  ...vehicleAppearanceBodyFields,
   ...vehicleIdFields,
 });
 

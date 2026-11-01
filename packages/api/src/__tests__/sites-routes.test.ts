@@ -96,10 +96,21 @@ vi.mock('@evtivity/services/station-derived-status', () => ({
   buildStatusReasonSubquery: vi.fn(() => null),
 }));
 
-const { mockSaveSiteLayout, MockLayoutGridTooSmallError } = vi.hoisted(() => {
+const {
+  mockSaveSiteLayout,
+  MockLayoutGridTooSmallError,
+  MockLayoutSpotsOverlapError,
+  mockReadSiteLayoutSettings,
+  mockReadSiteStationCounts,
+} = vi.hoisted(() => {
   class MockLayoutGridTooSmallError extends Error {
     constructor(readonly stations: string[]) {
       super('too small');
+    }
+  }
+  class MockLayoutSpotsOverlapError extends Error {
+    constructor(readonly stations: string[]) {
+      super('overlap');
     }
   }
   const unchanged = { settingsBefore: {}, settingsAfter: {}, settingsChanged: false, moved: [] };
@@ -108,8 +119,27 @@ const { mockSaveSiteLayout, MockLayoutGridTooSmallError } = vi.hoisted(() => {
       (..._args: unknown[]): Promise<unknown> => Promise.resolve(unchanged),
     ),
     MockLayoutGridTooSmallError,
+    MockLayoutSpotsOverlapError,
+    mockReadSiteLayoutSettings: vi.fn(
+      async (..._args: unknown[]): Promise<unknown> =>
+        (await import('@evtivity/lib/site-layout')).effectiveLayoutSettings(null),
+    ),
+    mockReadSiteStationCounts: vi.fn(
+      (..._args: unknown[]): Promise<{ total: number; bus: number; truck: number }> =>
+        Promise.resolve({ total: 0, bus: 0, truck: 0 }),
+    ),
   };
 });
+
+const { mockSetSiteLayoutType, mockReadSiteLayoutPositions } = vi.hoisted(() => ({
+  mockSetSiteLayoutType: vi.fn(
+    (..._args: unknown[]): Promise<unknown> =>
+      Promise.resolve({ changed: false, settingsBefore: {}, settingsAfter: {}, moved: [] }),
+  ),
+  mockReadSiteLayoutPositions: vi.fn(
+    (..._args: unknown[]): Promise<unknown[]> => Promise.resolve([]),
+  ),
+}));
 
 const mockReadStationDataPlans = vi.hoisted(() =>
   vi.fn((): Promise<Map<string, unknown>> => Promise.resolve(new Map())),
@@ -120,10 +150,12 @@ vi.mock('@evtivity/database', async () => ({
   ...(await import('@evtivity/database/src/lib/ai-insight-suppression.js')),
   readStationDataPlans: mockReadStationDataPlans,
   saveSiteLayout: mockSaveSiteLayout,
-  readSiteLayoutSettings: vi.fn(async () =>
-    (await import('@evtivity/lib/site-layout')).effectiveLayoutSettings(null),
-  ),
+  setSiteLayoutType: mockSetSiteLayoutType,
+  readSiteLayoutPositions: mockReadSiteLayoutPositions,
+  readSiteLayoutSettings: mockReadSiteLayoutSettings,
+  readSiteStationCounts: mockReadSiteStationCounts,
   LayoutGridTooSmallError: MockLayoutGridTooSmallError,
+  LayoutSpotsOverlapError: MockLayoutSpotsOverlapError,
   getCompanyCurrency: vi.fn(() => Promise.resolve('EUR')),
   db: {
     select: vi.fn(() => makeChain()),
@@ -202,7 +234,9 @@ vi.mock('drizzle-orm', () => {
       identifier: vi.fn(sqlFn),
     }),
     getTableName: vi.fn(() => 'charging_stations'),
+    gt: vi.fn(),
     gte: vi.fn(),
+    isNull: vi.fn(),
     lte: vi.fn(),
     desc: vi.fn(),
     count: vi.fn(),
@@ -556,6 +590,50 @@ describe('Site routes - handler logic', () => {
 
       expect(response.statusCode).toBe(201);
       expect(response.json().name).toBe('New Site');
+      expect(mockSetSiteLayoutType).not.toHaveBeenCalled();
+    });
+
+    it('stores the site type of a new site through the layout writer', async () => {
+      mockSetSiteLayoutType.mockClear();
+      const created = { ...FULL_SITE_ROW, name: 'Curb Site', layoutSettings: null };
+      const withType = {
+        ...created,
+        layoutSettings: {
+          siteType: 'curbside',
+          spotsPerRow: 10,
+          rows: 2,
+          facingDeg: 0,
+          transformers: [],
+        },
+      };
+      mockSetSiteLayoutType.mockResolvedValueOnce({
+        changed: true,
+        settingsBefore: {},
+        settingsAfter: {},
+        moved: [],
+      });
+      // Name pre-check, then the insert and the re-read in the transaction.
+      setupDbResults([], [created], [withType]);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/sites',
+        headers: { authorization: 'Bearer ' + token },
+        payload: { name: 'Curb Site', siteType: 'curbside' },
+      });
+      expect(response.statusCode).toBe(201);
+      expect(mockSetSiteLayoutType.mock.calls[0]?.[1]).toBe(VALID_SITE_ID);
+      expect(mockSetSiteLayoutType.mock.calls[0]?.[2]).toBe('curbside');
+      expect(response.json().layoutSettings.siteType).toBe('curbside');
+    });
+
+    it('refuses an unknown site type', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/sites',
+        headers: { authorization: 'Bearer ' + token },
+        payload: { name: 'X', siteType: 'garage' },
+      });
+      expect(response.statusCode).toBe(400);
     });
 
     it('returns 404 to a site-restricted user and inserts nothing', async () => {
@@ -716,6 +794,97 @@ describe('Site routes - handler logic', () => {
       });
       // The OCPI location carries the address and coordinates.
       expect(publishOcpiLocationPush).toHaveBeenCalledWith(VALID_SITE_ID, null, expect.anything());
+    });
+
+    it('changes the site type through the layout writer and audits the stations it moved', async () => {
+      vi.mocked(databaseModule.writeAudit).mockClear();
+      mockSetSiteLayoutType.mockClear();
+      mockReadSiteLayoutPositions.mockResolvedValueOnce([
+        { stationId: VALID_STATION_ID, positionX: 20, positionY: 160 },
+        { stationId: 'other', positionX: 20, positionY: 20 },
+      ]);
+      mockSetSiteLayoutType.mockResolvedValueOnce({
+        changed: true,
+        settingsBefore: {},
+        settingsAfter: {},
+        moved: [{ stationId: VALID_STATION_ID, positionX: 220, positionY: 20 }],
+      });
+      const withType = {
+        ...FULL_SITE_ROW,
+        layoutSettings: {
+          siteType: 'office_retail',
+          spotsPerRow: 10,
+          rows: 2,
+          facingDeg: 0,
+          transformers: [],
+        },
+      };
+      setupDbResults([FULL_SITE_ROW], [FULL_SITE_ROW], [withType]);
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/sites/${VALID_SITE_ID}`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { siteType: 'office_retail' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSetSiteLayoutType.mock.calls[0]?.[2]).toBe('office_retail');
+      expect(response.json().layoutSettings.siteType).toBe('office_retail');
+      expect(vi.mocked(databaseModule.writeAudit).mock.calls[0]?.[1]).toMatchObject({
+        action: 'updated',
+        before: {
+          layoutPositions: [{ stationId: VALID_STATION_ID, positionX: 20, positionY: 160 }],
+        },
+        after: {
+          layoutSettings: { siteType: 'office_retail' },
+          layoutPositions: [{ stationId: VALID_STATION_ID, positionX: 220, positionY: 20 }],
+        },
+        notes: 'site type changed',
+      });
+    });
+
+    it('sets the Depot site type through the writer', async () => {
+      mockSetSiteLayoutType.mockClear();
+      mockSetSiteLayoutType.mockResolvedValueOnce({
+        changed: true,
+        settingsBefore: {},
+        settingsAfter: {},
+        moved: [],
+      });
+      const withType = {
+        ...FULL_SITE_ROW,
+        layoutSettings: {
+          siteType: 'depot',
+          spotsPerRow: 10,
+          rows: 2,
+          facingDeg: 0,
+          transformers: [],
+        },
+      };
+      setupDbResults([FULL_SITE_ROW], [FULL_SITE_ROW], [withType]);
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/sites/${VALID_SITE_ID}`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { siteType: 'depot' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSetSiteLayoutType.mock.calls[0]?.[2]).toBe('depot');
+      expect(response.json().layoutSettings.siteType).toBe('depot');
+    });
+
+    it('writes no type change when the site already has the type', async () => {
+      mockSetSiteLayoutType.mockClear();
+      vi.mocked(databaseModule.writeAudit).mockClear();
+      setupDbResults([FULL_SITE_ROW], [FULL_SITE_ROW]);
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/sites/${VALID_SITE_ID}`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { siteType: 'parking_lot' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSetSiteLayoutType).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(databaseModule.writeAudit).mock.calls[0]?.[1]).not.toHaveProperty('notes');
     });
 
     it('still rejects an invalid email or coordinate', async () => {
@@ -1531,6 +1700,111 @@ describe('Site routes - handler logic', () => {
       });
     });
 
+    it('gives a custom site its free positions and picks one for a station without', async () => {
+      const lib = await import('@evtivity/lib/site-layout');
+      mockReadSiteLayoutSettings.mockResolvedValueOnce({
+        ...lib.effectiveLayoutSettings(null),
+        siteType: 'custom',
+      });
+      const saved = {
+        id: 'sta_000000000003',
+        stationId: 'STATION-001',
+        model: null,
+        status: 'available',
+        statusReason: null,
+        isOnline: true,
+        securityProfile: 0,
+        positionX: '20',
+        positionY: '20',
+        freeXM: '4.50',
+        freeZM: '-2.00',
+        freeRotationDeg: '30.0',
+        inMaintenance: false,
+      };
+      const unsaved = {
+        ...saved,
+        id: 'sta_000000000004',
+        stationId: 'STATION-002',
+        positionX: '220',
+        freeXM: null,
+        freeZM: null,
+        freeRotationDeg: null,
+      };
+      setupDbResults([{ id: VALID_SITE_ID }], [saved, unsaved], [], [], [], []);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const [first, second] = response.json();
+      expect(first).toMatchObject({
+        placed: true,
+        freePosition: { x: 4.5, z: -2, rotationDeg: 30 },
+      });
+      expect(second.placed).toBe(false);
+      expect(
+        lib.freeFootprintsOverlap(
+          { placement: first.freePosition, spots: 1 },
+          { placement: second.freePosition, spots: 1 },
+        ),
+      ).toBe(false);
+    });
+
+    it('reads the station counts by depot kind for the layout defaults', async () => {
+      const counts = { total: 3, bus: 1, truck: 2 };
+      mockReadSiteStationCounts.mockResolvedValueOnce(counts);
+      mockReadSiteLayoutSettings.mockClear();
+      const station = {
+        id: 'sta_000000000003',
+        stationId: 'STATION-001',
+        model: null,
+        status: 'available',
+        statusReason: null,
+        isOnline: true,
+        securityProfile: 0,
+        positionX: '20',
+        positionY: '20',
+        freeXM: null,
+        freeZM: null,
+        freeRotationDeg: null,
+        inMaintenance: false,
+      };
+      setupDbResults([{ id: VALID_SITE_ID }], [station], [], [], [], []);
+      const response = await app.inject({
+        method: 'GET',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockReadSiteLayoutSettings.mock.calls.at(-1)?.[2]).toEqual(counts);
+    });
+
+    it('returns no free position on a grid site', async () => {
+      const station = {
+        id: 'sta_000000000003',
+        stationId: 'STATION-001',
+        model: null,
+        status: 'available',
+        statusReason: null,
+        isOnline: true,
+        securityProfile: 0,
+        positionX: '20',
+        positionY: '20',
+        inMaintenance: false,
+      };
+      setupDbResults([{ id: VALID_SITE_ID }], [station], [], [], [], []);
+      const response = await app.inject({
+        method: 'GET',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()[0]).toMatchObject({ placed: true, freePosition: null });
+    });
+
     it('shows the active session only with sessions:read, and its driver only with drivers:read too', async () => {
       const station = {
         id: 'sta_000000000003',
@@ -1551,6 +1825,7 @@ describe('Site routes - handler logic', () => {
         currentCostCents: 150,
         currency: 'USD',
         driver: null,
+        vehicle: { color: 'red', bodyType: 'suv' },
       };
       const get = () =>
         app.inject({
@@ -1678,9 +1953,6 @@ describe('Site routes - handler logic', () => {
     const settings = {
       spotsPerRow: 6,
       rows: 2,
-      spotWidthM: 3.5,
-      spotDepthM: 5.8,
-      laneWidthM: 7,
       facingDeg: 90,
       transformers: [{ id: 'tx-1', name: 'Main Feed', ratedKva: 2500, x: 26, z: 3 }],
     };
@@ -1708,7 +1980,7 @@ describe('Site routes - handler logic', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json().moved).toEqual([
-        { stationId: VALID_STATION_ID, positionX: 1020, positionY: 20 },
+        { stationId: VALID_STATION_ID, positionX: 1020, positionY: 20, freePosition: null },
       ]);
       expect(mockSaveSiteLayout.mock.calls[0]?.[3]).toEqual(settings);
       expect(vi.mocked(databaseModule.writeAudit).mock.calls[0]?.[1]).toMatchObject({
@@ -1751,6 +2023,24 @@ describe('Site routes - handler logic', () => {
       });
     });
 
+    it('drops the spot and lane sizes of earlier clients (standard dimensions)', async () => {
+      mockSaveSiteLayout.mockResolvedValueOnce({
+        settingsBefore: settings,
+        settingsAfter: settings,
+        settingsChanged: false,
+        moved: [],
+      });
+      setupDbResults([{ id: VALID_SITE_ID }], []);
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { positions: [], settings: { ...settings, spotWidthM: 3.2, laneWidthM: 6 } },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSaveSiteLayout.mock.calls[0]?.[3]).toEqual(settings);
+    });
+
     it('passes null to reset the settings and nothing to keep them', async () => {
       setupDbResults([{ id: VALID_SITE_ID }], []);
       await app.inject({
@@ -1772,7 +2062,10 @@ describe('Site routes - handler logic', () => {
 
     it.each([
       ['spots out of range', { spotsPerRow: 0 }],
-      ['a spot width in 5 cm', { spotWidthM: 3.25 }],
+      ['no charger on either curb', { siteType: 'curbside', chargersLeft: 0, chargersRight: 0 }],
+      ['a depot with no bus bay or truck lane', { siteType: 'depot', busBays: 0, truckLanes: 0 }],
+      ['too many bus bays', { siteType: 'depot', busBays: 101 }],
+      ['an unknown charger mounting', { mounting: 'ceiling' }],
       ['a facing that is no quarter turn', { facingDeg: 45 }],
       ['an unknown site type', { siteType: 'garage' }],
       [
@@ -1796,6 +2089,132 @@ describe('Site routes - handler logic', () => {
       // Ajv (FST_ERR_VALIDATION here, VALIDATION_ERROR in the app) or the Zod check.
       expect(['VALIDATION_ERROR', 'FST_ERR_VALIDATION']).toContain(response.json().code);
       expect(mockSaveSiteLayout).not.toHaveBeenCalled();
+    });
+
+    it('passes a free position to the writer and audits it before and after', async () => {
+      vi.mocked(databaseModule.writeAudit).mockClear();
+      mockSaveSiteLayout.mockResolvedValueOnce({
+        settingsBefore: {},
+        settingsAfter: {},
+        settingsChanged: false,
+        moved: [],
+      });
+      setupDbResults(
+        [{ id: VALID_SITE_ID }],
+        [{ id: VALID_STATION_ID }],
+        [
+          {
+            stationId: VALID_STATION_ID,
+            positionX: '20',
+            positionY: '20',
+            freeXM: '1.00',
+            freeZM: '2.00',
+            freeRotationDeg: '0.0',
+          },
+        ],
+      );
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: {
+          positions: [
+            {
+              stationId: VALID_STATION_ID,
+              positionX: 20,
+              positionY: 20,
+              freePosition: { x: 6.5, z: 2, rotationDeg: 45 },
+            },
+          ],
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSaveSiteLayout.mock.calls.at(-1)?.[2]).toEqual([
+        {
+          stationId: VALID_STATION_ID,
+          positionX: 20,
+          positionY: 20,
+          free: { x: 6.5, z: 2, rotationDeg: 45 },
+        },
+      ]);
+      expect(vi.mocked(databaseModule.writeAudit).mock.calls[0]?.[1]).toMatchObject({
+        before: { layoutPositions: [{ free: { x: 1, z: 2, rotationDeg: 0 } }] },
+        after: { layoutPositions: [{ free: { x: 6.5, z: 2, rotationDeg: 45 } }] },
+      });
+    });
+
+    it('drops a spot type an older client sends with a free position (custom sites have car spots only)', async () => {
+      mockSaveSiteLayout.mockClear();
+      mockSaveSiteLayout.mockResolvedValueOnce({
+        settingsBefore: {},
+        settingsAfter: {},
+        settingsChanged: false,
+        moved: [],
+      });
+      setupDbResults([{ id: VALID_SITE_ID }], [{ id: VALID_STATION_ID }], []);
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: {
+          positions: [
+            {
+              stationId: VALID_STATION_ID,
+              positionX: 20,
+              positionY: 20,
+              freePosition: { x: 1, z: 2, rotationDeg: 0, spotType: 'bus_bay' },
+            },
+          ],
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(mockSaveSiteLayout.mock.calls.at(-1)?.[2]).toEqual([
+        {
+          stationId: VALID_STATION_ID,
+          positionX: 20,
+          positionY: 20,
+          free: { x: 1, z: 2, rotationDeg: 0 },
+        },
+      ]);
+    });
+
+    it('refuses a turn of 360 degrees before the writer runs', async () => {
+      mockSaveSiteLayout.mockClear();
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: {
+          positions: [
+            {
+              stationId: VALID_STATION_ID,
+              positionX: 20,
+              positionY: 20,
+              freePosition: { x: 0, z: 0, rotationDeg: 360 },
+            },
+          ],
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(mockSaveSiteLayout).not.toHaveBeenCalled();
+    });
+
+    it('names the stations whose spots overlap on a custom site and audits nothing', async () => {
+      vi.mocked(databaseModule.writeAudit).mockClear();
+      mockSaveSiteLayout.mockRejectedValueOnce(new MockLayoutSpotsOverlapError(['CS-0982']));
+      setupDbResults([{ id: VALID_SITE_ID }], []);
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/sites/${VALID_SITE_ID}/layout`,
+        headers: { authorization: 'Bearer ' + token },
+        payload: { positions: [] },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        code: 'VALIDATION_ERROR',
+        details: { stations: ['CS-0982'] },
+      });
+      expect(vi.mocked(databaseModule.writeAudit)).not.toHaveBeenCalled();
     });
 
     it('names the stations a smaller lot cannot hold and audits nothing', async () => {

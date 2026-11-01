@@ -1,12 +1,20 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-// The site layout demo (seed-demo-layout-plan.ts): two sites whose 3D layout
+// The site layout demo (seed-demo-layout-plan.ts): five sites whose 3D layout
 // shows every feature at once. Harbor Point Charging Hub is a parking lot of
 // DC fast chargers (2 rows of 6 spots, two named transformers on the grass),
-// Lakeside Retail Park an office or retail site of AC wall boxes along the
-// building (one row of 12 spots, turned 90 degrees). Both are load managed
-// with panels, a sub-panel and circuits, so the panels and their links show.
+// Lakeside Retail Park an office or retail site of AC wall boxes on the
+// building facade (12 charger positions), Riverside Medical Offices an office
+// or retail site of AC posts at the head of each spot, and Maple Street a
+// curbside site of AC posts on both curbs (4 + 4), and Willow Creek Park and
+// Ride a custom site whose stations stand freely along a curved access road
+// (one DC charger shows an active display message), and Northgate Fleet Depot a
+// custom site of bus bays (depot pantograph masts and plug-in dispensers) and
+// truck pull-through lanes (megawatt dispensers) whose fleet of buses, semi
+// trucks and box trucks charges there (`seedDepotFleet`). Every site is load managed
+// (panels, a sub-panel and circuits); the parking lot draws its panels and
+// their links, the others show the allocated limit in the station popup.
 // Harbor Point has a cellular station, a station under a maintenance event,
 // a faulted station without a simulator with an open AI insight on it, a
 // battery and a solar carport canopy, and two card readers on DC chargers (a
@@ -26,6 +34,7 @@
 import type postgres from 'postgres';
 import argon2 from 'argon2';
 import { STATION_PASSWORD_HASH_OPTIONS } from '@evtivity/lib';
+import { mapConnectorTypeToCss } from '@evtivity/lib';
 import { bayToPosition, sameLayoutSettings } from '@evtivity/lib/site-layout';
 import { db } from './config.js';
 import { writeAudit } from './lib/audit.js';
@@ -45,9 +54,29 @@ import { seedStationFaultInsight } from './seed-ai-insights.js';
 import type { DemoFeatureContext } from './seed-demo-features.js';
 import {
   LAYOUT_DEMO,
+  LAYOUT_DEMO_MESSAGE_ID,
   LAYOUT_DEMO_PREVIOUS_SETTINGS,
   type LayoutDemoSite,
+  type LayoutDemoStation,
 } from './seed-demo-layout-plan.js';
+
+/** The connectors of a demo station: its type, power and current (DC about 500 V, megawatt about 750 V). */
+function demoConnector(station: LayoutDemoStation): {
+  type: string;
+  kw: number;
+  amps: number;
+  css: ReturnType<typeof mapConnectorTypeToCss>;
+} {
+  const isDc = station.kind === 'dc';
+  const type = station.connectorType ?? (isDc ? 'CCS2' : 'Type2');
+  const kw = station.maxPowerKw ?? (isDc ? 150 : 22);
+  const amps = isDc ? Math.round((kw * 1000) / (kw >= 400 ? 750 : 500)) : 32;
+  // The simulator knows the plug types only: a pantograph or megawatt
+  // connector charges as CCS1 there (the connector row keeps its own type).
+  const known = mapConnectorTypeToCss(type);
+  const css = isDc && known === 'ac_type2' ? 'dc_ccs1' : known;
+  return { type, kw, amps, css };
+}
 
 const DAY_MS = 86_400_000;
 
@@ -177,7 +206,8 @@ async function seedSite(
       continue;
     }
     seeded.push(station.id);
-    const evseCount = isDc ? 2 : 1;
+    const evseCount = station.evses ?? (isDc ? 2 : 1);
+    const connector = demoConnector(station);
     for (let e = 1; e <= evseCount; e++) {
       await sql`
         INSERT INTO evses (id, station_id, evse_id)
@@ -188,7 +218,7 @@ async function seedSite(
         INSERT INTO connectors (id, evse_id, connector_id, status, connector_type, max_power_kw,
           max_current_amps)
         VALUES (${`con_demolayout${n}${String(e)}`}, ${`evs_demolayout${n}${String(e)}`}, 1,
-          'unavailable', ${isDc ? 'CCS2' : 'Type2'}, ${isDc ? '150' : '22'}, ${isDc ? 300 : 32})
+          'unavailable', ${connector.type}, ${String(connector.kw)}, ${connector.amps})
         ON CONFLICT DO NOTHING
       `;
     }
@@ -205,7 +235,7 @@ async function seedSite(
         INSERT INTO css_evses (id, css_station_id, evse_id, connector_id, connector_type,
           max_power_w, phases, voltage)
         VALUES (${`cev_demolayout${n}${String(e)}`}, ${cssId}, ${e}, 1,
-          ${isDc ? 'dc_ccs2' : 'ac_type2'}, ${isDc ? 150000 : 22000}, 3, ${isDc ? 400 : 230})
+          ${connector.css}, ${connector.kw * 1000}, 3, ${isDc ? 400 : 230})
         ON CONFLICT DO NOTHING
       `;
     }
@@ -231,7 +261,13 @@ async function seedLayout(
     .filter((s) => seeded.includes(s.id))
     .map((s) => {
       const p = bayToPosition({ col: s.col, row: s.row });
-      return { stationId: s.id, positionX: p.x, positionY: p.y };
+      // A custom site's station also stands at its free position.
+      return {
+        stationId: s.id,
+        positionX: p.x,
+        positionY: p.y,
+        ...(s.free != null ? { free: s.free } : {}),
+      };
     });
   try {
     const saved = await db.transaction((tx) =>
@@ -374,8 +410,79 @@ export interface LayoutDemoCounts {
   moved: number;
   layouts: number;
   terminals: number;
+  /** Active display messages created on demo stations. */
+  messages: number;
   /** Open AI insights created on the faulted demo stations. */
   faultInsights: number;
+  /** Drivers of the depot fleet created (each with its card and its vehicle). */
+  fleetDrivers: number;
+}
+
+/**
+ * The fleet of Northgate Fleet Depot (`LAYOUT_DEMO.fleet`): the fleet, its
+ * drivers with an RFID card, a saved simulated credit card and one vehicle
+ * each (bus, semi truck or box truck in its color), the members and the
+ * depot's stations as the fleet's stations, so the simulator charges them
+ * with these drivers' cards and the layout draws their vehicles. Fixed ids,
+ * ON CONFLICT DO NOTHING: a rerun adds nothing and an operator's change stays.
+ */
+async function seedDepotFleet(sql: postgres.Sql, stationIds: readonly string[]): Promise<number> {
+  const fleet = LAYOUT_DEMO.fleet;
+  await sql`
+    INSERT INTO fleets (id, name, description)
+    VALUES (${fleet.id}, ${fleet.name}, ${fleet.description})
+    ON CONFLICT (id) DO NOTHING
+  `;
+  let created = 0;
+  for (const d of fleet.drivers) {
+    const rows = await sql`
+      INSERT INTO drivers (id, first_name, last_name, email, email_verified, registration_source)
+      VALUES (${d.id}, ${d.firstName}, ${d.lastName}, ${d.email}, true, 'admin')
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    `;
+    // Another driver holding the email (an operator's own) keeps it: nothing else for this one.
+    const [own] = await sql`SELECT 1 FROM drivers WHERE id = ${d.id}`;
+    if (own == null) continue;
+    created += rows.length;
+    const n = d.id.slice(-2);
+    await sql`
+      INSERT INTO driver_tokens (id, driver_id, id_token, token_type, is_active)
+      VALUES (${`dtk_demodepot${n}`}, ${d.id}, ${d.idToken}, 'ISO14443', true)
+      ON CONFLICT DO NOTHING
+    `;
+    const v = d.vehicle;
+    await sql`
+      INSERT INTO vehicles (id, driver_id, make, model, year, license_plate, color, body_type)
+      VALUES (${v.id}, ${d.id}, ${v.make}, ${v.model}, ${v.year}, ${v.licensePlate}, ${v.color},
+        ${v.bodyType})
+      ON CONFLICT DO NOTHING
+    `;
+    await sql`
+      INSERT INTO driver_payment_customers (driver_id, provider, provider_customer_id)
+      VALUES (${d.id}, 'simulated', ${`cus_sim_depot${n}`})
+      ON CONFLICT DO NOTHING
+    `;
+    await sql`
+      INSERT INTO driver_payment_methods (driver_id, provider, provider_customer_id,
+        provider_payment_method_id, card_brand, card_last4, is_default)
+      SELECT ${d.id}, 'simulated', ${`cus_sim_depot${n}`}, ${`pm_sim_depot${n}`}, 'visa', '4242', true
+      WHERE NOT EXISTS (SELECT 1 FROM driver_payment_methods WHERE driver_id = ${d.id})
+    `;
+    await sql`
+      INSERT INTO fleet_drivers (fleet_id, driver_id)
+      VALUES (${fleet.id}, ${d.id})
+      ON CONFLICT DO NOTHING
+    `;
+  }
+  for (const stationId of stationIds) {
+    await sql`
+      INSERT INTO fleet_stations (fleet_id, station_id)
+      VALUES (${fleet.id}, ${stationId})
+      ON CONFLICT DO NOTHING
+    `;
+  }
+  return created;
 }
 
 /** Seeds the site layout demo; a rerun adds nothing. */
@@ -415,6 +522,22 @@ export async function seedLayoutDemo(
     `;
   }
   const terminals = await seedTerminals(sql, ctx);
+  // An active display message the station accepted (shown on its charger screen in 3D).
+  let messages = 0;
+  for (const site of LAYOUT_DEMO.sites) {
+    for (const station of site.stations) {
+      if (station.message == null || !(present.get(site.id) ?? []).includes(station.id)) continue;
+      const rows = await sql`
+        INSERT INTO display_messages (station_id, ocpp_message_id, priority, status, format,
+          language, content, created_at, updated_at)
+        VALUES (${station.id}, ${LAYOUT_DEMO_MESSAGE_ID}, 'NormalCycle', 'accepted', 'UTF8', 'en',
+          ${station.message}, ${ctx.now}, ${ctx.now})
+        ON CONFLICT (station_id, ocpp_message_id) DO NOTHING
+        RETURNING id
+      `;
+      messages += rows.length;
+    }
+  }
   // The faulted stations (no simulator): a faulted connector and an open AI insight on it.
   let faultInsights = 0;
   for (const site of LAYOUT_DEMO.sites) {
@@ -428,5 +551,6 @@ export async function seedLayoutDemo(
       if (created) faultInsights++;
     }
   }
-  return { stations, moved, layouts, terminals, faultInsights };
+  const fleetDrivers = await seedDepotFleet(sql, present.get(LAYOUT_DEMO.fleet.siteId) ?? []);
+  return { stations, moved, layouts, terminals, faultInsights, messages, fleetDrivers };
 }

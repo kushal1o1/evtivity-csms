@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { LANGUAGES, LanguageSelect } from '@/components/ui/language-select';
+import { useLoadedValues } from '@/hooks/use-loaded-values';
 import { api } from '@/lib/api';
 import { useHasCompanyWidePermission } from '@/lib/auth';
 
@@ -223,6 +224,38 @@ export function stationMessageStateLabel(t: TFunction, state: string): string {
   return key != null ? t(key as never) : state;
 }
 
+interface StationMessageValues {
+  enabled: boolean;
+  pricingFormat: string;
+  refreshSeconds: string;
+  eventMessageTtlSeconds: string;
+  brandLine: string;
+  language: StationMessageLanguage;
+}
+
+function secondsText(value: unknown): string {
+  if (typeof value === 'number') return value.toString();
+  if (typeof value === 'string' && value !== '') return value;
+  return '30';
+}
+
+/** The station message form values as stored (defaults while the settings load). */
+function stationMessageValuesFrom(
+  settings: Record<string, unknown> | undefined,
+): StationMessageValues {
+  const fmt = settings?.['stationMessage.pricingFormat'];
+  const brand = settings?.['stationMessage.brandLine'];
+  const language = settings?.['stationMessage.language'];
+  return {
+    enabled: settings?.['stationMessage.enabled'] === true,
+    pricingFormat: typeof fmt === 'string' ? fmt : 'compact',
+    refreshSeconds: secondsText(settings?.['stationMessage.charging.refreshSeconds']),
+    eventMessageTtlSeconds: secondsText(settings?.['stationMessage.eventMessageTtlSeconds']),
+    brandLine: typeof brand === 'string' ? brand : '',
+    language: isStationMessageLanguage(language) ? language : 'en',
+  };
+}
+
 interface StationMessageSettingsProps {
   settings: Record<string, unknown> | undefined;
 }
@@ -237,42 +270,24 @@ export function StationMessageSettings({
   const canWriteTemplates = useHasCompanyWidePermission('settings.integrations:write');
 
   // Settings keys
-  const [enabled, setEnabled] = useState(false);
-  const [pricingFormat, setPricingFormat] = useState('compact');
-  const [refreshSeconds, setRefreshSeconds] = useState('30');
-  const [eventMessageTtlSeconds, setEventMessageTtlSeconds] = useState('30');
-  const [brandLine, setBrandLine] = useState('');
-  const [displayLanguage, setDisplayLanguage] = useState<StationMessageLanguage>('en');
+  const loaded = useMemo(() => stationMessageValuesFrom(settings), [settings]);
+  const [form, setForm, takeNextLoad] = useLoadedValues<StationMessageValues>(loaded);
+  const { enabled, pricingFormat, refreshSeconds, eventMessageTtlSeconds, brandLine } = form;
+  const displayLanguage = form.language;
+  const setField =
+    <K extends keyof StationMessageValues>(key: K) =>
+    (value: StationMessageValues[K]): void => {
+      setForm((prev) => ({ ...prev, [key]: value }));
+    };
+  const setEnabled = setField('enabled');
+  const setPricingFormat = setField('pricingFormat');
+  const setRefreshSeconds = setField('refreshSeconds');
+  const setEventMessageTtlSeconds = setField('eventMessageTtlSeconds');
+  const setBrandLine = setField('brandLine');
+  const setDisplayLanguage = setField('language');
   // Language of the template being edited. Follows the display language until
   // the operator picks another one.
   const [editLanguage, setEditLanguage] = useState<StationMessageLanguage | null>(null);
-
-  useEffect(() => {
-    if (settings == null) return;
-    setEnabled(settings['stationMessage.enabled'] === true);
-    const fmt = settings['stationMessage.pricingFormat'];
-    setPricingFormat(typeof fmt === 'string' ? fmt : 'compact');
-    const refresh = settings['stationMessage.charging.refreshSeconds'];
-    if (typeof refresh === 'number') {
-      setRefreshSeconds(refresh.toString());
-    } else if (typeof refresh === 'string' && refresh !== '') {
-      setRefreshSeconds(refresh);
-    } else {
-      setRefreshSeconds('30');
-    }
-    const ttl = settings['stationMessage.eventMessageTtlSeconds'];
-    if (typeof ttl === 'number') {
-      setEventMessageTtlSeconds(ttl.toString());
-    } else if (typeof ttl === 'string' && ttl !== '') {
-      setEventMessageTtlSeconds(ttl);
-    } else {
-      setEventMessageTtlSeconds('30');
-    }
-    const brand = settings['stationMessage.brandLine'];
-    setBrandLine(typeof brand === 'string' ? brand : '');
-    const language = settings['stationMessage.language'];
-    setDisplayLanguage(isStationMessageLanguage(language) ? language : 'en');
-  }, [settings]);
 
   const templateLanguage = editLanguage ?? displayLanguage;
 
@@ -298,12 +313,30 @@ export function StationMessageSettings({
     return map;
   }, [templates, templateLanguage]);
 
+  // The draft follows the stored template when the state or language changes,
+  // and on a templates reload only while it holds no unsaved edit (or still
+  // holds what this card just saved or reset).
+  const draftSource = useRef<{ key: string | null; original: string; taken: string | null }>({
+    key: null,
+    original: '',
+    taken: null,
+  });
   useEffect(() => {
     const row = templatesByState.get(selectedState);
     const body = row?.body ?? '';
-    setBodyDraft(body);
+    const key = `${selectedState}:${templateLanguage}`;
+    const previous = draftSource.current;
+    draftSource.current = { key, original: body, taken: null };
     setOriginalBody(body);
-  }, [selectedState, templatesByState]);
+    setBodyDraft((draft) =>
+      previous.key !== key || draft === previous.original || draft === previous.taken
+        ? body
+        : draft,
+    );
+  }, [selectedState, templateLanguage, templatesByState]);
+  const takeNextTemplateLoad = (draft: string): void => {
+    draftSource.current = { ...draftSource.current, taken: draft };
+  };
 
   // Settings mutation
   const settingsMutation = useMutation({
@@ -445,14 +478,22 @@ export function StationMessageSettings({
             onSubmit={(e) => {
               e.preventDefault();
               if (!refreshSecondsValid || !eventMessageTtlValid) return;
-              settingsMutation.mutate({
-                enabled,
-                pricingFormat,
-                refreshSeconds: refreshSecondsNumber,
-                eventMessageTtlSeconds: eventMessageTtlNumber,
-                brandLine,
-                language: displayLanguage,
-              });
+              const sent = form;
+              settingsMutation.mutate(
+                {
+                  enabled,
+                  pricingFormat,
+                  refreshSeconds: refreshSecondsNumber,
+                  eventMessageTtlSeconds: eventMessageTtlNumber,
+                  brandLine,
+                  language: displayLanguage,
+                },
+                {
+                  onSuccess: () => {
+                    takeNextLoad(sent);
+                  },
+                },
+              );
             }}
             noValidate
           >
@@ -663,11 +704,15 @@ export function StationMessageSettings({
                     type="button"
                     disabled={bodyDraft === originalBody}
                     onClick={() => {
-                      saveMutation.mutate({
-                        state: selectedState,
-                        language: templateLanguage,
-                        body: bodyDraft,
-                      });
+                      const sent = bodyDraft;
+                      saveMutation.mutate(
+                        { state: selectedState, language: templateLanguage, body: sent },
+                        {
+                          onSuccess: () => {
+                            takeNextTemplateLoad(sent);
+                          },
+                        },
+                      );
                     }}
                   />
                   <Button
@@ -697,7 +742,15 @@ export function StationMessageSettings({
         variant="destructive"
         isPending={resetMutation.isPending}
         onConfirm={() => {
-          resetMutation.mutate({ state: selectedState, language: templateLanguage });
+          const draft = bodyDraft;
+          resetMutation.mutate(
+            { state: selectedState, language: templateLanguage },
+            {
+              onSuccess: () => {
+                takeNextTemplateLoad(draft);
+              },
+            },
+          );
         }}
       />
     </div>

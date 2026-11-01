@@ -391,3 +391,58 @@ ALTER TABLE "sites" DROP CONSTRAINT IF EXISTS "sites_layout_settings_check";
 --> statement-breakpoint
 ALTER TABLE "sites" ADD CONSTRAINT "sites_layout_settings_check"
   CHECK ("layout_settings" IS NULL OR jsonb_typeof("layout_settings") = 'object');
+--> statement-breakpoint
+-- The spot width, spot depth and lane width left the layout settings: the 3D
+-- view draws standard real dimensions. Earlier builds of this release stored
+-- them; they are dropped here (the API also drops them on read and save).
+UPDATE "sites"
+SET "layout_settings" = "layout_settings" - 'spotWidthM' - 'spotDepthM' - 'laneWidthM'
+WHERE "layout_settings" IS NOT NULL
+  AND jsonb_typeof("layout_settings") = 'object'
+  AND "layout_settings" ?| ARRAY['spotWidthM', 'spotDepthM', 'laneWidthM'];
+
+--> statement-breakpoint
+-- Vehicle color and body type (v0.1.49, @evtivity/lib/vehicle-appearance):
+-- both optional, null on every existing vehicle. The 3D site layout draws a
+-- car of the body type in the color. The CHECKs are dropped and added again
+-- on a rerun, so a later change of either list replaces them.
+ALTER TABLE "vehicles" ADD COLUMN IF NOT EXISTS "color" varchar(20);
+--> statement-breakpoint
+ALTER TABLE "vehicles" ADD COLUMN IF NOT EXISTS "body_type" varchar(20);
+--> statement-breakpoint
+ALTER TABLE "vehicles" DROP CONSTRAINT IF EXISTS "vehicles_color_check";
+--> statement-breakpoint
+ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_color_check"
+  CHECK ("color" IS NULL OR "color" IN ('white', 'black', 'silver', 'grey', 'blue', 'red', 'green', 'brown_beige', 'yellow_orange', 'other'));
+--> statement-breakpoint
+ALTER TABLE "vehicles" DROP CONSTRAINT IF EXISTS "vehicles_body_type_check";
+--> statement-breakpoint
+ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_body_type_check"
+  CHECK ("body_type" IS NULL OR "body_type" IN ('sedan', 'hatchback', 'suv', 'pickup_truck', 'van', 'box_truck', 'bus', 'semi_truck'));
+--> statement-breakpoint
+-- Custom site positions (v0.1.49, features/sites.md): on a custom site every
+-- station stands at a free position, the charger point in meters and its
+-- turn in degrees (@evtivity/lib/site-layout FreePlacement), all three or
+-- none; null on every existing row (the grid slot stays the position of the
+-- other site types). The CHECK is dropped and added again on a rerun.
+ALTER TABLE "station_layout_positions" ADD COLUMN IF NOT EXISTS "free_x_m" numeric(7, 2);
+--> statement-breakpoint
+ALTER TABLE "station_layout_positions" ADD COLUMN IF NOT EXISTS "free_z_m" numeric(7, 2);
+--> statement-breakpoint
+ALTER TABLE "station_layout_positions" ADD COLUMN IF NOT EXISTS "free_rotation_deg" numeric(4, 1);
+--> statement-breakpoint
+ALTER TABLE "station_layout_positions" DROP CONSTRAINT IF EXISTS "station_layout_positions_free_check";
+--> statement-breakpoint
+ALTER TABLE "station_layout_positions" ADD CONSTRAINT "station_layout_positions_free_check"
+  CHECK (
+    ("free_x_m" IS NULL AND "free_z_m" IS NULL AND "free_rotation_deg" IS NULL)
+    OR ("free_x_m" IS NOT NULL AND "free_z_m" IS NOT NULL AND "free_rotation_deg" IS NOT NULL
+      AND "free_x_m" BETWEEN -400 AND 400 AND "free_z_m" BETWEEN -400 AND 400
+      AND "free_rotation_deg" >= 0 AND "free_rotation_deg" < 360)
+  );
+--> statement-breakpoint
+-- Custom sites have car spots only; bus bays and truck lanes are the Depot
+-- site type (features/sites.md). A database that ran an earlier build of this
+-- file drops the custom site spot type column it added (its CHECK goes with
+-- it); nothing reads it.
+ALTER TABLE "station_layout_positions" DROP COLUMN IF EXISTS "free_spot_type";

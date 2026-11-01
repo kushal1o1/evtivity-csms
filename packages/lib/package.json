@@ -23,6 +23,9 @@
     "./currency": {
       "import": "./src/currency.ts"
     },
+    "./object-storage-region": {
+      "import": "./src/object-storage-region.ts"
+    },
     "./station-data-plan": {
       "import": "./src/station-data-plan.ts"
     },
@@ -73,6 +76,9 @@
     },
     "./vehicle-id": {
       "import": "./src/vehicle-id.ts"
+    },
+    "./vehicle-appearance": {
+      "import": "./src/vehicle-appearance.ts"
     },
     "./secret-config": {
       "import": "./src/secret-config.ts"

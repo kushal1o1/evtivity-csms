@@ -10,6 +10,7 @@ import {
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AI_INSIGHT_SCOPE_SETTING_KEY } from '@evtivity/lib/ai-insights';
+import { effectiveStorageRegion } from '@evtivity/lib/object-storage-region';
 import { invalidateAutochargeCaches } from '../lib/autocharge-invalidation.js';
 import { eq, like, or, inArray } from 'drizzle-orm';
 import {
@@ -1348,16 +1349,15 @@ export function settingsRoutes(app: FastifyInstance): void {
       const map = new Map<string, unknown>();
       for (const row of rows) map.set(row.key, row.value);
       const bucket = map.get('s3.bucket') as string | undefined;
-      const region = map.get('s3.region') as string | undefined;
+      const provider = map.get('s3.provider');
       const accessKeyIdEnc = map.get('s3.accessKeyIdEnc') as string | undefined;
       const secretAccessKeyEnc = map.get('s3.secretAccessKeyEnc') as string | undefined;
       const endpoint = map.get('s3.endpoint') as string | undefined;
       const configured =
-        (map.get('s3.provider') !== 's3-compatible' || (endpoint != null && endpoint !== '')) &&
+        (provider !== 's3-compatible' || (endpoint != null && endpoint !== '')) &&
         bucket != null &&
         bucket !== '' &&
-        region != null &&
-        region !== '' &&
+        effectiveStorageRegion(provider, map.get('s3.region')) != null &&
         accessKeyIdEnc != null &&
         accessKeyIdEnc !== '' &&
         secretAccessKeyEnc != null &&
@@ -1372,7 +1372,13 @@ export function settingsRoutes(app: FastifyInstance): void {
       .optional()
       .describe('Storage provider: s3 (AWS S3, the default) or s3-compatible (a custom endpoint)'),
     bucket: z.string().min(1),
-    region: z.string().min(1),
+    region: z
+      .string()
+      .max(64)
+      .optional()
+      .describe(
+        'Region of the bucket. Required for s3. Optional for s3-compatible: empty or missing signs with us-east-1',
+      ),
     accessKeyId: z.string().min(1),
     secretAccessKey: z.string().min(1),
     endpoint: z
@@ -1411,6 +1417,12 @@ export function settingsRoutes(app: FastifyInstance): void {
     field: 'allowedPrivateHosts',
   };
 
+  const missingStorageRegionError = {
+    error: 'region is required for AWS S3',
+    code: 'VALIDATION_ERROR',
+    field: 'region',
+  };
+
   // Save S3 storage settings (encrypts credentials)
   app.put(
     '/settings/s3',
@@ -1432,9 +1444,11 @@ export function settingsRoutes(app: FastifyInstance): void {
             {
               ...sessionProofErrorFields,
               field: z
-                .literal('allowedPrivateHosts')
+                .enum(['allowedPrivateHosts', 'region'])
                 .optional()
-                .describe('The refused field, when the private hosts list was refused'),
+                .describe(
+                  'The refused field: the private hosts list, or a missing region for AWS S3',
+                ),
             },
           ),
           403: errorWith('API key changing the provider or endpoint', [
@@ -1459,6 +1473,13 @@ export function settingsRoutes(app: FastifyInstance): void {
 
       // AWS S3 clears the endpoint settings, so a later switch starts empty.
       const provider = body.provider ?? 's3';
+      // An S3-compatible provider may leave the region empty (stored empty,
+      // signed with us-east-1 by the storage loader); AWS S3 needs one.
+      const region = (body.region ?? '').trim();
+      if (effectiveStorageRegion(provider, region) == null) {
+        await reply.status(400).send(missingStorageRegionError);
+        return;
+      }
       let endpoint = '';
       let allowedPrivateHosts: string[] = [];
       if (provider === 's3-compatible') {
@@ -1494,7 +1515,7 @@ export function settingsRoutes(app: FastifyInstance): void {
         },
         { key: 's3.allowedPrivateHosts', value: allowedPrivateHosts },
         { key: 's3.bucket', value: body.bucket },
-        { key: 's3.region', value: body.region },
+        { key: 's3.region', value: region },
         { key: 's3.accessKeyIdEnc', value: encryptString(body.accessKeyId, encryptionKey) },
         { key: 's3.secretAccessKeyEnc', value: encryptString(body.secretAccessKey, encryptionKey) },
       ];

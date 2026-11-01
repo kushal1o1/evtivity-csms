@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useEffect, useMemo, useState } from 'react';
+import { useLoadedValues } from '@/hooks/use-loaded-values';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -81,13 +82,14 @@ export function DriverAiSettings({ settings }: DriverAiSettingsProps): React.JSX
   const canWrite = useHasPermission('settings.ai:write');
   const aiDefaults = useAiDefaults('settings');
   const loaded = useMemo(() => loadDriverAiValues(settings), [settings]);
-  const [values, setValues] = useState<Values>(loaded);
-  const [enabled, setEnabled] = useState(false);
-
+  // A refetch (the switch, another card's save, window focus) keeps edits in progress.
+  const [values, setValues] = useLoadedValues<Values>(loaded);
+  // The switch saves on change; a settings reload puts the stored value back.
+  const enabledStored = settings?.[K.enabled] === true;
+  const [enabled, setEnabled] = useState(enabledStored);
   useEffect(() => {
-    setValues(loaded);
-    setEnabled(settings?.[K.enabled] === true);
-  }, [loaded, settings]);
+    setEnabled(enabledStored);
+  }, [enabledStored]);
 
   const set = (key: string) => (value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));

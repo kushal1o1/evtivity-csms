@@ -1,64 +1,111 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-// The Site Settings of Edit Layout: the site type, lot size, spot size, lane,
-// facing, the transformers (a parking lot only; an office or retail site
-// keeps them hidden) and the batteries and solar canopies. Every valid change shows in the layout at once and is
-// saved with the layout Save.
+// The Site Settings of Edit Layout: the site type (read-only here, changed on
+// the Details tab) and only the settings of that type. Parking Lot: spots per
+// row, rows, facing, the transformers and the batteries and solar canopies.
+// Office or Retail: the charger positions and how they are mounted. Curbside:
+// the chargers on each side of the street. Depot: the bus bays, the truck
+// lanes and the facing, with the transformers, batteries and solar canopies
+// beside the yard. Spot sizes are standard. The other
+// types' values stay in the settings, so switching the type back restores
+// them. Every valid change shows in the layout at once and is saved with the
+// layout Save.
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { Trash2 } from 'lucide-react';
 import {
+  CHARGER_MOUNTINGS,
   LAYOUT_FACINGS,
   LAYOUT_GRID_LIMITS,
-  energyAssetsOf,
-  lotExtentM,
-  placeEnergyAsset,
+  chargerMountingOf,
+  clampFreePoint,
+  showsBatteries,
+  showsSolar,
   showsTransformers,
-  SITE_TYPES,
+  usesFreePositions,
+  energyAssetsOf,
+  layoutCapacity,
+  layoutEquipmentGround,
+  placeEnergyAsset,
   siteTypeOf,
   snapTransformerToGrass,
   TRANSFORMER_CLEARANCE_M,
+  type ChargerMounting,
   type LayoutFacing,
-  type SiteType,
   type LayoutTransformer,
   type SiteLayoutSettings,
+  type SiteType,
 } from '@evtivity/lib/site-layout';
 import { CreateButton } from '@/components/create-button';
 import { Button } from '@/components/ui/button';
-import { DecimalInput } from '@/components/ui/decimal-input';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
+import { SITE_TYPE_LABEL } from '@/components/site/site-type';
+import { cn } from '@/lib/utils';
 import { EnergyAssetsSettings } from './EnergyAssetsSettings';
 
 const L = LAYOUT_GRID_LIMITS;
 
-const SITE_TYPE_LABEL = {
-  parking_lot: 'sites.layoutSettings.siteTypeParkingLot',
-  office_retail: 'sites.layoutSettings.siteTypeOfficeRetail',
-} as const satisfies Record<SiteType, string>;
+/** The count fields of every site type (all whole numbers). */
+export type CountField =
+  | 'spotsPerRow'
+  | 'rows'
+  | 'chargers'
+  | 'chargersLeft'
+  | 'chargersRight'
+  | 'busBays'
+  | 'truckLanes';
 
-type LotField = 'spotsPerRow' | 'rows' | 'spotWidthM' | 'spotDepthM' | 'laneWidthM';
+/** The count fields each site type shows. */
+export const COUNT_FIELDS: Record<SiteType, readonly CountField[]> = {
+  parking_lot: ['spotsPerRow', 'rows'],
+  office_retail: ['chargers'],
+  curbside: ['chargersLeft', 'chargersRight'],
+  depot: ['busBays', 'truckLanes'],
+  custom: [],
+};
 
-const LOT_FIELDS: ReadonlyArray<{ field: LotField; integer: boolean }> = [
-  { field: 'spotsPerRow', integer: true },
-  { field: 'rows', integer: true },
-  { field: 'spotWidthM', integer: false },
-  { field: 'spotDepthM', integer: false },
-  { field: 'laneWidthM', integer: false },
-];
+function limitOf(field: CountField): { min: number; max: number } {
+  if (field === 'chargers') return L.chargers;
+  if (field === 'chargersLeft' || field === 'chargersRight') return L.chargersPerSide;
+  if (field === 'busBays' || field === 'truckLanes') return L.depotSpots;
+  return L[field];
+}
 
-/** A typed lot value, or null when it is empty or out of range. */
-export function parseLotField(field: LotField, text: string): number | null {
+/** A typed count, or null when it is empty, not a whole number or out of range. */
+export function parseCountField(field: CountField, text: string): number | null {
   if (text.trim() === '') return null;
   const value = Number(text);
-  if (!Number.isFinite(value)) return null;
-  const { min, max } = L[field];
-  if (value < min || value > max) return null;
-  if (field === 'spotsPerRow' || field === 'rows') return Number.isInteger(value) ? value : null;
-  return Math.abs(value * 10 - Math.round(value * 10)) < 1e-9 ? value : null;
+  if (!Number.isInteger(value)) return null;
+  const { min, max } = limitOf(field);
+  return value < min || value > max ? null : value;
+}
+
+/** The two counts a site type needs one of (a street's sides, a depot's areas), or null. */
+const PAIRED_COUNTS: Partial<Record<SiteType, readonly [CountField, CountField]>> = {
+  curbside: ['chargersLeft', 'chargersRight'],
+  depot: ['busBays', 'truckLanes'],
+};
+
+/** Whether both paired counts are typed as 0 (a street needs a charger, a depot a bay or lane). */
+function pairEmpty(type: SiteType, drafts: Record<CountField, string>): boolean {
+  const pair = PAIRED_COUNTS[type];
+  return (
+    pair != null &&
+    parseCountField(pair[0], drafts[pair[0]]) === 0 &&
+    parseCountField(pair[1], drafts[pair[1]]) === 0
+  );
+}
+
+/** Whether the typed counts of a site type are valid together. */
+function countsValid(type: SiteType, drafts: Record<CountField, string>): boolean {
+  const fields = COUNT_FIELDS[type];
+  if (fields.some((f) => parseCountField(f, drafts[f]) == null)) return false;
+  return !pairEmpty(type, drafts);
 }
 
 /** A typed rated kVA: null for empty, undefined when invalid. */
@@ -75,17 +122,35 @@ export function newTransformer(settings: SiteLayoutSettings): LayoutTransformer 
   let n = settings.transformers.length + 1;
   const ids = new Set(settings.transformers.map((t) => t.id));
   while (ids.has(`tx-${String(n)}`)) n++;
+  // A custom site: left of the site origin, below the others.
+  if (usesFreePositions(settings)) {
+    const spot = clampFreePoint(-8, -4 - 4 * settings.transformers.length);
+    return { id: `tx-${String(n)}`, name: null, ratedKva: null, ...spot };
+  }
+  // On the grass behind the lot (a depot: behind its yard), right of the others.
+  const ground = layoutEquipmentGround(settings);
   const spot = snapTransformerToGrass(
-    Math.min(lotExtentM(settings).width, 4 + 4 * settings.transformers.length),
-    -TRANSFORMER_CLEARANCE_M - 1.5,
+    Math.min(ground.maxX, ground.minX + 4 + 4 * settings.transformers.length),
+    ground.minZ - TRANSFORMER_CLEARANCE_M - 1.5,
     settings,
   );
   return { id: `tx-${String(n)}`, name: null, ratedKva: null, ...spot };
 }
 
+const MOUNTING_LABEL = {
+  wall: 'sites.layoutSettings.mountingWall',
+  stall: 'sites.layoutSettings.mountingStall',
+} as const satisfies Record<ChargerMounting, string>;
+
+const MOUNTING_HINT = {
+  wall: 'sites.layoutSettings.mountingWallHint',
+  stall: 'sites.layoutSettings.mountingStallHint',
+} as const satisfies Record<ChargerMounting, string>;
+
 interface LayoutSettingsPanelProps {
+  siteId: string;
   settings: SiteLayoutSettings;
-  /** Stations at the site: a lot smaller than this cannot be saved. */
+  /** Stations at the site: a layout with fewer spots than this cannot be saved. */
   stationCount: number;
   onChange: (settings: SiteLayoutSettings) => void;
   /** True while a typed value is invalid (Save waits for it). */
@@ -93,57 +158,64 @@ interface LayoutSettingsPanelProps {
 }
 
 export function LayoutSettingsPanel({
+  siteId,
   settings,
   stationCount,
   onChange,
   onInvalidChange,
 }: LayoutSettingsPanelProps): React.JSX.Element {
   const { t } = useTranslation();
-  const [drafts, setDrafts] = useState<Record<LotField, string>>(() => ({
+  const siteType = siteTypeOf(settings);
+  const [drafts, setDrafts] = useState<Record<CountField, string>>(() => ({
     spotsPerRow: String(settings.spotsPerRow),
     rows: String(settings.rows),
-    spotWidthM: String(settings.spotWidthM),
-    spotDepthM: String(settings.spotDepthM),
-    laneWidthM: String(settings.laneWidthM),
+    chargers: String(settings.chargers ?? 1),
+    chargersLeft: String(settings.chargersLeft ?? 0),
+    chargersRight: String(settings.chargersRight ?? 0),
+    busBays: String(settings.busBays ?? 1),
+    truckLanes: String(settings.truckLanes ?? 0),
   }));
   const [kvaDrafts, setKvaDrafts] = useState<Record<string, string>>({});
   const [assetsInvalid, setAssetsInvalid] = useState(false);
 
-  const invalidLot = LOT_FIELDS.filter(({ field }) => parseLotField(field, drafts[field]) == null);
   const kvaText = (tr: LayoutTransformer): string =>
     kvaDrafts[tr.id] ?? (tr.ratedKva != null ? String(tr.ratedKva) : '');
   const invalidKva = (text: string): boolean => parseRatedKva(text) === undefined;
+  const sidesEmpty = pairEmpty(siteType, drafts);
 
   function report(
-    nextDrafts: Record<LotField, string>,
+    nextDrafts: Record<CountField, string>,
     nextKva: Record<string, string>,
     nextAssetsInvalid: boolean = assetsInvalid,
   ): void {
     const bad =
-      LOT_FIELDS.some(({ field }) => parseLotField(field, nextDrafts[field]) == null) ||
+      !countsValid(siteType, nextDrafts) ||
       Object.values(nextKva).some(invalidKva) ||
       nextAssetsInvalid;
     onInvalidChange(bad);
   }
 
-  function setLotField(field: LotField, text: string): void {
+  function setCountField(field: CountField, text: string): void {
     const next = { ...drafts, [field]: text };
     setDrafts(next);
     report(next, kvaDrafts);
-    const value = parseLotField(field, text);
-    if (value != null) {
-      const grid = { ...settings, [field]: value };
-      // Transformers and batteries stay on the grass when the lot grows under
-      // them; a solar canopy stays over a row of the lot.
-      onChange({
-        ...grid,
-        transformers: grid.transformers.map((tr) => ({
-          ...tr,
-          ...snapTransformerToGrass(tr.x, tr.z, grid),
-        })),
-        energyAssets: energyAssetsOf(grid).map((a) => placeEnergyAsset(a, grid)),
-      });
+    const value = parseCountField(field, text);
+    if (value == null || !countsValid(siteType, next)) return;
+    const changed = { ...settings, [field]: value };
+    if (siteType !== 'parking_lot' && siteType !== 'depot') {
+      onChange(changed);
+      return;
     }
+    // Transformers and batteries stay on the grass when the lot (a depot's
+    // yard) grows under them; a solar canopy stays over a row of the lot.
+    onChange({
+      ...changed,
+      transformers: changed.transformers.map((tr) => ({
+        ...tr,
+        ...snapTransformerToGrass(tr.x, tr.z, changed),
+      })),
+      energyAssets: energyAssetsOf(changed).map((a) => placeEnergyAsset(a, changed)),
+    });
   }
 
   function updateTransformer(id: string, patch: Partial<LayoutTransformer>): void {
@@ -153,7 +225,8 @@ export function LayoutSettingsPanel({
     });
   }
 
-  const capacity = settings.spotsPerRow * settings.rows;
+  const capacity = layoutCapacity(settings);
+  const mounting = chargerMountingOf(settings);
   const id = (name: string): string => `layout-settings-${name}`;
 
   return (
@@ -168,98 +241,131 @@ export function LayoutSettingsPanel({
         </h3>
         <p className="text-xs text-muted-foreground">{t('sites.layoutSettings.hint')}</p>
       </div>
-      <div className="space-y-1.5 sm:max-w-xs">
-        <Label htmlFor={id('siteType')}>{t('sites.layoutSettings.siteType')}</Label>
-        <Select
-          id={id('siteType')}
-          value={siteTypeOf(settings)}
-          onChange={(e) => {
-            onChange({ ...settings, siteType: e.target.value as SiteType });
-          }}
+      <div className="space-y-1 text-sm" data-testid="layout-settings-site-type">
+        <p className="text-muted-foreground">{t('sites.layoutSettings.siteType')}</p>
+        <p className="font-medium">{t(SITE_TYPE_LABEL[siteType])}</p>
+        <Link
+          to={`/sites/${siteId}`}
+          className="text-xs text-link underline-offset-4 hover:underline"
         >
-          {SITE_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {t(SITE_TYPE_LABEL[type])}
-            </option>
-          ))}
-        </Select>
-        <p className="text-xs text-muted-foreground">{t('sites.layoutSettings.siteTypeHint')}</p>
+          {t('sites.layoutSettings.siteTypeOnDetails')}
+        </Link>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {LOT_FIELDS.map(({ field, integer }) => {
-          const invalid = invalidLot.some((f) => f.field === field);
+      {siteType === 'custom' && (
+        <p className="text-xs text-muted-foreground" data-testid="layout-settings-custom-hint">
+          {t('sites.layoutSettings.customHint')}
+        </p>
+      )}
+      <div
+        className={cn(
+          'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6',
+          siteType === 'custom' && 'hidden',
+        )}
+      >
+        {COUNT_FIELDS[siteType].map((field) => {
+          const invalid = parseCountField(field, drafts[field]) == null || sidesEmpty;
+          const limit = limitOf(field);
           return (
             <div key={field} className="space-y-1.5">
               <Label htmlFor={id(field)}>{t(`sites.layoutSettings.${field}`)}</Label>
-              {integer ? (
-                <Input
-                  id={id(field)}
-                  type="number"
-                  inputMode="numeric"
-                  min={L[field].min}
-                  max={L[field].max}
-                  step={1}
-                  value={drafts[field]}
-                  aria-invalid={invalid}
-                  onChange={(e) => {
-                    setLotField(field, e.target.value);
-                  }}
-                />
-              ) : (
-                <DecimalInput
-                  id={id(field)}
-                  decimalScale={1}
-                  value={drafts[field]}
-                  aria-invalid={invalid}
-                  onChange={(v) => {
-                    setLotField(field, v);
-                  }}
-                />
-              )}
+              <Input
+                id={id(field)}
+                type="number"
+                inputMode="numeric"
+                min={limit.min}
+                max={limit.max}
+                step={1}
+                value={drafts[field]}
+                aria-invalid={invalid}
+                onChange={(e) => {
+                  setCountField(field, e.target.value);
+                }}
+              />
               <p className={invalid ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
-                {t('sites.layoutSettings.range', {
-                  min: L[field].min,
-                  max: L[field].max,
-                  unit: integer ? '' : ' m',
-                })}
+                {t('sites.layoutSettings.range', { min: limit.min, max: limit.max, unit: '' })}
               </p>
             </div>
           );
         })}
-        <div className="space-y-1.5">
-          <Label htmlFor={id('facing')}>{t('sites.layoutSettings.facingDeg')}</Label>
-          <Select
-            id={id('facing')}
-            value={String(settings.facingDeg)}
-            onChange={(e) => {
-              onChange({ ...settings, facingDeg: Number(e.target.value) as LayoutFacing });
-            }}
-          >
-            {LAYOUT_FACINGS.map((deg) => (
-              <option key={deg} value={deg}>
-                {t('sites.layoutSettings.facingOption', { deg })}
-              </option>
-            ))}
-          </Select>
-          <p className="text-xs text-muted-foreground">{t('sites.layoutSettings.facingHint')}</p>
-        </div>
+        {(siteType === 'parking_lot' || siteType === 'depot') && (
+          <div className="space-y-1.5">
+            <Label htmlFor={id('facing')}>{t('sites.layoutSettings.facingDeg')}</Label>
+            <Select
+              id={id('facing')}
+              value={String(settings.facingDeg)}
+              onChange={(e) => {
+                onChange({ ...settings, facingDeg: Number(e.target.value) as LayoutFacing });
+              }}
+            >
+              {LAYOUT_FACINGS.map((deg) => (
+                <option key={deg} value={deg}>
+                  {t('sites.layoutSettings.facingOption', { deg })}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('sites.layoutSettings.facingHint')}</p>
+          </div>
+        )}
+        {siteType === 'office_retail' && (
+          <div className="col-span-2 space-y-1.5 sm:col-span-2">
+            <Label htmlFor={id('mounting')}>{t('sites.layoutSettings.mounting')}</Label>
+            <Select
+              id={id('mounting')}
+              value={mounting}
+              onChange={(e) => {
+                onChange({ ...settings, mounting: e.target.value as ChargerMounting });
+              }}
+            >
+              {CHARGER_MOUNTINGS.map((m) => (
+                <option key={m} value={m}>
+                  {t(MOUNTING_LABEL[m])}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">{t(MOUNTING_HINT[mounting])}</p>
+          </div>
+        )}
       </div>
-      {capacity < stationCount && (
-        <p className="text-sm text-destructive" role="alert">
-          {t('sites.layoutSettings.tooSmall', { spots: capacity, stations: stationCount })}
+      {siteType === 'office_retail' && (
+        <p className="text-xs text-muted-foreground">{t('sites.layoutSettings.chargersHint')}</p>
+      )}
+      {siteType === 'curbside' && (
+        <p className={sidesEmpty ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}>
+          {t('sites.layoutSettings.sidesHint')}
         </p>
       )}
-      {!showsTransformers(settings) ? (
-        <p className="text-sm text-muted-foreground" data-testid="layout-transformers-hidden">
-          {t('sites.layoutSettings.transformersHidden')}
+      {siteType === 'depot' && (
+        <p
+          className={sidesEmpty ? 'text-sm text-destructive' : 'text-xs text-muted-foreground'}
+          data-testid="layout-settings-depot-hint"
+        >
+          {t('sites.layoutSettings.depotHint')}
         </p>
-      ) : (
+      )}
+      {capacity < stationCount && (
+        <p className="text-sm text-destructive" role="alert">
+          {siteType === 'parking_lot'
+            ? t('sites.layoutSettings.tooSmall', { spots: capacity, stations: stationCount })
+            : siteType === 'depot'
+              ? t('sites.layoutSettings.tooFewDepotSpots', {
+                  spots: capacity,
+                  stations: stationCount,
+                })
+              : t('sites.layoutSettings.tooFewChargers', {
+                  spots: capacity,
+                  stations: stationCount,
+                })}
+        </p>
+      )}
+      {showsTransformers(settings) && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h4 className="text-sm font-semibold">{t('sites.layoutSettings.transformers')}</h4>
               <p className="text-xs text-muted-foreground">
-                {t('sites.layoutSettings.transformersHint')}
+                {siteType === 'custom'
+                  ? t('sites.layoutSettings.transformersHintCustom')
+                  : t('sites.layoutSettings.transformersHint')}
               </p>
             </div>
             <CreateButton
@@ -353,14 +459,16 @@ export function LayoutSettingsPanel({
           )}
         </div>
       )}
-      <EnergyAssetsSettings
-        settings={settings}
-        onChange={onChange}
-        onInvalidChange={(invalid) => {
-          setAssetsInvalid(invalid);
-          report(drafts, kvaDrafts, invalid);
-        }}
-      />
+      {(showsBatteries(settings) || showsSolar(settings)) && (
+        <EnergyAssetsSettings
+          settings={settings}
+          onChange={onChange}
+          onInvalidChange={(invalid) => {
+            setAssetsInvalid(invalid);
+            report(drafts, kvaDrafts, invalid);
+          }}
+        />
+      )}
     </section>
   );
 }

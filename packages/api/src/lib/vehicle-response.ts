@@ -12,6 +12,7 @@ import {
   isOperatorStation,
 } from '@evtivity/database';
 import { VEHICLE_ID_SOURCES, VEHICLE_ID_TYPES } from '@evtivity/lib/vehicle-id';
+import { VEHICLE_BODY_TYPES, VEHICLE_COLORS } from '@evtivity/lib/vehicle-appearance';
 import { ID_PARAMS } from './id-validation.js';
 import { sessionsAtSites } from './session-site-scope.js';
 import {
@@ -38,6 +39,36 @@ export const vehicleLastSeenItem = z
   .describe(
     'The last session in which a charger sent one of the vehicle ids, null when none (operators see sessions at their sites only)',
   );
+
+/** Color and body type in a vehicle item (operator and portal). */
+export const vehicleAppearanceItemFields = {
+  color: z
+    .enum(VEHICLE_COLORS)
+    .nullable()
+    .describe(
+      'Vehicle color group (white, black, silver, grey, blue, red, green, brown_beige, yellow_orange, other)',
+    ),
+  bodyType: z
+    .enum(VEHICLE_BODY_TYPES)
+    .nullable()
+    .describe(
+      'Vehicle body type (sedan, hatchback, suv, pickup_truck, van, box_truck, bus, semi_truck)',
+    ),
+};
+
+/** Color and body type in a create or update body. Null removes a value. */
+export const vehicleAppearanceBodyFields = {
+  color: z
+    .enum(VEHICLE_COLORS)
+    .nullable()
+    .optional()
+    .describe('Vehicle color group. Null removes it.'),
+  bodyType: z
+    .enum(VEHICLE_BODY_TYPES)
+    .nullable()
+    .optional()
+    .describe('Vehicle body type. Null removes it.'),
+};
 
 /** The vehicle fields of Autocharge, shared by the operator and portal vehicle items. */
 export const vehicleAutochargeFields = {

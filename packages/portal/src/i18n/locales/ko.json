@@ -1164,7 +1164,33 @@
     "newVehicle": "새 차량",
     "makeModelRequired": "제조사와 모델을 입력하세요.",
     "lastSeen": "마지막 확인",
-    "lastSeenValue": "{{station}}, {{time}}"
+    "lastSeenValue": "{{station}}, {{time}}",
+    "color": "색상",
+    "bodyType": "차체 유형",
+    "notSet": "설정 안 함",
+    "colors": {
+      "white": "흰색",
+      "black": "검은색",
+      "silver": "은색",
+      "grey": "회색",
+      "blue": "파란색",
+      "red": "빨간색",
+      "green": "녹색",
+      "brown_beige": "갈색 또는 베이지",
+      "yellow_orange": "노란색 또는 주황색",
+      "other": "기타"
+    },
+    "bodyTypes": {
+      "sedan": "세단",
+      "hatchback": "해치백",
+      "suv": "SUV",
+      "pickup_truck": "픽업트럭",
+      "van": "밴",
+      "box_truck": "박스트럭",
+      "bus": "버스",
+      "semi_truck": "세미트럭"
+    },
+    "saveFailed": "차량을 저장하지 못했습니다. 다시 시도해 주세요."
   },
   "notifications": {
     "title": "알림",

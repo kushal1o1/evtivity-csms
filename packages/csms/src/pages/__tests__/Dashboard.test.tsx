@@ -65,8 +65,13 @@ vi.mock('@/lib/api', async (importOriginal) => {
     },
   };
 });
+const featureFlagsState = vi.hoisted(() => ({ isLoading: false }));
 vi.mock('@/hooks/use-feature-flags', () => ({
-  useFeatureFlags: () => ({ flags: { aiInsightsEnabled: true } }),
+  useFeatureFlags: () => ({
+    flags: { aiInsightsEnabled: true },
+    isLoading: featureFlagsState.isLoading,
+    isLoaded: !featureFlagsState.isLoading,
+  }),
 }));
 vi.mock('@/components/charts/LocationsByCityChart', () => ({
   LocationsByCityChart: () => <div data-testid="chart-locations-by-city" />,
@@ -188,6 +193,7 @@ function before(a: Element, b: Element): boolean {
 
 afterEach(() => {
   cleanup();
+  featureFlagsState.isLoading = false;
   answers.clear();
   requested.length = 0;
   writes.length = 0;
@@ -260,6 +266,44 @@ describe('Dashboard layout (plan v0.1.45, section 6)', () => {
 });
 
 describe('Dashboard states and permissions', () => {
+  it('renders the charts only after the feature flags answered, so Active insights never shifts them', async () => {
+    featureFlagsState.isLoading = true;
+    useAuth.setState({
+      role: 'operator',
+      permissions: ['dashboard:read', 'aiInsights:read'],
+      hasAllSiteAccess: true,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    // The saved layout answered: only the flags still hold the charts back.
+    await waitFor(() => {
+      expect(requested).toContain('/v1/users/me/dashboard-layout');
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('dashboard-charts')).toBeNull();
+    featureFlagsState.isLoading = false;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const charts = await screen.findByTestId('dashboard-charts');
+    const [insights] = screen.getAllByTestId('active-insights');
+    const status = charts.querySelector('[data-widget="chart.stationStatus"]');
+    expect(insights).toBeDefined();
+    expect(status).not.toBeNull();
+    if (insights == null || status == null) return;
+    expect(before(insights, status)).toBe(true);
+  });
+
   it('shows the loading mark on a card while its query loads, never a zero', async () => {
     await renderDashboard('admin');
     const card = screen.getAllByText('dashboard.totalStations')[0]?.closest('div.rounded-lg');

@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { effectiveLayoutSettings } from '@evtivity/lib/site-layout';
 
 vi.mock('react-i18next', () => ({
@@ -17,7 +18,7 @@ vi.mock('react-i18next', () => ({
 import {
   LayoutSettingsPanel,
   newTransformer,
-  parseLotField,
+  parseCountField,
   parseRatedKva,
 } from '../LayoutSettingsPanel';
 
@@ -27,12 +28,15 @@ function renderPanel(stationCount = 4, settings = SETTINGS) {
   const onChange = vi.fn();
   const onInvalidChange = vi.fn();
   render(
-    <LayoutSettingsPanel
-      settings={settings}
-      stationCount={stationCount}
-      onChange={onChange}
-      onInvalidChange={onInvalidChange}
-    />,
+    <MemoryRouter>
+      <LayoutSettingsPanel
+        siteId="site-1"
+        settings={settings}
+        stationCount={stationCount}
+        onChange={onChange}
+        onInvalidChange={onInvalidChange}
+      />
+    </MemoryRouter>,
   );
   return { onChange, onInvalidChange };
 }
@@ -42,13 +46,15 @@ afterEach(() => {
 });
 
 describe('LayoutSettingsPanel', () => {
-  it('parses the lot fields inside their ranges and in 10 cm steps', () => {
-    expect(parseLotField('spotsPerRow', '12')).toBe(12);
-    expect(parseLotField('spotsPerRow', '0')).toBeNull();
-    expect(parseLotField('rows', '1.5')).toBeNull();
-    expect(parseLotField('spotWidthM', '3.5')).toBe(3.5);
-    expect(parseLotField('spotWidthM', '3.55')).toBeNull();
-    expect(parseLotField('laneWidthM', '')).toBeNull();
+  it('parses the count fields as whole numbers inside their ranges', () => {
+    expect(parseCountField('spotsPerRow', '12')).toBe(12);
+    expect(parseCountField('spotsPerRow', '0')).toBeNull();
+    expect(parseCountField('rows', '1.5')).toBeNull();
+    expect(parseCountField('chargers', '0')).toBeNull();
+    expect(parseCountField('chargers', '100')).toBe(100);
+    expect(parseCountField('chargersLeft', '0')).toBe(0);
+    expect(parseCountField('chargersRight', '101')).toBeNull();
+    expect(parseCountField('rows', '')).toBeNull();
     expect(parseRatedKva('')).toBeNull();
     expect(parseRatedKva('2500')).toBe(2500);
     expect(parseRatedKva('0')).toBeUndefined();
@@ -68,25 +74,73 @@ describe('LayoutSettingsPanel', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it('picks the site type, a parking lot by default', () => {
-    const { onChange } = renderPanel();
-    expect(screen.getByText('sites.layoutSettings.title')).toBeTruthy();
-    expect(screen.getByLabelText('sites.layoutSettings.siteType')).toBeTruthy();
-    const select = document.getElementById('layout-settings-siteType');
-    if (!(select instanceof HTMLSelectElement)) throw new Error('no site type select');
-    expect(select.value).toBe('parking_lot');
-    expect([...select.options].map((o) => o.value)).toEqual(['parking_lot', 'office_retail']);
-    fireEvent.change(select, { target: { value: 'office_retail' } });
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ siteType: 'office_retail', transformers: SETTINGS.transformers }),
-    );
+  it('shows the site type read-only with a link to the Details tab', () => {
+    renderPanel();
+    const type = screen.getByTestId('layout-settings-site-type');
+    expect(type.textContent).toContain('sites.layoutSettings.siteTypeParkingLot');
+    expect(document.getElementById('layout-settings-siteType')).toBeNull();
+    const link = screen.getByRole('link', { name: 'sites.layoutSettings.siteTypeOnDetails' });
+    expect(link.getAttribute('href')).toBe('/sites/site-1');
   });
 
-  it('hides the transformers of an office or retail site and keeps them in the settings', () => {
-    renderPanel(4, { ...SETTINGS, siteType: 'office_retail' });
-    expect(screen.getByTestId('layout-transformers-hidden')).toBeTruthy();
+  it('shows only the parking lot settings on a parking lot', () => {
+    renderPanel();
+    expect(screen.getByLabelText('sites.layoutSettings.spotsPerRow')).toBeTruthy();
+    expect(screen.getByLabelText('sites.layoutSettings.facingDeg')).toBeTruthy();
+    expect(screen.getByTestId('layout-energy-assets')).toBeTruthy();
+    expect(screen.queryByLabelText('sites.layoutSettings.chargers')).toBeNull();
+    expect(screen.queryByLabelText('sites.layoutSettings.mounting')).toBeNull();
+    expect(screen.queryByLabelText('sites.layoutSettings.chargersLeft')).toBeNull();
+  });
+
+  it('sets the chargers and their mounting of an office or retail site, keeping the lot fields', () => {
+    const office = effectiveLayoutSettings({ ...SETTINGS, siteType: 'office_retail' }, [], 6);
+    const { onChange, onInvalidChange } = renderPanel(4, office);
+    expect(screen.queryByLabelText('sites.layoutSettings.spotsPerRow')).toBeNull();
+    expect(screen.queryByLabelText('sites.layoutSettings.facingDeg')).toBeNull();
     expect(screen.queryByText('sites.layoutSettings.addTransformer')).toBeNull();
-    expect(screen.queryByTestId('layout-transformer-tx-1')).toBeNull();
+    expect(screen.queryByTestId('layout-energy-assets')).toBeNull();
+    const chargers = screen.getByLabelText('sites.layoutSettings.chargers');
+    expect((chargers as HTMLInputElement).value).toBe('6');
+    fireEvent.change(chargers, { target: { value: '12' } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        chargers: 12,
+        spotsPerRow: SETTINGS.spotsPerRow,
+        transformers: SETTINGS.transformers,
+      }),
+    );
+    fireEvent.change(chargers, { target: { value: '0' } });
+    expect(onInvalidChange).toHaveBeenLastCalledWith(true);
+    const mounting = screen.getByLabelText('sites.layoutSettings.mounting');
+    expect((mounting as HTMLSelectElement).value).toBe('wall');
+    expect(screen.getByText('sites.layoutSettings.mountingWallHint')).toBeTruthy();
+    fireEvent.change(mounting, { target: { value: 'stall' } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ mounting: 'stall' }));
+  });
+
+  it('sets the chargers on each side of a curbside site, at least one in all', () => {
+    const curb = effectiveLayoutSettings({ ...SETTINGS, siteType: 'curbside' }, [], 5);
+    const { onChange, onInvalidChange } = renderPanel(1, curb);
+    const left = screen.getByLabelText('sites.layoutSettings.chargersLeft');
+    const right = screen.getByLabelText('sites.layoutSettings.chargersRight');
+    expect((left as HTMLInputElement).value).toBe('3');
+    expect((right as HTMLInputElement).value).toBe('2');
+    fireEvent.change(left, { target: { value: '0' } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ chargersLeft: 0 }));
+    expect(onInvalidChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(right, { target: { value: '0' } });
+    expect(onInvalidChange).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('sites.layoutSettings.mounting')).toBeNull();
+  });
+
+  it('warns when an office or retail site has fewer charger positions than stations', () => {
+    renderPanel(
+      8,
+      effectiveLayoutSettings({ ...SETTINGS, siteType: 'office_retail', chargers: 4 }),
+    );
+    expect(screen.getByRole('alert').textContent).toBe('sites.layoutSettings.tooFewChargers');
   });
 
   it('turns the lot with the facing', () => {
@@ -128,5 +182,56 @@ describe('LayoutSettingsPanel', () => {
     const t = newTransformer(SETTINGS);
     expect(t.z).toBeLessThan(0);
     expect(t.id).toBe('tx-2');
+  });
+
+  it('shows a custom site with no counts, its transformers and its free canopies', () => {
+    const custom = { ...SETTINGS, siteType: 'custom' as const, energyAssets: [] };
+    const { onChange } = renderPanel(4, custom);
+    expect(screen.getByTestId('layout-settings-custom-hint').textContent).toBe(
+      'sites.layoutSettings.customHint',
+    );
+    expect(screen.queryByLabelText('sites.layoutSettings.spotsPerRow')).toBeNull();
+    expect(screen.queryByLabelText('sites.layoutSettings.facingDeg')).toBeNull();
+    expect(screen.getByText('sites.layoutSettings.transformersHintCustom')).toBeDefined();
+    expect(screen.getByText('sites.layoutSettings.energyAssetsHintCustom')).toBeDefined();
+    // A custom site has no spot limit.
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /addSolar/ }));
+    const added = onChange.mock.lastCall?.[0] as typeof SETTINGS;
+    expect(added.energyAssets?.[0]).toMatchObject({ type: 'solar', x: 0, rotationDeg: 0 });
+    // A free transformer stands where it is put, not snapped to a lot side.
+    const t = newTransformer(custom);
+    expect(t).toMatchObject({ x: -8, z: -8 });
+  });
+
+  it('sets the bus bays, the truck lanes and the facing of a depot, at least one bay or lane in all', () => {
+    const depot = effectiveLayoutSettings({ ...SETTINGS, siteType: 'depot' }, [], {
+      total: 5,
+      bus: 3,
+      truck: 2,
+    });
+    const { onChange, onInvalidChange } = renderPanel(5, depot);
+    const bus = screen.getByLabelText('sites.layoutSettings.busBays');
+    const truck = screen.getByLabelText('sites.layoutSettings.truckLanes');
+    expect((bus as HTMLInputElement).value).toBe('3');
+    expect((truck as HTMLInputElement).value).toBe('2');
+    expect(screen.getByLabelText('sites.layoutSettings.facingDeg')).not.toBeNull();
+    expect(screen.queryByLabelText('sites.layoutSettings.spotsPerRow')).toBeNull();
+    expect(screen.getByTestId('layout-settings-depot-hint')).not.toBeNull();
+    fireEvent.change(bus, { target: { value: '6' } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ busBays: 6 }));
+    fireEvent.change(bus, { target: { value: '0' } });
+    fireEvent.change(truck, { target: { value: '0' } });
+    expect(onInvalidChange).toHaveBeenLastCalledWith(true);
+    // Transformers stay on the grass beside the yard.
+    expect(screen.getByText('sites.layoutSettings.transformers')).not.toBeNull();
+  });
+
+  it('warns when a depot has fewer bus bays and truck lanes than stations', () => {
+    renderPanel(
+      4,
+      effectiveLayoutSettings({ ...SETTINGS, siteType: 'depot', busBays: 1, truckLanes: 1 }),
+    );
+    expect(screen.getByRole('alert').textContent).toBe('sites.layoutSettings.tooFewDepotSpots');
   });
 });

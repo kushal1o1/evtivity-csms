@@ -3,14 +3,15 @@
 
 // The load management panels and links of the 3D site layout, without
 // three.js. One panel model per load management panel, placed automatically
-// (`placePanels`, no stored positions): on a parking lot a row of switchboard
-// cabinets on pads on the grass left of the lot, on an office or retail site a panel
-// on the building facade left of the first spot. Links run from a panel to its
+// (`placePanels`, no stored positions): a row of switchboard cabinets on pads
+// on the grass left of the lot. Only a parking lot draws them
+// (`showsLoadPanels`); the other site types keep their panels out of view.
+// Links run from a panel to its
 // circuits and child panels, and from a circuit to each of its stations on
 // the lot. Transformers are not part of it (they are informational). Points
 // are lot coordinates in meters (site-layout-grid.ts).
 
-import { FACADE_Z, WALL_PANEL_PITCH_M, type Lot, type Point } from './site-layout-grid';
+import type { Box, Lot, Point } from './site-layout-grid';
 
 export interface LinkStation {
   id: string;
@@ -60,9 +61,6 @@ export interface LoadLinks {
   labels: LinkLabel[];
 }
 
-/** How a panel model stands: a switchboard cabinet on a pad, or a panel on the facade. */
-export type PanelMount = 'pad' | 'wall';
-
 export interface PanelPlacement {
   id: string;
   /** The panel it hangs under, or null for a top-level panel. */
@@ -71,22 +69,12 @@ export interface PanelPlacement {
   amps: number;
   kw: number;
   point: Point;
-  mount: PanelMount;
 }
 
 /** The first switchboard cabinet stands this far left of the lot (its center), in meters. */
 export const PANEL_PAD_GAP_M = 4.5;
 /** Distance between two switchboard cabinets in their row, in meters. */
 export const PANEL_PAD_PITCH_M = 2.8;
-
-/** The first wall panel, left of the lot (its center), in meters. */
-export const WALL_PANEL_START_X = -1.6;
-/**
- * The circuit nodes of wall panels stand this far out from the facade, over
- * the sidewalk, so the links to the wall boxes fan out instead of running
- * along the wall on top of each other, in meters.
- */
-export const WALL_CIRCUIT_OUT_M = 1.6;
 
 /** Every panel of the hierarchy, each parent followed by its child panels (depth first). */
 function flatten(
@@ -101,26 +89,23 @@ function flatten(
  * its parent, so it stands next to it). Parking lot: a row of switchboard
  * cabinets on the grass left of the lot, beside the middle of its depth, the
  * first PANEL_PAD_GAP_M from it, one every PANEL_PAD_PITCH_M further left,
- * their doors toward the front.
- * Office or retail: panels on the facade left of the first spot, one every
- * WALL_PANEL_PITCH_M to the left.
+ * their doors toward the front. A custom site has no lot: `ground` is the box
+ * around its stations' spots, and the row stands left of it the same way.
  */
-export function placePanels(hierarchy: readonly LinkPanel[], lot: Lot): PanelPlacement[] {
+export function placePanels(
+  hierarchy: readonly LinkPanel[],
+  lot: Lot,
+  ground?: Box,
+): PanelPlacement[] {
+  const left = ground?.minX ?? 0;
+  const middle = ground != null ? (ground.minZ + ground.maxZ) / 2 : lot.depth / 2;
   return flatten(hierarchy, null).map(({ panel, parentId }, i) => ({
     id: panel.id,
     parentId,
     name: panel.name,
     amps: panel.breakerRatingAmps,
     kw: panel.maxContinuousKw,
-    ...(lot.siteType === 'office_retail'
-      ? {
-          point: { x: WALL_PANEL_START_X - i * WALL_PANEL_PITCH_M, z: FACADE_Z },
-          mount: 'wall' as const,
-        }
-      : {
-          point: { x: -PANEL_PAD_GAP_M - i * PANEL_PAD_PITCH_M, z: lot.depth / 2 },
-          mount: 'pad' as const,
-        }),
+    point: { x: left - PANEL_PAD_GAP_M - i * PANEL_PAD_PITCH_M, z: middle },
   }));
 }
 
@@ -140,8 +125,7 @@ function between(a: Point, b: Point, t: number): Point {
  * The links of a load management hierarchy, from the panel models
  * (`placePanels`): every panel gets its label (name, breaker, limit); a child
  * panel is linked from its parent; a circuit node stands half way from its
- * panel to the middle of its stations on the lot (for a wall panel, out over
- * the sidewalk), and links to each of them.
+ * panel to the middle of its stations on the lot, and links to each of them.
  * Circuits without a station on the lot are left out. `stations` holds the
  * point each station's link ends at (stationBackPoint).
  */
@@ -153,7 +137,6 @@ export function loadLinks(
   const segments: LinkSegment[] = [];
   const labels: LinkLabel[] = [];
   const at = new Map(panels.map((p) => [p.id, p.point]));
-  const onWall = new Set(panels.filter((p) => p.mount === 'wall').map((p) => p.id));
 
   for (const { panel, parentId } of flatten(hierarchy, null)) {
     const node = at.get(panel.id);
@@ -176,8 +159,7 @@ export function loadLinks(
         return p != null ? [{ s, p }] : [];
       });
       if (own.length === 0) continue;
-      const mid = between(node, centroid(own.map((o) => o.p)), 0.5);
-      const cNode = onWall.has(panel.id) ? { x: mid.x, z: FACADE_Z + WALL_CIRCUIT_OUT_M } : mid;
+      const cNode = between(node, centroid(own.map((o) => o.p)), 0.5);
       segments.push({ id: `circuit:${circuit.id}`, kind: 'circuit', from: node, to: cNode });
       labels.push({
         id: `circuit:${circuit.id}`,

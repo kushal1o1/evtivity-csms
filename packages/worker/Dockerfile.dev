@@ -53,6 +53,8 @@ COPY packages/ocpp/ packages/ocpp/
 COPY packages/worker/ packages/worker/
 # The database package tests import scripts/lib (the migration file helpers).
 COPY scripts/lib/ scripts/lib/
+# Live mode (mounted sources): node scripts/dev-live.mjs <entry> <dist packages>.
+COPY scripts/dev-live.mjs scripts/dev-live.mjs
 RUN npx tsc -b --force packages/lib packages/database packages/payments packages/ocpp packages/css packages/octt
 
 CMD ["node", "--import", "tsx", "packages/worker/src/index.ts"]

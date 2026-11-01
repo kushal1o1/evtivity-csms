@@ -16,18 +16,51 @@
 // (@evtivity/lib/site-layout). The lot geometry, framing, zoom limit and fog
 // live in site-layout-grid.ts, the links in site-layout-links.ts. Everything
 // on the site is a child of one group turned by the facing.
+//
+// A custom site has no lot, street or building: each station stands at its
+// free position (`SceneStation.free`) on grass, with its own parking spots on
+// a paved apron. In Edit Layout a station drags freely (snapped, alignment
+// guides, refused over another station's spots) and turns by a handle in
+// front of its spots; the active display message shows on every lit
+// charger screen (`SceneStation.message`).
+//
+// A depot is a fenced, paved yard (`buildDepotYard`): the bus bays with their
+// lines and the head strip, the truck pull-through lanes with their islands,
+// edge lines and arrows, the one-way roads into and out of them, the two-way
+// drive lane and the gate. Each station stands in its slot's bay or lane
+// (`SceneStation.free` from `depotSlotPlacement`, never dragged freely): a
+// depot pantograph pole or dispenser in a bus bay, a megawatt dispenser on a
+// truck lane island.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { LayoutBay } from '@evtivity/lib/site-layout';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {
+  freeSpotRects,
+  freeSpotsExtent,
+  freeSpotTypeOf,
+  FREE_LAYOUT,
+  STANDARD_DIMENSIONS,
+  type DepotLayout,
+  type FreePlacement,
+  type FreeSpotRect,
+  type LayoutBay,
+} from '@evtivity/lib/site-layout';
+import type { VehicleBodyType } from '@evtivity/lib/vehicle-appearance';
 import { SCENE_COLORS } from './site-layout-colors';
+import { sceneCar, vehicleSize, type SceneCar } from './site-layout-car';
+import type { CarKit } from './site-layout-car-geometry';
+import { createVehicleKit } from './site-layout-vehicle-kit';
+import type { FreeChargerModel } from './site-layout-free';
 import {
   BAY_LINE_GAP,
   BUILDING_HEIGHT_M,
   CAMERA_FOV,
   CURB_M,
+  CURB_POST_BACK_M,
   FACADE_Z,
   MAX_POLAR_ANGLE,
+  SIDEWALK_M,
   MIN_DISTANCE,
   OVERVIEW_CAMERA_OFFSET,
   bayToWorld as bayToLot,
@@ -38,17 +71,27 @@ import {
   chargingGlowLevel,
   clampTarget,
   clampToLot,
+  customSceneBox,
+  denseFrameBox,
+  handleRotation,
+  NARROW_STAGE_PX,
+  rotationHandleZ,
+  SCREEN_MESSAGE,
+  screenTextLayout,
+  type AlignmentGuide,
   fitFrame,
   fogRange,
   FRONT_CAMERA_OFFSET,
   FRONT_MAX_POLAR_ANGLE,
   frontCamera,
   groundBox,
+  isSpot,
   logoFit,
   maxZoomDistance,
   panBox,
   rotateBox,
   sceneBox,
+  spotRect,
   wallBoxOffset,
   worldToBay as lotToBay,
   type Box,
@@ -56,7 +99,7 @@ import {
   type Point,
   type StationProp,
 } from './site-layout-grid';
-import type { LinkKind, LoadLinks, PanelMount } from './site-layout-links';
+import type { LinkKind, LoadLinks } from './site-layout-links';
 
 /** Pixels per meter of the spot texture. */
 const TEXTURE_PX_PER_M = 80;
@@ -85,14 +128,32 @@ export interface SceneStation {
    * in `lightColor`, pulsing gently (steady with reduced motion).
    */
   glow: boolean;
-  /** An AC wall box on the building facade (office or retail, first row), not a pedestal. */
+  /** An AC wall box on the building facade (office or retail with wall mounting), not a pedestal. */
   wall: boolean;
   /** What stands in the spot (`stationProp`): a car on a cable, a Reserved sign or a cone. */
   prop: StationProp;
+  /** The car of a charging station (`sceneCar`); absent draws a grey sedan. */
+  car?: SceneCar | undefined;
   /** Payment terminals paired to the station. */
   terminals: readonly SceneTerminal[];
   /** A faulted station: a red beacon above it, pulsing unless reduced motion is on. */
   beacon: boolean;
+  /**
+   * Custom site: where the station stands and its turn (its spots lie in
+   * front of it). Depot: its bay or lane (`depotSlotPlacement`, with the spot
+   * type), drawn the same way but moved by slot.
+   */
+  free?: FreePlacement | undefined;
+  /** Custom site: the parking spots the station has (one per EVSE, 1 or 2). */
+  spots?: number | undefined;
+  /** Custom site with two car spots: the spot the car stands in, across the station (-1.3 or 1.3 m). */
+  carOffsetX?: number | undefined;
+  /** Custom site: the spot (0 or 1, EVSE order) the vehicle, sign or cone stands in. */
+  propSpot?: number | undefined;
+  /** Custom site: the charger model (`freeChargerModel`): a pantograph mast, a bus or truck dispenser, else the standard charger. */
+  charger?: FreeChargerModel | undefined;
+  /** The active display message, shown on the lit charger screen (null: none). */
+  message?: string | null | undefined;
 }
 
 export interface SceneTransformer {
@@ -101,12 +162,11 @@ export interface SceneTransformer {
   z: number;
 }
 
-/** A load management panel model (site-layout-links.ts, placePanels). */
+/** A load management switchboard on the grass (site-layout-links.ts, placePanels; parking lot only). */
 export interface ScenePanel {
   id: string;
   x: number;
   z: number;
-  mount: PanelMount;
 }
 
 /** A battery storage cabinet on the grass (information only). */
@@ -116,21 +176,24 @@ export interface SceneBattery {
   z: number;
 }
 
-/** A solar carport canopy over one row of the lot (information only, parking lot only). */
+/** A solar carport canopy over one row of the lot, or standing freely on a custom site (information only). */
 export interface SceneSolar {
   id: string;
   row: number;
+  /** Custom site: the middle of the canopy, its turn and size. */
+  free?: (FreePlacement & { lengthM: number; depthM: number }) | undefined;
 }
 
 export interface SceneLayout {
   lot: Lot;
   stations: readonly SceneStation[];
-  /** Shown on a parking lot only (the caller passes none for an office or retail site). */
+  /** Shown on a parking lot only (the caller passes none for the other site types). */
   transformers: readonly SceneTransformer[];
-  /** Battery storage on the grass (both site types). */
+  /** Battery storage on the grass (parking lot only). */
   batteries: readonly SceneBattery[];
-  /** Solar canopies (the caller passes none for an office or retail site). */
+  /** Solar canopies (parking lot only). */
   solar: readonly SceneSolar[];
+  /** Load management switchboards (parking lot only). */
   panels: readonly ScenePanel[];
   links: LoadLinks;
 }
@@ -168,6 +231,19 @@ export interface SceneCallbacks {
   onTransformerDrop: (transformerId: string, p: Point) => void;
   /** A battery drag in edit mode ended at this lot point (on the grass, like a transformer). */
   onBatteryDrop: (batteryId: string, p: Point) => void;
+  /** Custom site: a dragged or turned position, snapped (`freeRotation`: Shift, any angle). */
+  snapFree?: (p: FreePlacement, freeRotation: boolean) => FreePlacement;
+  /** Custom site: whether a station there would stand on another's spots, and the alignment guides to draw. */
+  freeDropState?: (
+    stationId: string,
+    p: FreePlacement,
+  ) => { blocked: boolean; guides: AlignmentGuide[] };
+  /** Custom site: a station drag or turn ended here (the caller refuses a blocked one). */
+  onFreeDrop?: (stationId: string, p: FreePlacement) => void;
+  /** Custom site: a solar canopy drag ended at this point (snapped). */
+  onSolarDrop?: (solarId: string, p: Point) => void;
+  /** Custom site in edit mode: a click on a solar canopy selects it (null: none). */
+  onSolarPick?: (solarId: string | null) => void;
   /** Runs after every rendered frame (labels and popup follow the models). */
   onFrame: () => void;
 }
@@ -177,6 +253,8 @@ export interface SiteScene {
   setTheme: (theme: SceneTheme) => void;
   setEditing: (editing: boolean) => void;
   setSelected: (stationId: string | null) => void;
+  /** Custom site in edit mode: the selected solar canopy (outlined), or null. */
+  setSelectedSolar: (solarId: string | null) => void;
   /** The company logo (a data or http(s) URL) for the back panels; null for plain panels. */
   setLogo: (url: string | null) => void;
   /**
@@ -194,7 +272,11 @@ export interface SiteScene {
   focus: (stationId: string) => void;
   /** Where a driver avatar floats: above the car of a charging station, else above the charger. */
   avatarPoint: (stationId: string) => ScreenPoint | null;
-  fit: () => void;
+  /**
+   * Fit to View. `toggle`: the Fit to View button; on a narrow stage it
+   * alternates the densest part of a wide site and the whole site.
+   */
+  fit: (toggle?: boolean) => void;
   /**
    * Renders while true. False stops the frame loop (the view is off screen or
    * the tab is hidden); true starts it again.
@@ -222,6 +304,8 @@ interface StationObject {
   labelZ: number;
   /** Above the middle of the car roof (station frame), or null without a car. */
   avatarAnchor: THREE.Vector3 | null;
+  /** Custom site: the rotation handle in front of the spots (shown on the selected station in Edit Layout). */
+  handle: THREE.Group | null;
   station: SceneStation;
 }
 
@@ -238,9 +322,9 @@ interface LinkMeshes {
 /** How far above the car roof a driver avatar floats, in meters. */
 const AVATAR_ABOVE_ROOF_M = 0.5;
 
-/** Height of a panel link end and of a panel label, by mount, in meters. */
-const PANEL_LINK_Y: Record<PanelMount, number> = { pad: 1.7, wall: 1.5 };
-const PANEL_LABEL_Y: Record<PanelMount, number> = { pad: 2.75, wall: 2.4 };
+/** Height of a panel link end and of a panel label, in meters. */
+const PANEL_LINK_Y = 1.7;
+const PANEL_LABEL_Y = 2.75;
 
 /** From this many stations, the fixed parts of the station models are merged (outside Edit Layout). */
 export const MERGE_STATIONS_FROM = 60;
@@ -370,13 +454,36 @@ export function createSiteScene(
   const fog = new THREE.Fog(0xffffff, 100, 400);
   scene.fog = fog;
 
+  // Reflections for the glossy car paint, glass and cabinets: a room
+  // environment prefiltered once (no external files), disposed with the scene.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  const environment = pmrem.fromScene(room, 0.04).texture;
+  room.dispose();
+  pmrem.dispose();
+  scene.environment = environment;
+
   scene.add(new THREE.HemisphereLight(0xffffff, 0x6b7280, 2.2));
   const sun = new THREE.DirectionalLight(0xffffff, 2.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0005;
+  // A softer shadow edge (PCF filter radius).
+  sun.shadow.radius = 3;
   scene.add(sun);
   scene.add(sun.target);
+
+  // The car geometries of each body type (site-layout-car-geometry.ts), built
+  // on first use and shared by every car of the type for the scene's life.
+  const carKits = new Map<VehicleBodyType, CarKit>();
+  function carKit(bodyType: VehicleBodyType): CarKit {
+    let kit = carKits.get(bodyType);
+    if (kit == null) {
+      kit = createVehicleKit(bodyType);
+      carKits.set(bodyType, kit);
+    }
+    return kit;
+  }
 
   // Everything built per rebuild, disposed on the next one.
   let built: Disposable[] = [];
@@ -422,34 +529,14 @@ export function createSiteScene(
     g.rotateX(-Math.PI / 2);
     return shadowed(new THREE.Mesh(g, material));
   }
-  // A side profile (x along the length from 0 at the front, y up) extruded
-  // across `width`, centered on x = 0 with the front at z = front.
-  function profileSolid(
-    points: Array<[number, number]>,
-    width: number,
-    front: number,
+  function cable(
+    points: Array<[number, number, number]>,
     material: THREE.Material,
+    radius = 0.022,
   ) {
-    const s = new THREE.Shape(points.map(([u, v]) => new THREE.Vector2(u, v)));
-    const g = track(
-      new THREE.ExtrudeGeometry(s, {
-        depth: width,
-        bevelEnabled: true,
-        bevelThickness: 0.06,
-        bevelSize: 0.05,
-        bevelSegments: 3,
-        curveSegments: 8,
-      }),
-    );
-    // Shape x becomes the length (z), the extrusion becomes the width (x).
-    g.rotateY(-Math.PI / 2);
-    g.translate(width / 2, 0, front);
-    return shadowed(new THREE.Mesh(g, material));
-  }
-  function cable(points: Array<[number, number, number]>, material: THREE.Material) {
     const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
     return shadowed(
-      new THREE.Mesh(track(new THREE.TubeGeometry(curve, 48, 0.022, 8, false)), material),
+      new THREE.Mesh(track(new THREE.TubeGeometry(curve, 48, radius, 8, false)), material),
     );
   }
   function handle(material: THREE.Material) {
@@ -470,16 +557,19 @@ export function createSiteScene(
   };
   let layout: SceneLayout = {
     lot: {
+      siteType: 'parking_lot',
+      rowLengths: [10, 10],
       cols: 10,
       rows: 2,
-      spotW: 3.2,
-      spotD: 5.6,
-      lane: 6,
-      pitch: 11.6,
-      width: 32,
-      depth: 23.2,
+      spotW: 2.6,
+      spotD: 5.5,
+      lane: 7,
+      pitch: 12.5,
+      width: 26,
+      depth: 18,
       facing: 0,
-      siteType: 'parking_lot',
+      mounting: 'wall',
+      depot: null,
     },
     stations: [],
     transformers: [],
@@ -488,7 +578,7 @@ export function createSiteScene(
     panels: [],
     links: { segments: [], labels: [] },
   };
-  let frameBox: Box = { minX: 0, maxX: 32, minZ: 0, maxZ: 23.2 };
+  let frameBox: Box = { minX: 0, maxX: 26, minZ: 0, maxZ: 18 };
   // The same box before the facing turns it (the front camera frames it).
   let siteBox: Box = frameBox;
   // The lot and its stations only (lot coordinates): the front camera frames
@@ -497,11 +587,19 @@ export function createSiteScene(
   let pan: Box = panBox(frameBox);
   let editing = false;
   let selected: string | null = null;
+  let selectedSolar: string | null = null;
+  // Fit to View on a narrow stage alternates the densest part and the whole site.
+  let lastFitDense = false;
   let logo: { texture: THREE.CanvasTexture; width: number; height: number } | null = null;
   let logoUrl: string | null = null;
   const objects = new Map<string, StationObject>();
   const transformerObjects = new Map<string, THREE.Group>();
   const batteryObjects = new Map<string, THREE.Group>();
+  const solarObjects = new Map<string, THREE.Group>();
+  // Scrolling display messages on charger screens (texture and its speed per second).
+  const screenScrolls: Array<{ texture: THREE.Texture; speed: number }> = [];
+  // Alignment guides while a station of a custom site is dragged.
+  const guideGroup = new THREE.Group();
   // Label points of the batteries and solar canopies (lot coordinates).
   const energyLabels = new Map<string, THREE.Vector3>();
   const linkLabels = new Map<string, THREE.Vector3>();
@@ -517,6 +615,279 @@ export function createSiteScene(
   scene.add(ground, site);
 
   const lotPoint = (p: Point, y = 0) => new THREE.Vector3(p.x, y, p.z);
+
+  // Where a station stands and its turn about the vertical axis: its free
+  // position on a custom site, else its spot (a turned row faces back).
+  function poseOf(s: SceneStation): { point: Point; turn: number } {
+    if (s.free != null) {
+      return { point: { x: s.free.x, z: s.free.z }, turn: (-s.free.rotationDeg * Math.PI) / 180 };
+    }
+    return { point: bayToLot(s.bay, layout.lot), turn: bayTurn(s.bay, layout.lot) };
+  }
+
+  // A display message drawn for a charger screen: wrapped on the screen when
+  // it fits, else one line on a wide canvas that scrolls across (`speed`, in
+  // texture widths per second). Light text on the dark screen, unlit, so the
+  // screen reads as lit from far away.
+  function screenMessageTexture(
+    text: string,
+    kind: 'ac' | 'dc',
+  ): { texture: THREE.CanvasTexture; speed: number | null } {
+    const spec = SCREEN_MESSAGE[kind];
+    const { width, height } = spec.canvas;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const background = '#0b1726';
+    const ink = '#e6f2ff';
+    const family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+    const staticFont = Math.round(height / (spec.lines + 0.9));
+    let speed: number | null = null;
+    if (ctx == null) {
+      canvas.width = width;
+      canvas.height = height;
+    } else {
+      ctx.font = `600 ${String(staticFont)}px ${family}`;
+      const layout = screenTextLayout(
+        text,
+        (t) => ctx.measureText(t).width,
+        width * 0.9,
+        spec.lines,
+      );
+      if (layout.kind === 'static') {
+        canvas.width = width;
+        canvas.height = height;
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, width, height);
+        ctx.font = `600 ${String(staticFont)}px ${family}`;
+        ctx.fillStyle = ink;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lineHeight = staticFont * 1.18;
+        const top = height / 2 - ((layout.lines.length - 1) * lineHeight) / 2;
+        layout.lines.forEach((line, i) => {
+          ctx.fillText(line, width / 2, top + i * lineHeight);
+        });
+      } else {
+        // One big line: as large as the screen allows, the canvas no wider than 8192 px.
+        ctx.font = `600 100px ${family}`;
+        const per100 = Math.max(1, ctx.measureText(layout.text).width);
+        const font = Math.max(
+          24,
+          Math.min(Math.round(height * 0.5), Math.floor((7600 * 100) / per100)),
+        );
+        ctx.font = `600 ${String(font)}px ${family}`;
+        const textWidth = Math.ceil(ctx.measureText(layout.text).width);
+        canvas.width = Math.min(8192, textWidth + width);
+        canvas.height = height;
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, canvas.width, height);
+        ctx.font = `600 ${String(font)}px ${family}`;
+        ctx.fillStyle = ink;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(layout.text, width * 0.5, height / 2);
+        // About a screen width every three seconds.
+        speed = width / canvas.width / 3;
+      }
+    }
+    const texture = track(new THREE.CanvasTexture(canvas));
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    if (speed != null) {
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.repeat.x = width / canvas.width;
+    }
+    return { texture, speed };
+  }
+
+  // The message on a lit charger screen: a plane just in front of the glass.
+  function addScreenMessage(
+    g: THREE.Group,
+    s: SceneStation,
+    kind: 'ac' | 'dc',
+    position: [number, number, number],
+  ): void {
+    if (s.message == null || s.message === '' || !s.lit) return;
+    const spec = SCREEN_MESSAGE[kind];
+    const { texture, speed } = screenMessageTexture(s.message, kind);
+    const plane = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(spec.width, spec.height)),
+      track(new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })),
+    );
+    plane.position.set(...position);
+    plane.userData['screenMessage'] = true;
+    g.add(plane);
+    if (speed != null) screenScrolls.push({ texture, speed });
+  }
+
+  // The spots of a station on a custom site, in its own frame (`freeSpotRects`):
+  // a paved apron under the charger and its spots with a curb around it, and
+  // the markings. Car spots and bus bays: a painted line on each side of each
+  // spot. Truck pull-through lanes: no curb across the lane ends (trucks drive
+  // through), a solid line along each lane edge, an entry and an exit arrow,
+  // and a raised island under each dispenser with a bollard at each end.
+  function addFreeSpots(g: THREE.Group, s: SceneStation, palette: Palette): void {
+    // A depot paints every bay and lane on its yard, taken or not (buildDepotYard).
+    if (layout.lot.depot != null) return;
+    const spotType = freeSpotTypeOf(s.free);
+    const e = freeSpotsExtent(s.spots ?? 1, spotType);
+    const rects = freeSpotRects(s.spots ?? 1, spotType);
+    const truck = spotType === 'truck_pull_through';
+    const apron = FREE_LAYOUT.apronM;
+    const behind = truck ? 0 : 0.9;
+    const left = e.minX - apron;
+    const right = e.maxX + apron;
+    const w = right - left;
+    const cx = (left + right) / 2;
+    const front = Math.min(e.front, -behind) - apron;
+    const back = e.back + apron;
+    const paving = new THREE.Mesh(
+      track(new THREE.BoxGeometry(w, 0.03, back - front)),
+      M(palette.asphalt, { roughness: 0.95, metalness: 0 }),
+    );
+    paving.position.set(cx, 0.015, (front + back) / 2);
+    paving.receiveShadow = true;
+    g.add(paving);
+    const edge = M(palette.curb, { roughness: 0.9 });
+    const curbs: Array<readonly [number, number, number, number]> = [
+      [cx, front, w + 0.1, 0.1],
+      [cx, back, w + 0.1, 0.1],
+    ];
+    if (!truck) {
+      curbs.push([left, (front + back) / 2, 0.1, back - front]);
+      curbs.push([right, (front + back) / 2, 0.1, back - front]);
+    }
+    for (const [x, z, bw, bd] of curbs) {
+      const strip = box(bw, 0.07, bd, edge);
+      strip.position.set(x, 0.035, z);
+      g.add(strip);
+    }
+    const paint = M(palette.paint, { roughness: 0.6 });
+    if (!truck) {
+      const lineLength = e.back - e.front - 0.3;
+      const xs = new Set<number>();
+      for (const r of rects) {
+        xs.add(Math.round(r.minX * 100) / 100);
+        xs.add(Math.round(r.maxX * 100) / 100);
+      }
+      for (const x of xs) {
+        const line = new THREE.Mesh(track(new THREE.BoxGeometry(0.1, 0.006, lineLength)), paint);
+        line.position.set(x, 0.034, e.front + 0.15 + lineLength / 2);
+        g.add(line);
+      }
+      return;
+    }
+    const concrete = M(palette.concrete, { roughness: 0.95 });
+    const bollardPaint = M(SCENE_COLORS.bollard, { roughness: 0.5 });
+    const arrow = arrowGeometry();
+    for (const r of rects) {
+      for (const z of [r.minZ + 0.1, r.maxZ - 0.1]) {
+        const line = new THREE.Mesh(
+          track(new THREE.BoxGeometry(r.maxX - r.minX - 0.4, 0.006, 0.12)),
+          paint,
+        );
+        line.position.set((r.minX + r.maxX) / 2, 0.034, z);
+        g.add(line);
+      }
+      // Entry and exit arrows, pointing the way the trucks drive (+x).
+      for (const x of [r.minX + 3.5, r.maxX - 2.2]) {
+        const mark = new THREE.Mesh(arrow, paint);
+        mark.rotation.x = -Math.PI / 2;
+        mark.position.set(x, 0.034, (r.minZ + r.maxZ) / 2);
+        g.add(mark);
+      }
+      // The raised island the dispenser stands on, a bollard at each end.
+      const islandLength = 7;
+      const island = box(islandLength, 0.15, FREE_LAYOUT.truckIslandM - 0.3, concrete);
+      island.position.set(r.chargerX - 1, 0.075, r.chargerZ);
+      g.add(island);
+      for (const bx of [
+        r.chargerX - 1 - islandLength / 2 + 0.3,
+        r.chargerX - 1 + islandLength / 2 - 0.3,
+      ]) {
+        const post = cylinder(0.1, 1.0, 16, bollardPaint);
+        post.position.set(bx, 0.65, r.chargerZ);
+        g.add(post);
+      }
+    }
+  }
+
+  // A lane arrow painted on the ground: 3 m long, pointing +x (flat in x, y).
+  let laneArrow: THREE.BufferGeometry | null = null;
+  function arrowGeometry(): THREE.BufferGeometry {
+    if (laneArrow != null) return laneArrow;
+    const a = new THREE.Shape();
+    a.moveTo(-1.5, -0.15);
+    a.lineTo(0.5, -0.15);
+    a.lineTo(0.5, -0.5);
+    a.lineTo(1.5, 0);
+    a.lineTo(0.5, 0.5);
+    a.lineTo(0.5, 0.15);
+    a.lineTo(-1.5, 0.15);
+    a.lineTo(-1.5, -0.15);
+    laneArrow = track(new THREE.ShapeGeometry(a));
+    return laneArrow;
+  }
+
+  // The rotation handle of a station on a custom site: a ring on the ground
+  // in front of its spots with a stem from the spots' back edge, in the edit
+  // color, shown on the selected station in Edit Layout.
+  function freeHandle(stationId: string, handleZ: number, spotsBack: number): THREE.Group {
+    const g = new THREE.Group();
+    const material = track(
+      new THREE.MeshBasicMaterial({ color: theme.primary, transparent: true, opacity: 0.95 }),
+    );
+    const ring = new THREE.Mesh(track(new THREE.TorusGeometry(0.42, 0.07, 10, 36)), material);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.12, handleZ);
+    const knob = new THREE.Mesh(track(new THREE.SphereGeometry(0.2, 16, 12)), material);
+    knob.position.set(0, 0.2, handleZ);
+    const stemLength = handleZ - 0.42 - spotsBack;
+    const stem = new THREE.Mesh(track(new THREE.BoxGeometry(0.06, 0.03, stemLength)), material);
+    stem.position.set(0, 0.08, handleZ - 0.42 - stemLength / 2);
+    // A larger invisible disc makes the handle easy to grab on a touch screen.
+    const grab = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(0.9, 0.9, 0.3, 20)),
+      track(new THREE.MeshBasicMaterial({ visible: false })),
+    );
+    grab.position.set(0, 0.15, handleZ);
+    g.add(ring, knob, stem, grab);
+    g.traverse((o) => {
+      o.userData['rotateHandle'] = stationId;
+    });
+    g.visible = false;
+    return g;
+  }
+
+  // Alignment guides: a dashed strip on the ground (dashes 0.6 m, gaps 0.4 m,
+  // 15 cm wide, in the edit color) to each station the moved one lines up
+  // with. The dashes share one geometry and material, kept for the scene's life.
+  const guideDash = new THREE.BoxGeometry(1, 0.02, 1);
+  const guideMaterial = new THREE.MeshBasicMaterial({
+    color: 0x2563eb,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  function showGuides(guides: readonly AlignmentGuide[]): void {
+    guideGroup.clear();
+    for (const guide of guides) {
+      const dx = guide.to.x - guide.from.x;
+      const dz = guide.to.z - guide.from.z;
+      const length = Math.hypot(dx, dz);
+      const angle = Math.atan2(dx, dz);
+      for (let d = 0; d < length; d += 1) {
+        const dash = new THREE.Mesh(guideDash, guideMaterial);
+        const run = Math.min(0.6, length - d);
+        const mid = (d + run / 2) / length;
+        dash.scale.set(0.15, 1, run);
+        dash.rotation.y = angle;
+        dash.position.set(guide.from.x + dx * mid, 0.06, guide.from.z + dz * mid);
+        dash.raycast = () => undefined;
+        dash.renderOrder = 4;
+        guideGroup.add(dash);
+      }
+    }
+  }
 
   // One spot of asphalt with its painted line on each side edge (half on each
   // side of the tile, so repeated tiles share one line) from the front gap to
@@ -624,18 +995,31 @@ export function createSiteScene(
   }
 
   type Palette = (typeof SCENE_COLORS)['light'] | (typeof SCENE_COLORS)['dark'];
+  // Where a charging cable runs: from a DC charger, an AC pedestal or a wall
+  // box to a car parked nose in, or from a curbside post to a car parked
+  // parallel along the curb.
+  type CableKind = 'ac' | 'dc' | 'wall' | 'curb-ac' | 'curb-dc';
 
   // The props and the transformer, built once per rebuild on first use and
   // cloned per station: the clones share their geometries and materials.
   interface Templates {
-    car: () => THREE.Group;
-    cable: (kind: 'ac' | 'dc' | 'wall') => THREE.Mesh;
+    /** A car of its body type, nose to the charger, its body in its color. */
+    car: (look: SceneCar) => THREE.Group;
+    /** The car parallel parked along a curb, in front of a curbside post. */
+    carParallel: (look: SceneCar) => THREE.Group;
+    /** A vehicle of its body type in its color in its own frame (nose at the origin facing -z). */
+    vehicle: (look: SceneCar) => THREE.Group;
+    /**
+     * The cable to the charge port of a car of this (drawn) body type; `offsetX`
+     * moves the car across the station (the right spot of a two-spot station
+     * on a custom site takes the right holster).
+     */
+    cable: (kind: CableKind, bodyType: VehicleBodyType, offsetX?: number) => THREE.Mesh;
     sign: () => THREE.Group;
     cone: () => THREE.Group;
     transformer: () => THREE.Group;
     battery: () => THREE.Group;
     switchboard: () => THREE.Group;
-    wallPanel: () => THREE.Group;
     terminal: (hasDisplay: boolean, online: boolean | null) => THREE.Group;
   }
 
@@ -651,111 +1035,121 @@ export function createSiteScene(
     };
     // The car parks nose to the charger, CAR_FRONT in front of it, inside its spot.
     const CAR_FRONT = 0.7;
-    const CAR_LENGTH = 4.5;
-    const CAR_WIDTH = 1.82;
-    const PORT: [number, number, number] = [-0.86, 0.72, CAR_FRONT + 0.62];
-    return {
-      car: () =>
-        once('car', () => {
+    // The charge port on the front left fender of each body type.
+    const portAt = (bodyType: VehicleBodyType): [number, number, number] => {
+      const port = carKit(bodyType).port;
+      return [port.x, port.y, CAR_FRONT + port.z];
+    };
+    // A car parallel parked along a curb (station local +z is the street): it
+    // faces -x with its right side 0.3 m from the curb, its nose just past the
+    // post, so its charge port (front left) is on the street side.
+    const CURB_FACE_Z = CURB_POST_BACK_M;
+    const parallelAt = (bodyType: VehicleBodyType): [number, number] => [
+      -0.4,
+      CURB_FACE_Z + 0.3 + vehicleSize(bodyType).width / 2,
+    ];
+    const parallelPortAt = (bodyType: VehicleBodyType): [number, number, number] => {
+      const port = portAt(bodyType);
+      const at = parallelAt(bodyType);
+      return [port[2] + at[0], port[1], -port[0] + at[1] + 0.04];
+    };
+    // Shared by every car of one look: the glass, tires, rims, trim and lights.
+    const glass = track(
+      new THREE.MeshPhysicalMaterial({
+        color: SCENE_COLORS.carGlass,
+        roughness: 0.12,
+        metalness: 0,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.1,
+        envMapIntensity: 0.55,
+      }),
+    );
+    const carShared = {
+      glass,
+      tire: M(SCENE_COLORS.rubber, { roughness: 0.85 }),
+      rim: M(SCENE_COLORS.rim, { roughness: 0.25, metalness: 0.9 }),
+      trim: M(SCENE_COLORS.dark1, { roughness: 0.55 }),
+      headlight: M(SCENE_COLORS.headlight, {
+        emissive: SCENE_COLORS.headlight,
+        emissiveIntensity: theme.dark ? 1.4 : 0.3,
+      }),
+      taillight: M(SCENE_COLORS.taillight, {
+        emissive: SCENE_COLORS.taillight,
+        emissiveIntensity: theme.dark ? 1.2 : 0.4,
+      }),
+      chargePort: M(SCENE_COLORS.chargePort, {
+        emissive: SCENE_COLORS.chargePort,
+        emissiveIntensity: 0.6,
+      }),
+      // A semi trailer's van body and bus roof pods: white, satin.
+      panel: M(SCENE_COLORS.vehiclePanel, { roughness: 0.4, metalness: 0.2 }),
+    };
+    // A glossy paint with a clear coat, one material per color.
+    const paints = new Map<string, THREE.Material>();
+    const paintFor = (color: string): THREE.Material => {
+      let paint = paints.get(color);
+      if (paint == null) {
+        paint = track(
+          new THREE.MeshPhysicalMaterial({
+            color,
+            roughness: 0.35,
+            metalness: 0.45,
+            clearcoat: 1,
+            clearcoatRoughness: 0.08,
+          }),
+        );
+        paints.set(color, paint);
+      }
+      return paint;
+    };
+    const result: Templates = {
+      vehicle: (look) =>
+        once(`vehicle-${look.bodyType}-${look.color}`, () =>
+          carKit(look.bodyType).build({ ...carShared, paint: paintFor(look.color) }),
+        ),
+      car: (look) =>
+        once(`car-${look.bodyType}-${look.color}`, () => {
           const g = new THREE.Group();
-          const paint = M(palette.car, { roughness: 0.25, metalness: 0.55 });
-          const glass = M(SCENE_COLORS.carGlass, { roughness: 0.05, metalness: 0.65 });
-          const tire = M(SCENE_COLORS.rubber, { roughness: 0.9 });
-          const rim = M(SCENE_COLORS.rim, { roughness: 0.25, metalness: 0.85 });
-          const trim = M(SCENE_COLORS.dark1, { roughness: 0.6 });
-          const head = M(SCENE_COLORS.headlight, {
-            emissive: SCENE_COLORS.headlight,
-            emissiveIntensity: 0.25,
-          });
-          const tail = M(SCENE_COLORS.taillight, {
-            emissive: SCENE_COLORS.taillight,
-            emissiveIntensity: 0.35,
-          });
-          // Lower body: bumper, hood, beltline and trunk in one side profile.
-          const L = CAR_LENGTH;
-          const body = profileSolid(
-            [
-              [0.02, 0.3],
-              [0, 0.55],
-              [0.12, 0.7],
-              [0.95, 0.83],
-              [1.55, 0.95],
-              [3.75, 0.98],
-              [4.3, 0.92],
-              [L, 0.78],
-              [L - 0.02, 0.38],
-              [L - 0.2, 0.26],
-              [0.2, 0.26],
-            ],
-            CAR_WIDTH - 0.1,
-            CAR_FRONT,
-            paint,
-          );
-          // Greenhouse: windshield, side windows and rear window in glass.
-          const cabin = profileSolid(
-            [
-              [1.55, 0.95],
-              [2.35, 1.44],
-              [3.5, 1.46],
-              [4.15, 1.0],
-              [3.75, 0.98],
-            ],
-            CAR_WIDTH - 0.36,
-            CAR_FRONT,
-            glass,
-          );
-          const roof = box(CAR_WIDTH - 0.3, 0.05, 1.2, paint);
-          roof.position.set(0, 1.535, CAR_FRONT + 2.93);
-          g.add(body, cabin, roof);
-          // Pillars between the windows.
-          for (const side of [-1, 1]) {
-            const pillar = box(0.05, 0.42, 0.08, paint);
-            pillar.position.set(side * (CAR_WIDTH / 2 - 0.2), 1.2, CAR_FRONT + 2.95);
-            g.add(pillar);
-          }
-          // Lights front and back, a dark grille, the charge port at the front left.
-          for (const side of [-1, 1]) {
-            const h = box(0.42, 0.08, 0.04, head);
-            h.position.set(side * 0.58, 0.68, CAR_FRONT + 0.06);
-            h.rotation.x = -0.25;
-            const t = box(0.38, 0.08, 0.04, tail);
-            t.position.set(side * 0.6, 0.82, CAR_FRONT + L - 0.02);
-            g.add(h, t);
-          }
-          const grille = box(0.8, 0.1, 0.04, trim);
-          grille.position.set(0, 0.42, CAR_FRONT + 0.02);
-          const port = box(0.03, 0.14, 0.18, trim);
-          port.position.set(PORT[0] + 0.02, PORT[1], PORT[2]);
-          const portLight = box(
-            0.035,
-            0.03,
-            0.12,
-            M(SCENE_COLORS.chargePort, {
-              emissive: SCENE_COLORS.chargePort,
-              emissiveIntensity: 0.6,
-            }),
-          );
-          portLight.position.set(PORT[0] + 0.01, PORT[1] + 0.09, PORT[2]);
-          g.add(grille, port, portLight);
-          // Wheels with rims and hubs.
-          for (const x of [-(CAR_WIDTH / 2 - 0.12), CAR_WIDTH / 2 - 0.12]) {
-            for (const z of [CAR_FRONT + 0.95, CAR_FRONT + L - 0.95]) {
-              const wheel = new THREE.Group();
-              const t = cylinder(0.34, 0.24, 24, tire);
-              const r = cylinder(0.22, 0.25, 16, rim);
-              const hub = cylinder(0.07, 0.27, 10, trim);
-              wheel.add(t, r, hub);
-              wheel.rotation.z = Math.PI / 2;
-              wheel.position.set(x, 0.34, z);
-              g.add(wheel);
-            }
-          }
+          const car = carKit(look.bodyType).build({ ...carShared, paint: paintFor(look.color) });
+          car.position.z = CAR_FRONT;
+          g.add(car);
+          return g;
+        }),
+      carParallel: (look) =>
+        once(`carParallel-${look.bodyType}-${look.color}`, () => {
+          const g = new THREE.Group();
+          const car = result.car(look);
+          const at = parallelAt(look.bodyType);
+          car.rotation.y = Math.PI / 2;
+          car.position.set(at[0], 0, at[1]);
+          g.add(car);
           return g;
         }),
       // From the left holster of the charger to the charge port at the front left of the car.
-      cable: (kind) =>
-        once(`cable-${kind}`, () => {
+      cable: (kind, bodyType, offsetX = 0) =>
+        once(`cable-${kind}-${bodyType}-${String(offsetX)}`, () => {
+          const port = portAt(bodyType);
+          const PORT: [number, number, number] = [port[0] + offsetX, port[1], port[2]];
+          // The holster on the side of the car: the right one for a car in the right spot.
+          const side = offsetX > 0 ? -1 : 1;
+          const PARALLEL_PORT = parallelPortAt(bodyType);
           const rubber = M(SCENE_COLORS.rubber, { roughness: 0.9 });
+          if (kind === 'curb-ac' || kind === 'curb-dc') {
+            // Down the post, along the ground past the car's nose to its street side, up to the port.
+            const start: [number, number, number] =
+              kind === 'curb-dc' ? [-0.44, 1.02, 0.12] : [-0.17, 0.95, 0.04];
+            return cable(
+              [
+                start,
+                [start[0] + 0.02, 0.4, 0.35],
+                [-0.02, 0.07, 1.0],
+                [0.08, 0.07, PARALLEL_PORT[2] - 0.6],
+                [0.3, 0.2, PARALLEL_PORT[2] + 0.18],
+                PARALLEL_PORT,
+              ],
+              rubber,
+            );
+          }
           if (kind === 'wall') {
             // From the wall box holster on the facade, down across the sidewalk, to the car.
             const w = wallBoxOffset();
@@ -774,20 +1168,20 @@ export function createSiteScene(
           return kind === 'dc'
             ? cable(
                 [
-                  [-0.44, 1.02, 0.12],
-                  [-0.55, 0.5, 0.3],
-                  [-0.7, 0.12, 0.62],
-                  [-0.9, 0.4, CAR_FRONT + 0.4],
+                  [-0.44 * side, 1.02, 0.12],
+                  [-0.55 * side, 0.5, 0.3],
+                  [-0.7 * side + offsetX * 0.4, 0.12, 0.62],
+                  [-0.9 + offsetX, 0.4, CAR_FRONT + 0.4],
                   PORT,
                 ],
                 rubber,
               )
             : cable(
                 [
-                  [-0.17, 0.95, 0.04],
-                  [-0.32, 0.45, 0.25],
-                  [-0.6, 0.12, 0.6],
-                  [-0.9, 0.4, CAR_FRONT + 0.4],
+                  [-0.17 * side, 0.95, 0.04],
+                  [-0.32 * side, 0.45, 0.25],
+                  [-0.6 * side + offsetX * 0.4, 0.12, 0.6],
+                  [-0.9 + offsetX, 0.4, CAR_FRONT + 0.4],
                   PORT,
                 ],
                 rubber,
@@ -970,43 +1364,6 @@ export function createSiteScene(
           g.add(nameplate, warning);
           return g;
         }),
-      // A panel mounted on the facade: a cabinet with its door, a handle, a
-      // vent, a nameplate, a warning label and a conduit down to the ground.
-      // Its back is on the wall (local z 0); the front faces +z.
-      wallPanel: () =>
-        once('wallPanel', () => {
-          const g = new THREE.Group();
-          const body = M(palette.switchboard, { roughness: 0.45, metalness: 0.35 });
-          const door = M(palette.switchboardDoor, { roughness: 0.4, metalness: 0.35 });
-          const dark = M(SCENE_COLORS.dark1, { roughness: 0.6 });
-          const cabinet = box(0.76, 1.16, 0.2, body);
-          cabinet.position.set(0, 1.45, 0.1);
-          const leaf = box(0.7, 1.1, 0.012, door);
-          leaf.position.set(0, 1.45, 0.206);
-          const grip = box(0.025, 0.16, 0.03, dark);
-          grip.position.set(0.28, 1.45, 0.22);
-          g.add(cabinet, leaf, grip);
-          for (let i = 0; i < 4; i++) {
-            const louver = box(0.34, 0.018, 0.012, dark);
-            louver.position.set(0, 1.84 + i * 0.04, 0.214);
-            g.add(louver);
-          }
-          const nameplate = box(0.26, 0.08, 0.008, M(palette.signPlate, { roughness: 0.4 }));
-          nameplate.position.set(0, 1.66, 0.214);
-          const warning = box(0.14, 0.12, 0.008, [
-            dark,
-            dark,
-            dark,
-            dark,
-            M('#ffffff', { map: warningTexture(), roughness: 0.5 }),
-            dark,
-          ]);
-          warning.position.set(0, 1.12, 0.214);
-          const conduit = cylinder(0.035, 0.87, 12, M(SCENE_COLORS.signPost, { metalness: 0.5 }));
-          conduit.position.set(-0.22, 0.435, 0.06);
-          g.add(nameplate, warning, conduit);
-          return g;
-        }),
       // A compact card reader on a short bracket; a screen only for a model with a display.
       terminal: (hasDisplay, online) =>
         once(`terminal-${String(hasDisplay)}-${String(online)}`, () => {
@@ -1051,6 +1408,7 @@ export function createSiteScene(
           return g;
         }),
     };
+    return result;
   }
 
   // The Reserved sign face: the translated word on a light plate.
@@ -1190,8 +1548,415 @@ export function createSiteScene(
   // A ring around a round socket, facing +z.
   const socketRing = (radius: number) => new THREE.TorusGeometry(radius, 0.012, 8, 32);
 
+  interface StationMaterials {
+    shell: THREE.Material;
+    dark: THREE.Material;
+    rubber: THREE.Material;
+    glass: THREE.Material;
+    light: THREE.Material;
+    accent: THREE.Material;
+  }
+
+  // Where the vehicle of a large spot stands, in the station frame: nose to
+  // the charger in a bus bay (or a car spot), driving through a truck lane
+  // with its charge inlet just past the dispenser and its left side to the
+  // island.
+  const LARGE_NOSE_Z = 0.9;
+  const TRUCK_INLET_PAST_DISPENSER_M = 0.8;
+  const TRUCK_SIDE_FROM_ISLAND_M = 0.4;
+  function largeVehiclePose(
+    rect: FreeSpotRect,
+    bodyType: VehicleBodyType,
+  ): { x: number; z: number; turn: number; port: THREE.Vector3; roof: THREE.Vector3 | null } {
+    const kit = carKit(bodyType);
+    const size = vehicleSize(bodyType);
+    if (rect.heading === '+x') {
+      // Turned -90 degrees: the vehicle's -z (forward) becomes +x, its left side -z.
+      const x = Math.min(
+        rect.maxX - 0.3,
+        rect.chargerX + TRUCK_INLET_PAST_DISPENSER_M + kit.port.z,
+      );
+      const z = rect.minZ + TRUCK_SIDE_FROM_ISLAND_M + size.width / 2;
+      const port = new THREE.Vector3(x - kit.port.z, kit.port.y, z + kit.port.x);
+      const roof =
+        kit.roofContact != null
+          ? new THREE.Vector3(x - kit.roofContact.z, kit.roofContact.y, z + kit.roofContact.x)
+          : null;
+      return { x, z, turn: -Math.PI / 2, port, roof };
+    }
+    const x = (rect.minX + rect.maxX) / 2;
+    const z = LARGE_NOSE_Z;
+    const port = new THREE.Vector3(x + kit.port.x, kit.port.y, z + kit.port.z);
+    const roof =
+      kit.roofContact != null
+        ? new THREE.Vector3(x + kit.roofContact.x, kit.roofContact.y, z + kit.roofContact.z)
+        : null;
+    return { x, z, turn: 0, port, roof };
+  }
+
+  // The contact point of a bay's pantograph: over the middle of the bay, where
+  // a bus's roof rails stop (LARGE_NOSE_Z plus the rails' distance from its nose).
+  function pantographPoint(rect: FreeSpotRect): THREE.Vector3 {
+    const roof = carKit('bus').roofContact ?? new THREE.Vector3(0, 3.38, 2.7);
+    return new THREE.Vector3((rect.minX + rect.maxX) / 2, roof.y, LARGE_NOSE_Z + roof.z);
+  }
+
+  /**
+   * The depot pantograph pole (ABB HVC-PD data sheet: 5.24 m high, the
+   * pantograph 4.67 m out from the pole; Schunk SLS 201: mounted at 5.12 m):
+   * the boom height, the pole height and how far the pole stands behind a
+   * bay's contact point.
+   */
+  const MAST_BOOM_Y = 5.1;
+  const MAST_HEIGHT_M = 5.24;
+  const MAST_OUTREACH_M = 4.67;
+  /** The contact hood of a pantograph up mast: the bus roof pantograph rises 1.5 m into it (Schunk SLS 102: 1.5 to 1.8 m). */
+  const HOOD_Y = 4.9;
+  /** The cable management arm of a bus depot dispenser: high enough over a 3.4 m bus. */
+  const BUS_BOOM_Y = 4.5;
+
+  // A heavy charger cabinet facing +z: a body, a dark plinth, the screen
+  // with its bezel, the light bar, an RFID reader, accent stripes. Returns the
+  // screen center (the message and the glow frame go there).
+  function cabinet(
+    g: THREE.Group,
+    at: { x: number; z: number },
+    size: { w: number; d: number; h: number },
+    m: StationMaterials,
+  ): [number, number, number] {
+    const body = roundedPrism(size.w, size.d, size.h, 0.08, m.shell);
+    body.position.set(at.x, 0.12, at.z);
+    const plinth = box(size.w + 0.06, 0.12, size.d + 0.06, m.dark);
+    plinth.position.set(at.x, 0.12, at.z);
+    const front = at.z + size.d / 2;
+    const screenY = 0.12 + size.h * 0.74;
+    const bezel = box(0.5, 0.42, 0.02, m.dark);
+    bezel.position.set(at.x, screenY, front + 0.01);
+    const screen = box(0.44, 0.34, 0.02, m.glass);
+    screen.position.set(at.x, screenY, front + 0.02);
+    const bar = box(size.w * 0.7, 0.035, 0.02, m.light);
+    bar.position.set(at.x, 0.12 + size.h - 0.12, front + 0.01);
+    const reader = box(0.12, 0.12, 0.02, m.dark);
+    reader.position.set(at.x + 0.2, screenY - 0.36, front + 0.01);
+    const cap = box(size.w + 0.08, 0.06, size.d + 0.08, m.dark);
+    cap.position.set(at.x, 0.12 + size.h + 0.03, at.z);
+    g.add(body, plinth, bezel, screen, bar, reader, cap);
+    for (const side of [-1, 1]) {
+      const stripe = box(0.01, size.h * 0.6, 0.18, m.accent);
+      stripe.position.set(at.x + side * (size.w / 2 + 0.005), 0.12 + size.h * 0.55, front - 0.12);
+      g.add(stripe);
+    }
+    return [at.x, screenY, front + 0.03];
+  }
+
+  // The glow frame around a cabinet screen.
+  function cabinetGlow(
+    g: THREE.Group,
+    s: SceneStation,
+    c: [number, number, number],
+  ): StationObject['glow'] {
+    const [x, y, z] = c;
+    return addGlow(
+      g,
+      s,
+      [
+        { geometry: new THREE.BoxGeometry(0.58, 0.026, 0.012), position: [x, y + 0.225, z] },
+        { geometry: new THREE.BoxGeometry(0.58, 0.026, 0.012), position: [x, y - 0.225, z] },
+        { geometry: new THREE.BoxGeometry(0.026, 0.476, 0.012), position: [x - 0.277, y, z] },
+        { geometry: new THREE.BoxGeometry(0.026, 0.476, 0.012), position: [x + 0.277, y, z] },
+      ],
+      { size: 1.0, position: [x, y, z + 0.01] },
+    );
+  }
+
+  // A heavy connector (MCS or high-power CCS) and its handle, facing +z.
+  function heavyHandle(material: THREE.Material): THREE.Group {
+    const h = new THREE.Group();
+    const grip = box(0.1, 0.32, 0.12, material);
+    const head = box(0.16, 0.14, 0.2, material);
+    head.position.set(0, 0.16, 0.06);
+    h.add(grip, head);
+    return h;
+  }
+
+  // The large chargers of a custom site (`FreeChargerModel`), in the station
+  // frame. Truck: a megawatt dispenser on each lane island with a cable
+  // management arm over the lane. Bus: a depot pantograph mast with a boom
+  // over each bay (the power cabinet at its foot), or a tall dispenser with a
+  // cable boom. Each has the screen (with the display message) and the
+  // charging glow on its cabinet.
+  function buildLargeCharger(
+    g: THREE.Group,
+    s: SceneStation,
+    model: Exclude<FreeChargerModel, 'standard'>,
+    palette: Palette,
+    m: StationMaterials,
+  ): { top: number; glow: StationObject['glow'] } {
+    const concrete = M(palette.concrete, { roughness: 0.95 });
+    const steel = M(SCENE_COLORS.signPost, { roughness: 0.45, metalness: 0.6 });
+    const spotType = freeSpotTypeOf(s.free);
+    const rects = freeSpotRects(s.spots ?? 1, spotType);
+    let glow: StationObject['glow'] = null;
+    let top = 2.6;
+    if (model === 'truck_mcs') {
+      rects.forEach((r, i) => {
+        // An MCS dispenser on its island facing the lane, 2.32 m tall
+        // (alpitronic HYC1000 MCS dispenser: 2320 by 260 by 780 mm; the ABB
+        // MCS1200 charge post and the Kempower Mega Satellite are posts of
+        // the same kind). The short heavy cable (Kempower: 2.7 m) hangs from
+        // the lane face; no overhead arm.
+        const screen = cabinet(
+          g,
+          { x: r.chargerX, z: r.chargerZ },
+          { w: 0.78, d: 0.42, h: 2.2 },
+          m,
+        );
+        if (i === 0) {
+          addScreenMessage(g, s, 'dc', [screen[0], screen[1], screen[2] + 0.002]);
+          glow = cabinetGlow(g, s, screen);
+        }
+        // The cable outlet low on the lane face, the connector holster above it.
+        const outlet = box(0.14, 0.14, 0.06, m.dark);
+        outlet.position.set(r.chargerX + 0.22, 0.75, r.chargerZ + 0.24);
+        const holster = box(0.16, 0.36, 0.14, m.dark);
+        holster.position.set(r.chargerX - 0.2, 1.25, r.chargerZ + 0.28);
+        g.add(outlet, holster);
+        const charging = s.prop === 'car' && (s.propSpot ?? 0) === i;
+        if (!charging) {
+          const h = heavyHandle(m.rubber);
+          h.position.set(r.chargerX - 0.2, 1.3, r.chargerZ + 0.36);
+          g.add(
+            h,
+            cable(
+              [
+                [r.chargerX + 0.22, 0.75, r.chargerZ + 0.28],
+                [r.chargerX + 0.15, 0.35, r.chargerZ + 0.55],
+                [r.chargerX - 0.1, 0.5, r.chargerZ + 0.6],
+                [r.chargerX - 0.2, 1.15, r.chargerZ + 0.42],
+              ],
+              m.rubber,
+              0.04,
+            ),
+          );
+        }
+      });
+      top = 2.44;
+    } else if (model === 'bus_dispenser') {
+      // A dispenser at the head of the bays with a cable management arm over
+      // each bay, above the bus roof (depot dispensers hang their cable from
+      // a pole and arm or an overhead reel, as the Kempower Cable Arm).
+      const screen = cabinet(g, { x: 0, z: 0 }, { w: 0.9, d: 0.7, h: 2.3 }, m);
+      addScreenMessage(g, s, 'dc', [screen[0], screen[1], screen[2] + 0.002]);
+      glow = cabinetGlow(g, s, screen);
+      const mast = box(0.18, BUS_BOOM_Y + 0.1, 0.18, steel);
+      mast.position.set(0, (BUS_BOOM_Y + 0.1) / 2, -0.5);
+      g.add(mast);
+      rects.forEach((r, i) => {
+        const cx = (r.minX + r.maxX) / 2;
+        const tipX = cx - 1.3;
+        const boomLength = Math.hypot(tipX, 1.8);
+        const boom = box(0.12, 0.12, boomLength, steel);
+        boom.position.set(tipX / 2, BUS_BOOM_Y, -0.5 + 0.9);
+        boom.rotation.y = Math.atan2(tipX, 1.8);
+        g.add(boom);
+        const charging = s.prop === 'car' && (s.propSpot ?? 0) === i;
+        if (!charging) {
+          const h = heavyHandle(m.rubber);
+          h.position.set(i === 0 ? -0.3 : 0.3, 1.2, 0.42);
+          g.add(
+            h,
+            cable(
+              [
+                [tipX, BUS_BOOM_Y - 0.08, 1.3],
+                [tipX * 0.7, 2.6, 1.0],
+                [(i === 0 ? -0.3 : 0.3) * 1.5, 1.2, 0.7],
+                [i === 0 ? -0.3 : 0.3, 1.35, 0.48],
+              ],
+              m.rubber,
+              0.035,
+            ),
+          );
+        }
+      });
+      top = BUS_BOOM_Y + 0.2;
+    } else {
+      // A depot pantograph pole at the head of the bays: the control module
+      // with the screen on the pole (the power cabinet stands apart, up to
+      // 100 m away), a steel pole to 5.24 m, a boom out over the bays and a
+      // crossbar over two. Pantograph down (OppCharge): a scissor pantograph
+      // under the boom over each bay, lowered onto the roof rails of a bus
+      // that charges, raised otherwise (its contact head at about 4.6 m).
+      // Pantograph up: a contact hood the bus roof pantograph rises into.
+      const points = rects.map((r) => pantographPoint(r));
+      const reachZ = points[0]?.z ?? 3.6;
+      const columnZ = reachZ - MAST_OUTREACH_M;
+      // The control module (ABB HVC-PD: 1600 by 1000 by 477 mm) on the bay side of the pole.
+      const screen = cabinet(g, { x: 0, z: columnZ + 0.4 }, { w: 1.0, d: 0.48, h: 1.5 }, m);
+      addScreenMessage(g, s, 'dc', [screen[0], screen[1], screen[2] + 0.002]);
+      glow = cabinetGlow(g, s, screen);
+      const pad = box(1.4, 0.1, 1.2, concrete);
+      pad.position.set(0, 0.05, columnZ + 0.4);
+      const column = box(0.32, MAST_HEIGHT_M, 0.32, steel);
+      column.position.set(0, MAST_HEIGHT_M / 2, columnZ);
+      g.add(pad, column);
+      const boom = box(0.24, 0.3, reachZ - columnZ + 0.5, steel);
+      boom.position.set(0, MAST_BOOM_Y, (reachZ + columnZ) / 2);
+      const strut = box(0.12, 0.12, 2.4, steel);
+      strut.position.set(0, MAST_BOOM_Y - 0.75, columnZ + 0.85);
+      strut.rotation.x = Math.atan2(1.4, 1.9);
+      g.add(boom, strut);
+      if (points.length > 1) {
+        const xs = points.map((pt) => pt.x);
+        const span = Math.max(...xs) - Math.min(...xs) + 0.4;
+        const cross = box(span, 0.26, 0.24, steel);
+        cross.position.set(0, MAST_BOOM_Y, reachZ);
+        g.add(cross);
+      }
+      const head = M(SCENE_COLORS.rim, { roughness: 0.3, metalness: 0.8 });
+      points.forEach((pt, i) => {
+        const charging = s.prop === 'car' && (s.propSpot ?? 0) === i;
+        if (model === 'pantograph_down') {
+          // The pantograph kit, 1.3 m across and 0.9 m deep (ABB HVC-PD).
+          const housing = box(1.3, 0.3, 0.9, steel);
+          housing.position.set(pt.x, MAST_BOOM_Y - 0.25, pt.z);
+          g.add(housing);
+          // The scissor arms from the housing down to the contact head.
+          const headY = charging ? pt.y + 0.04 : 4.55;
+          const drop = MAST_BOOM_Y - 0.4 - headY;
+          for (const side of [-1, 1]) {
+            const arm = box(0.06, Math.hypot(drop, 0.5), 0.06, steel);
+            arm.position.set(pt.x + side * 0.3, headY + drop / 2, pt.z);
+            arm.rotation.z = side * Math.atan2(0.5, drop) * 0.6;
+            const arm2 = box(0.06, Math.hypot(drop, 0.5), 0.06, steel);
+            arm2.position.set(pt.x, headY + drop / 2, pt.z + side * 0.25);
+            arm2.rotation.x = side * Math.atan2(0.5, drop) * 0.6;
+            g.add(arm, arm2);
+          }
+          const contact = box(1.1, 0.06, 0.6, head);
+          contact.position.set(pt.x, headY, pt.z);
+          g.add(contact);
+        } else {
+          // The contact hood: an inverted channel the roof pantograph rises into.
+          const hood = box(1.4, 0.12, 0.7, head);
+          hood.position.set(pt.x, HOOD_Y + 0.06, pt.z);
+          const hangerLength = MAST_BOOM_Y - 0.15 - (HOOD_Y + 0.12);
+          const hanger = box(0.12, hangerLength, 0.12, steel);
+          hanger.position.set(pt.x, HOOD_Y + 0.12 + hangerLength / 2, pt.z);
+          g.add(hood, hanger);
+        }
+      });
+      top = MAST_HEIGHT_M + 0.05;
+    }
+    return { top, glow };
+  }
+
+  // The vehicle, sign or cone in a bus bay or a truck lane (`rect`), and the
+  // charging connection: the cable from the dispenser boom down to the charge
+  // inlet, a pantograph on the bus roof rails, or the cable of a standard
+  // charger. Returns where a driver avatar floats (above the vehicle roof).
+  function placeLargeSpotProp(
+    g: THREE.Group,
+    s: SceneStation,
+    t: Templates,
+    rect: FreeSpotRect,
+    model: FreeChargerModel,
+  ): THREE.Vector3 | null {
+    const truckLane = rect.heading === '+x';
+    if (s.prop === 'reservedSign' || s.prop === 'cone') {
+      const item = s.prop === 'reservedSign' ? t.sign() : t.cone();
+      // The templates stand 2.2 to 2.4 m into a car spot: move them into this one.
+      if (truckLane) item.position.set(rect.chargerX - 2, 0, rect.minZ + 1.2 - 2.4);
+      else item.position.set((rect.minX + rect.maxX) / 2, 0, 0.4);
+      g.add(item);
+      return null;
+    }
+    if (s.prop !== 'car') return null;
+    const look = s.car ?? sceneCar(null);
+    const pose = largeVehiclePose(rect, look.bodyType);
+    const vehicle = t.vehicle(look);
+    vehicle.position.set(pose.x, 0, pose.z);
+    vehicle.rotation.y = pose.turn;
+    g.add(vehicle);
+    const rubber = M(SCENE_COLORS.rubber, { roughness: 0.9 });
+    const p = pose.port;
+    const portOut: [number, number, number] = truckLane
+      ? [p.x, p.y, p.z - 0.15]
+      : [p.x - 0.15, p.y, p.z];
+    if (model === 'truck_mcs') {
+      // From the outlet low on the dispenser across the island to the inlet.
+      const out: [number, number, number] = [rect.chargerX + 0.22, 0.75, rect.chargerZ + 0.28];
+      g.add(
+        cable(
+          [
+            out,
+            [(out[0] + p.x) / 2, 0.45, (out[2] + p.z) / 2],
+            [p.x, p.y - 0.3, p.z - 0.45],
+            portOut,
+            [p.x, p.y, p.z],
+          ],
+          rubber,
+          0.04,
+        ),
+      );
+    } else if (model === 'bus_dispenser') {
+      const tipX = (rect.minX + rect.maxX) / 2 - 1.3;
+      g.add(
+        cable(
+          [
+            [tipX, BUS_BOOM_Y - 0.08, 1.3],
+            [(tipX + p.x) / 2, 2.8, (1.3 + p.z) / 2],
+            [p.x - 0.4, p.y + 0.5, p.z],
+            portOut,
+            [p.x, p.y, p.z],
+          ],
+          rubber,
+          0.035,
+        ),
+      );
+    } else if (model === 'pantograph_up' && pose.roof != null) {
+      // The bus roof pantograph raised into the hood.
+      const steel = M(SCENE_COLORS.signPost, { roughness: 0.45, metalness: 0.6 });
+      const rise = HOOD_Y - 0.06 - pose.roof.y;
+      for (const side of [-1, 1]) {
+        const arm = box(0.05, Math.hypot(rise, 0.4), 0.05, steel);
+        arm.position.set(pose.roof.x + side * 0.25, pose.roof.y + rise / 2, pose.roof.z);
+        arm.rotation.z = side * Math.atan2(0.4, rise) * 0.6;
+        g.add(arm);
+      }
+      const bow = box(1.0, 0.05, 0.3, M(SCENE_COLORS.rim, { roughness: 0.3, metalness: 0.8 }));
+      bow.position.set(pose.roof.x, HOOD_Y - 0.06, pose.roof.z);
+      g.add(bow);
+    } else if (model === 'standard') {
+      // A standard charger at the head of the spot: down to the ground and along to the inlet.
+      const start: [number, number, number] =
+        s.kind === 'dc' ? [-0.44, 1.02, 0.12] : [-0.17, 0.95, 0.04];
+      g.add(
+        cable(
+          [
+            start,
+            [start[0] - 0.1, 0.3, 0.35],
+            [(start[0] + p.x) / 2, 0.08, (0.35 + p.z) / 2],
+            [p.x - 0.35, 0.3, p.z],
+            portOut,
+            [p.x, p.y, p.z],
+          ],
+          rubber,
+        ),
+      );
+    }
+    vehicle.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(vehicle);
+    if (bounds.isEmpty()) return null;
+    // Above the cab or the front of the body, not the middle of a long trailer.
+    const front = truckLane
+      ? new THREE.Vector3(pose.x - 2, bounds.max.y, pose.z)
+      : new THREE.Vector3(pose.x, bounds.max.y, pose.z + 3);
+    return new THREE.Vector3(front.x, front.y + AVATAR_ABOVE_ROOF_M, front.z);
+  }
+
   function buildModel(s: SceneStation, palette: Palette, t: Templates): StationObject {
     const g = new THREE.Group();
+    if (s.free != null) addFreeSpots(g, s, palette);
     const shell = M(palette.shell, { roughness: 0.35, metalness: 0.25 });
     const dark = M(SCENE_COLORS.dark1, { roughness: 0.6 });
     const rubber = M(SCENE_COLORS.rubber, { roughness: 0.9 });
@@ -1208,7 +1973,8 @@ export function createSiteScene(
     const accent = M(s.kind === 'dc' ? SCENE_COLORS.dc : SCENE_COLORS.ac, { roughness: 0.4 });
     const dc = s.kind === 'dc';
     const wall = s.wall && !dc;
-    if (!wall) {
+    const large = s.charger != null && s.charger !== 'standard' ? s.charger : null;
+    if (!wall && large == null) {
       const pad = box(
         dc ? 1.6 : 1.0,
         0.08,
@@ -1223,7 +1989,18 @@ export function createSiteScene(
     let glow: StationObject['glow'] = null;
     // The wall box hangs on the facade behind its spot.
     const w = wallBoxOffset();
-    if (wall) {
+    if (large != null) {
+      const built = buildLargeCharger(g, s, large, palette, {
+        shell,
+        dark,
+        rubber,
+        glass,
+        light,
+        accent,
+      });
+      top = built.top;
+      glow = built.glow;
+    } else if (wall) {
       const back = box(0.4, 0.54, 0.02, dark);
       back.position.set(0, 1.18, w + 0.01);
       const body = roundedPrism(0.34, 0.15, 0.48, 0.04, shell);
@@ -1232,6 +2009,7 @@ export function createSiteScene(
       face.position.set(0, 1.18, w + 0.176);
       const screen = box(0.13, 0.07, 0.01, glass);
       screen.position.set(0, 1.31, w + 0.183);
+      addScreenMessage(g, s, 'ac', [0, 1.31, w + 0.1895]);
       const socket = cylinder(0.042, 0.03, 18, dark);
       socket.rotation.x = Math.PI / 2;
       socket.position.set(0, 1.1, w + 0.19);
@@ -1273,6 +2051,7 @@ export function createSiteScene(
       bezel.position.set(0, 1.42, 0.29);
       const screen = box(0.44, 0.34, 0.02, glass);
       screen.position.set(0, 1.42, 0.3);
+      addScreenMessage(g, s, 'dc', [0, 1.42, 0.3115]);
       const reader = box(0.12, 0.12, 0.02, dark);
       reader.position.set(0.16, 1.08, 0.29);
       const bar = box(0.6, 0.035, 0.02, light);
@@ -1331,6 +2110,7 @@ export function createSiteScene(
       face.position.set(0, 1.25, 0.097);
       const screen = box(0.14, 0.09, 0.012, glass);
       screen.position.set(0, 1.38, 0.105);
+      addScreenMessage(g, s, 'ac', [0, 1.38, 0.1115]);
       const socket = cylinder(0.045, 0.03, 18, dark);
       socket.rotation.x = Math.PI / 2;
       socket.position.set(0, 1.16, 0.11);
@@ -1372,7 +2152,7 @@ export function createSiteScene(
       top = 1.7;
     }
     // A wall box has its back on the wall: no back panel.
-    if (!wall) g.add(backPanel(s.kind, palette));
+    if (!wall && large == null) g.add(backPanel(s.kind, palette));
     // Payment terminals on the front: on the side of their connector, or centered for the station.
     s.terminals.forEach((terminal, i) => {
       const reader = t.terminal(terminal.hasDisplay, terminal.online);
@@ -1405,9 +2185,24 @@ export function createSiteScene(
     // Where a driver avatar floats: above the middle of the car roof, measured
     // on the model in the station's own frame (before the group moves or merges).
     let avatarAnchor: THREE.Vector3 | null = null;
-    if (s.prop === 'car') {
-      const car = t.car();
-      g.add(car, t.cable(wall ? 'wall' : s.kind));
+    const curbside = layout.lot.siteType === 'curbside' && isSpot(s.bay, layout.lot);
+    const largeSpot = s.free != null && freeSpotTypeOf(s.free) !== 'car';
+    if (largeSpot && s.free != null) {
+      const rects = freeSpotRects(s.spots ?? 1, freeSpotTypeOf(s.free));
+      const rect = rects[Math.min(rects.length - 1, s.propSpot ?? 0)] ?? rects[0];
+      if (rect != null) {
+        const anchor = placeLargeSpotProp(g, s, t, rect, s.charger ?? 'standard');
+        if (anchor != null) avatarAnchor = anchor;
+      }
+    } else if (s.prop === 'car') {
+      const look = s.car ?? sceneCar(null);
+      const car = curbside ? t.carParallel(look) : t.car(look);
+      const offsetX = curbside || wall ? 0 : (s.carOffsetX ?? 0);
+      car.position.x += offsetX;
+      g.add(
+        car,
+        t.cable(curbside ? `curb-${s.kind}` : wall ? 'wall' : s.kind, look.bodyType, offsetX),
+      );
       car.updateMatrixWorld(true);
       const roof = new THREE.Box3().setFromObject(car);
       if (!roof.isEmpty()) {
@@ -1415,16 +2210,89 @@ export function createSiteScene(
         avatarAnchor = new THREE.Vector3(c.x, roof.max.y + AVATAR_ABOVE_ROOF_M, c.z);
       }
     }
-    if (s.prop === 'reservedSign') g.add(t.sign());
-    else if (s.prop === 'cone') g.add(t.cone());
+    if (largeSpot) {
+      // Placed with the vehicle above.
+    } else if (s.prop === 'reservedSign') {
+      const sign = t.sign();
+      // At a curb the sign stands on the sidewalk beside the post.
+      if (curbside) sign.position.set(1.4, 0, -2.25);
+      else sign.position.x += s.carOffsetX ?? 0;
+      g.add(sign);
+    } else if (s.prop === 'cone') {
+      const cone = t.cone();
+      // At a curb the cone stands in the parking lane in front of the post.
+      if (curbside) cone.position.set(2.2, 0, CURB_POST_BACK_M + 1.2);
+      else cone.position.x += s.carOffsetX ?? 0;
+      g.add(cone);
+    }
     g.traverse((o) => {
       o.userData['stationId'] = s.id;
     });
-    g.position.copy(lotPoint(bayToLot(s.bay, layout.lot)));
-    // A turned row faces the lane before it: the charger, its props, card
-    // readers and back panel all turn with the group.
-    g.rotation.y = bayTurn(s.bay, layout.lot);
-    return { group: g, ring, light, glow, top, labelZ, avatarAnchor, station: s };
+    // The rotation handle is picked apart from the station (its own userData).
+    const rotateHandle =
+      s.free != null && layout.lot.siteType === 'custom'
+        ? freeHandle(
+            s.id,
+            rotationHandleZ(s.spots ?? 1, freeSpotTypeOf(s.free)),
+            freeSpotsExtent(s.spots ?? 1, freeSpotTypeOf(s.free)).back,
+          )
+        : null;
+    if (rotateHandle != null) g.add(rotateHandle);
+    // A turned row faces the lane before it, a free station turns by its own
+    // turn: the charger, its props, card readers and back panel all turn with the group.
+    const pose = poseOf(s);
+    g.position.copy(lotPoint(pose.point));
+    g.rotation.y = pose.turn;
+    return {
+      group: g,
+      ring,
+      light,
+      glow,
+      top,
+      labelZ,
+      avatarAnchor,
+      handle: rotateHandle,
+      station: s,
+    };
+  }
+
+  // A solar carport canopy standing freely (custom site): steel posts along
+  // one long side, beams across, a roof of panels tilted 5 degrees, in the
+  // canopy's own frame (length along x, depth along z), turned by its turn.
+  function buildFreeSolarCanopy(
+    free: FreePlacement & { lengthM: number; depthM: number },
+    palette: Palette,
+  ): THREE.Group {
+    const g = new THREE.Group();
+    const steel = M(SCENE_COLORS.signPost, { roughness: 0.45, metalness: 0.6 });
+    const H = 3.1;
+    const L = free.lengthM;
+    const D = free.depthM;
+    const spans = Math.max(1, Math.round(L / (2 * STANDARD_DIMENSIONS.spotWidthM)));
+    for (let i = 0; i <= spans; i++) {
+      const x = -L / 2 + (i * L) / spans;
+      const post = cylinder(0.09, H, 12, steel);
+      post.position.set(x, H / 2, -D / 2 + 0.35);
+      const arm = box(0.12, 0.14, D * 0.9, steel);
+      arm.position.set(x, H, 0);
+      g.add(post, arm);
+    }
+    const panelTexture = solarTexture(palette).clone();
+    track(panelTexture);
+    panelTexture.needsUpdate = true;
+    panelTexture.repeat.set(Math.max(1, Math.round(L / 1.7)), Math.max(1, Math.round(D / 1.1)));
+    const roof = new THREE.Mesh(
+      track(new THREE.BoxGeometry(L + 0.4, 0.08, D + 0.3)),
+      M('#ffffff', { map: panelTexture, roughness: 0.25, metalness: 0.55 }),
+    );
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    roof.rotation.x = -0.087;
+    roof.position.set(0, H + 0.12, 0);
+    g.add(roof);
+    g.position.set(free.x, 0, free.z);
+    g.rotation.y = (-free.rotationDeg * Math.PI) / 180;
+    return g;
   }
 
   // The middle of a row of spots across the rows (lot z).
@@ -1529,7 +2397,7 @@ export function createSiteScene(
   // glass doors and a canopy on the part right of the lot, and the sidewalk
   // with its curb in front of it.
   function buildBuilding(palette: Palette): void {
-    const b = buildingBox(layout.lot, layout.panels.length);
+    const b = buildingBox(layout.lot);
     const width = b.maxX - b.minX;
     const depth = b.maxZ - b.minZ;
     const cx = (b.minX + b.maxX) / 2;
@@ -1594,13 +2462,253 @@ export function createSiteScene(
     const walk = box(width, 0.12, -CURB_M - FACADE_Z, concrete);
     walk.position.set(cx, 0.06, (FACADE_Z - CURB_M) / 2);
     site.add(walk);
-    // Wheel stops in the spots along the building.
-    const stop = M(palette.concrete, { roughness: 0.95 });
-    for (let col = 0; col < layout.lot.cols; col++) {
-      const bar = box(Math.min(1.8, layout.lot.spotW - 0.6), 0.12, 0.16, stop);
-      bar.position.set(layout.lot.spotW * (col + 0.5), 0.06, 2.3);
-      site.add(bar);
+  }
+
+  // A depot yard (`depotLayout`): the paved yard inside its fence, the concrete
+  // strip behind the bus bay heads, the bay lines, the truck lanes with their
+  // edge lines and entry and exit arrows (trucks drive through in +x), the
+  // raised dispenser islands with bollards, the one-way arrows of the truck
+  // entry road (away from the drive lane) and exit road (back to it), the
+  // dashed center line of the two-way drive lane, the curbed median between
+  // the areas and a chain-link fence with the gate at the left end of the
+  // drive lane.
+  function buildDepotYard(palette: Palette, depot: DepotLayout): void {
+    const shape = new THREE.Shape();
+    depot.outline.forEach((p, i) => {
+      // The shape lies in x, y; turned flat, y becomes -z.
+      if (i === 0) shape.moveTo(p.x, -p.z);
+      else shape.lineTo(p.x, -p.z);
+    });
+    const yardGeometry = track(new THREE.ShapeGeometry(shape));
+    yardGeometry.rotateX(-Math.PI / 2);
+    const yard = new THREE.Mesh(
+      yardGeometry,
+      M(palette.asphalt, { roughness: 0.95, metalness: 0 }),
+    );
+    yard.position.y = 0.012;
+    yard.receiveShadow = true;
+    site.add(yard);
+    const paint = M(palette.paint, { roughness: 0.6 });
+    const concrete = M(palette.concrete, { roughness: 0.95 });
+    const curb = M(palette.curb, { roughness: 0.9 });
+    const line = (w: number, d: number, x: number, z: number): void => {
+      const m = new THREE.Mesh(track(new THREE.BoxGeometry(w, 0.006, d)), paint);
+      m.position.set(x, 0.026, z);
+      m.receiveShadow = true;
+      site.add(m);
+    };
+    const arrow = arrowGeometry();
+    // An arrow on the ground pointing along `turn` (0: +x; three.js turn about y).
+    const mark = (x: number, z: number, turn: number): void => {
+      const g = new THREE.Group();
+      const m = new THREE.Mesh(arrow, paint);
+      m.rotation.x = -Math.PI / 2;
+      g.add(m);
+      g.position.set(x, 0.027, z);
+      g.rotation.y = turn;
+      site.add(g);
+    };
+    if (depot.busHead != null) {
+      const h = depot.busHead;
+      const strip = box(h.maxX - h.minX, 0.04, h.maxZ - h.minZ, concrete);
+      strip.position.set((h.minX + h.maxX) / 2, 0.02, (h.minZ + h.maxZ) / 2);
+      strip.receiveShadow = true;
+      site.add(strip);
+      const edge = box(h.maxX - h.minX, 0.14, 0.2, curb);
+      edge.position.set((h.minX + h.maxX) / 2, 0.07, h.maxZ - 0.1);
+      site.add(edge);
     }
+    // A line on each side of each bus bay.
+    const bayXs = new Set<number>();
+    for (const b of depot.bays) {
+      bayXs.add(b.minX);
+      bayXs.add(b.maxX);
+    }
+    for (const x of bayXs) line(0.12, 13.2, x, 0.3 + 6.6);
+    depot.lanes.forEach((lane, i) => {
+      const cz = (lane.minZ + lane.maxZ) / 2;
+      const length = lane.maxX - lane.minX;
+      // The edge line on the drive lane side of the first lane; the others meet an island.
+      if (i === 0) line(length - 0.6, 0.12, (lane.minX + lane.maxX) / 2, lane.maxZ - 0.15);
+      mark(lane.minX + 3.5, cz, 0);
+      mark(lane.maxX - 2.2, cz, 0);
+    });
+    const bollardPaint = M(SCENE_COLORS.bollard, { roughness: 0.5 });
+    for (const island of depot.islands) {
+      const cz = (island.minZ + island.maxZ) / 2;
+      const length = island.maxX - island.minX - 2;
+      const slab = box(length, 0.15, island.maxZ - island.minZ - 0.3, concrete);
+      slab.position.set((island.minX + island.maxX) / 2, 0.075, cz);
+      site.add(slab);
+      for (const bx of [island.minX + 1.3, island.maxX - 1.3]) {
+        const post = cylinder(0.1, 1.0, 16, bollardPaint);
+        post.position.set(bx, 0.65, cz);
+        site.add(post);
+      }
+    }
+    if (depot.entryRoad != null) {
+      const r = depot.entryRoad;
+      const cx = (r.minX + r.maxX) / 2;
+      for (let z = r.maxZ - 4; z > r.minZ + 2; z -= 12) mark(cx, z, Math.PI / 2);
+    }
+    if (depot.exitRoad != null) {
+      const r = depot.exitRoad;
+      const cx = (r.minX + r.maxX) / 2;
+      for (let z = r.minZ + 4; z < r.maxZ - 2; z += 12) mark(cx, z, -Math.PI / 2);
+    }
+    // The drive lane: a dashed center line (3 m dashes every 6 m), two-way.
+    const lane = depot.driveLane;
+    const centerZ = (lane.minZ + lane.maxZ) / 2;
+    for (let x = lane.minX + 3; x + 3 <= lane.maxX; x += 6) line(3, 0.12, x + 1.5, centerZ);
+    if (depot.median != null) {
+      const m = depot.median;
+      const kerb = box(m.maxX - m.minX, 0.15, m.maxZ - m.minZ, curb);
+      kerb.position.set((m.minX + m.maxX) / 2, 0.075, (m.minZ + m.maxZ) / 2);
+      const planting = box(m.maxX - m.minX - 0.3, 0.02, m.maxZ - m.minZ - 0.3, M(palette.grass));
+      planting.position.set((m.minX + m.maxX) / 2, 0.16, (m.minZ + m.maxZ) / 2);
+      site.add(kerb, planting);
+    }
+    buildFence(depot);
+  }
+
+  // A chain-link fence on the yard outline, 2 m high, a post every 3 m, with
+  // the gate opening at the left end of the drive lane (two gate posts).
+  function buildFence(depot: DepotLayout): void {
+    const steel = M(SCENE_COLORS.signPost, { roughness: 0.5, metalness: 0.5 });
+    const mesh = M(SCENE_COLORS.signPost, {
+      roughness: 0.6,
+      metalness: 0.3,
+      transparent: true,
+      opacity: theme.dark ? 0.28 : 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const H = 2;
+    const segments: Array<[{ x: number; z: number }, { x: number; z: number }]> = [];
+    const points = depot.outline;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      if (a == null || b == null) continue;
+      // The gate: the part of the left side (x = gate.x) inside the opening is left out.
+      if (a.x === depot.gate.x && b.x === depot.gate.x) {
+        const lo = Math.min(a.z, b.z);
+        const hi = Math.max(a.z, b.z);
+        if (depot.gate.minZ > lo)
+          segments.push([
+            { x: a.x, z: lo },
+            { x: a.x, z: depot.gate.minZ },
+          ]);
+        if (depot.gate.maxZ < hi)
+          segments.push([
+            { x: a.x, z: depot.gate.maxZ },
+            { x: a.x, z: hi },
+          ]);
+        continue;
+      }
+      segments.push([a, b]);
+    }
+    for (const [a, b] of segments) {
+      const length = Math.hypot(b.x - a.x, b.z - a.z);
+      if (length < 0.1) continue;
+      const turn = Math.atan2(-(b.z - a.z), b.x - a.x);
+      const g = new THREE.Group();
+      g.position.set(a.x, 0, a.z);
+      g.rotation.y = turn;
+      const panel = new THREE.Mesh(track(new THREE.PlaneGeometry(length, H - 0.1)), mesh);
+      panel.position.set(length / 2, 0.05 + (H - 0.1) / 2, 0);
+      panel.renderOrder = 1;
+      const rail = cylinder(0.025, length, 8, steel);
+      rail.rotation.z = Math.PI / 2;
+      rail.position.set(length / 2, H, 0);
+      g.add(panel, rail);
+      const posts = Math.max(1, Math.round(length / 3));
+      for (let i = 0; i <= posts; i++) {
+        const post = cylinder(0.035, H, 8, steel);
+        post.position.set((i * length) / posts, H / 2, 0);
+        g.add(post);
+      }
+      site.add(g);
+    }
+    // The gate posts, heavier, at both sides of the opening.
+    for (const z of [depot.gate.minZ, depot.gate.maxZ]) {
+      const post = cylinder(0.08, H + 0.3, 12, steel);
+      post.position.set(depot.gate.x, (H + 0.3) / 2, z);
+      site.add(post);
+    }
+  }
+
+  // A street (curbside): a parallel parking lane along each curb around two
+  // travel lanes, edge lines, a dashed center line and the spot marks, curbs
+  // and sidewalks on both sides. It runs far past the chargers both ways, so
+  // its ends fade into the haze.
+  function buildStreet(palette: Palette, along: Box): void {
+    const lot = layout.lot;
+    const tile = lot.spotW;
+    const minX = Math.floor(along.minX / tile) * tile;
+    const maxX = Math.ceil(along.maxX / tile) * tile;
+    const length = maxX - minX;
+    const cx = (minX + maxX) / 2;
+    const marks = streetTexture(palette.asphalt, palette.paint);
+    marks.repeat.set(length / tile, 1);
+    const roadGeometry = track(new THREE.PlaneGeometry(length, lot.depth));
+    roadGeometry.rotateX(-Math.PI / 2);
+    const road = new THREE.Mesh(roadGeometry, M('#ffffff', { map: marks, roughness: 0.95 }));
+    road.position.set(cx, 0.012, lot.depth / 2);
+    road.receiveShadow = true;
+    road.frustumCulled = false;
+    site.add(road);
+    const curb = M(palette.curb, { roughness: 0.9 });
+    const concrete = M(palette.sidewalk, { roughness: 0.95 });
+    for (const [curbZ, walkZ] of [
+      [-CURB_M / 2, -CURB_M - SIDEWALK_M / 2],
+      [lot.depth + CURB_M / 2, lot.depth + CURB_M + SIDEWALK_M / 2],
+    ] as const) {
+      const strip = box(length, 0.14, CURB_M, curb);
+      strip.position.set(cx, 0.07, curbZ);
+      const walk = box(length, 0.12, SIDEWALK_M, concrete);
+      walk.position.set(cx, 0.06, walkZ);
+      site.add(strip, walk);
+    }
+  }
+
+  // One parallel spot length of the street, curb to curb: the parking lane
+  // edge lines, a tick at the spot boundary in each parking lane, and the
+  // dashed center line (a 3 m dash every 6 m).
+  function streetTexture(asphalt: string, paint: string): THREE.CanvasTexture {
+    const { spotW, spotD, depth } = layout.lot;
+    const px = TEXTURE_PX_PER_M;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(spotW * px);
+    canvas.height = Math.round(depth * px);
+    const ctx = canvas.getContext('2d');
+    if (ctx != null) {
+      ctx.fillStyle = asphalt;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = paint;
+      const line = Math.round(0.12 * px);
+      for (const z of [spotD, depth - spotD]) {
+        ctx.fillRect(0, Math.round(z * px - line / 2), canvas.width, line);
+      }
+      const tick = Math.round(0.1 * px);
+      ctx.fillRect(0, 0, tick, Math.round(spotD * px));
+      ctx.fillRect(0, Math.round((depth - spotD) * px), tick, Math.round(spotD * px));
+      ctx.globalAlpha = 0.85;
+      const center = Math.round((depth / 2) * px);
+      ctx.fillRect(
+        Math.round(spotW * 0.25 * px),
+        center - line / 2,
+        Math.round(spotW * 0.5 * px),
+        line,
+      );
+      ctx.globalAlpha = 1;
+    }
+    const texture = track(new THREE.CanvasTexture(canvas));
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
   }
 
   // A soft glowing arc between two lot points: a thin bright core with a
@@ -1686,9 +2794,11 @@ export function createSiteScene(
     flowTextures.length = 0;
     linkMeshes.clear();
     beacons.length = 0;
+    screenScrolls.length = 0;
     objects.clear();
     transformerObjects.clear();
     batteryObjects.clear();
+    solarObjects.clear();
     energyLabels.clear();
     linkLabels.clear();
     ground.clear();
@@ -1697,25 +2807,42 @@ export function createSiteScene(
     const { lot } = layout;
     site.rotation.y = lot.facing;
     site.add(editGrid);
+    showGuides([]);
+    guideMaterial.color.set(theme.primary);
+    site.add(guideGroup);
     const palette = theme.dark ? SCENE_COLORS.dark : SCENE_COLORS.light;
     // The fog and the background are the grass haze: the ground fades into
     // itself toward the horizon and fills the whole stage at any zoom and angle.
     scene.background = new THREE.Color(palette.haze);
+    // The room light reads as daylight on a light theme, as a dim glow at night.
+    scene.environmentIntensity = theme.dark ? 0.25 : 0.6;
     fog.color.set(palette.haze);
 
     const office = lot.siteType === 'office_retail';
+    const street = lot.siteType === 'curbside';
+    const custom = lot.siteType === 'custom';
     const outside: Point[] = [
       ...layout.transformers.map((tr) => ({ x: tr.x, z: tr.z })),
       ...layout.batteries.map((b) => ({ x: b.x, z: b.z })),
-      ...layout.stations.map((s) => bayToLot(s.bay, lot)),
+      ...layout.solar.flatMap((pv) => (pv.free != null ? [{ x: pv.free.x, z: pv.free.z }] : [])),
+      ...layout.stations.map((s) => poseOf(s).point),
       ...layout.panels.map((p) => ({ x: p.x, z: p.z })),
-      ...(office ? buildingFramePoints(lot, layout.panels.length) : []),
+      ...(office ? buildingFramePoints(lot) : []),
     ];
-    siteBox = sceneBox(lot, outside);
-    lotBox = sceneBox(
-      lot,
-      layout.stations.map((s) => bayToLot(s.bay, lot)),
-    );
+    if (custom) {
+      // No lot: the ground is the spots of every station and what stands beside them.
+      const freeStations = layout.stations.flatMap((s) =>
+        s.free != null ? [{ placement: s.free, spots: s.spots ?? 1 }] : [],
+      );
+      siteBox = customSceneBox(freeStations, outside);
+      lotBox = customSceneBox(freeStations, []);
+    } else {
+      siteBox = sceneBox(lot, outside);
+      lotBox = sceneBox(
+        lot,
+        layout.stations.map((s) => bayToLot(s.bay, lot)),
+      );
+    }
     frameBox = rotateBox(siteBox, lot.facing);
     pan = panBox(frameBox);
 
@@ -1741,45 +2868,56 @@ export function createSiteScene(
     grassMesh.renderOrder = -1;
     ground.add(grassMesh);
 
-    // The paved lot: one plane, its spot tile repeated once per spot.
-    const paving = spotTexture(palette.asphalt, palette.paint);
-    // One tile per spot and lane; the last row has no lane behind it, so the
-    // tiles start at the front edge (v = 1) and end part way into a tile.
-    const tileRows = lot.depth / lot.pitch;
-    paving.repeat.set(lot.cols, tileRows);
-    paving.offset.set(0, Math.ceil(tileRows - 1e-9) - tileRows);
-    const lotGeometry = track(new THREE.PlaneGeometry(lot.width, lot.depth));
-    lotGeometry.rotateX(-Math.PI / 2);
-    const lotMesh = new THREE.Mesh(
-      lotGeometry,
-      M('#ffffff', { map: paving, roughness: 0.95, metalness: 0 }),
-    );
-    lotMesh.position.set(lot.width / 2, 0.012, lot.depth / 2);
-    lotMesh.receiveShadow = true;
-    lotMesh.frustumCulled = false;
-    site.add(lotMesh);
-    // The curb around the lot.
-    const curb = M(palette.curb, { roughness: 0.9 });
-    const c = 0.3;
-    for (const [w, d, x, z] of [
-      [lot.width + 2 * c, c, lot.width / 2, -c / 2],
-      [lot.width + 2 * c, c, lot.width / 2, lot.depth + c / 2],
-      [c, lot.depth, -c / 2, lot.depth / 2],
-      [c, lot.depth, lot.width + c / 2, lot.depth / 2],
-    ] as const) {
-      const strip = box(w, 0.14, d, curb);
-      strip.position.set(x, 0.07, z);
-      site.add(strip);
+    if (street) {
+      buildStreet(palette, gb);
+    } else if (custom) {
+      // Grass only: each station brings its own apron and spots (addFreeSpots).
+    } else if (lot.depot != null) {
+      buildDepotYard(palette, lot.depot);
+    } else {
+      // The paved lot (an office or retail row with its aisle): one plane, its
+      // spot tile repeated once per spot.
+      const paving = spotTexture(palette.asphalt, palette.paint);
+      // One tile per spot and lane; the last row has no lane behind it, so the
+      // tiles start at the front edge (v = 1) and end part way into a tile.
+      const tileRows = lot.depth / lot.pitch;
+      paving.repeat.set(lot.cols, tileRows);
+      paving.offset.set(0, Math.ceil(tileRows - 1e-9) - tileRows);
+      const lotGeometry = track(new THREE.PlaneGeometry(lot.width, lot.depth));
+      lotGeometry.rotateX(-Math.PI / 2);
+      const lotMesh = new THREE.Mesh(
+        lotGeometry,
+        M('#ffffff', { map: paving, roughness: 0.95, metalness: 0 }),
+      );
+      lotMesh.position.set(lot.width / 2, 0.012, lot.depth / 2);
+      lotMesh.receiveShadow = true;
+      lotMesh.frustumCulled = false;
+      site.add(lotMesh);
+      // The curb around the lot.
+      const curb = M(palette.curb, { roughness: 0.9 });
+      const c = CURB_M;
+      for (const [w, d, x, z] of [
+        [lot.width + 2 * c, c, lot.width / 2, -c / 2],
+        [lot.width + 2 * c, c, lot.width / 2, lot.depth + c / 2],
+        [c, lot.depth, -c / 2, lot.depth / 2],
+        [c, lot.depth, lot.width + c / 2, lot.depth / 2],
+      ] as const) {
+        const strip = box(w, 0.14, d, curb);
+        strip.position.set(x, 0.07, z);
+        site.add(strip);
+      }
     }
 
-    // The edit grid: one outline per spot, in one geometry.
+    // The edit grid: one outline per spot, in one geometry (a custom site
+    // shows each station's own spots instead).
     const outline: number[] = [];
-    for (let r = 0; r < lot.rows; r++) {
-      for (let col = 0; col < lot.cols; col++) {
-        const x0 = col * lot.spotW + 0.08;
-        const z0 = r * lot.pitch + 0.08;
-        const x1 = x0 + lot.spotW - 0.16;
-        const z1 = z0 + lot.spotD - 0.16;
+    for (let r = 0; r < (custom ? 0 : lot.rows); r++) {
+      for (let col = 0; col < (lot.rowLengths[r] ?? 0); col++) {
+        const rect = spotRect({ col, row: r }, lot);
+        const x0 = rect.minX + 0.08;
+        const z0 = rect.minZ + 0.08;
+        const x1 = rect.maxX - 0.08;
+        const z1 = rect.maxZ - 0.08;
         outline.push(x0, 0.03, z0, x1, 0.03, z0, x1, 0.03, z0, x1, 0.03, z1);
         outline.push(x1, 0.03, z1, x0, 0.03, z1, x0, 0.03, z1, x0, 0.03, z0);
       }
@@ -1838,30 +2976,38 @@ export function createSiteScene(
       energyLabels.set(b.id, lotPoint({ x: b.x, z: b.z }, 3.1));
     }
     for (const pv of layout.solar) {
+      if (pv.free != null) {
+        const g = buildFreeSolarCanopy(pv.free, palette);
+        g.traverse((o) => {
+          o.userData['solarId'] = pv.id;
+        });
+        site.add(g);
+        solarObjects.set(pv.id, g);
+        energyLabels.set(pv.id, lotPoint({ x: pv.free.x, z: pv.free.z }, 4.4));
+        continue;
+      }
       const g = buildSolarCanopy(pv.row, palette);
       site.add(g);
       const middle = lotPoint({ x: lot.width / 2, z: rowCenterZ(pv.row) }, 4.4);
       energyLabels.set(pv.id, middle);
     }
-    // Panels: a switchboard with its doors toward the lanes, or a panel on the facade.
+    // Panels: a switchboard with its doors toward the lanes (parking lot only).
     const panelY = new Map<string, number>();
     for (const p of layout.panels) {
-      const g = p.mount === 'pad' ? t.switchboard() : t.wallPanel();
+      const g = t.switchboard();
       g.position.set(p.x, 0, p.z);
       site.add(g);
-      panelY.set(`${String(p.x)}:${String(p.z)}`, PANEL_LINK_Y[p.mount]);
+      panelY.set(`${String(p.x)}:${String(p.z)}`, PANEL_LINK_Y);
     }
-    // Links: from a panel to a circuit node and on to the station's
-    // back (stationBackPoint, which follows the row's turn) or its wall box.
-    // On an office or retail site the circuit nodes hang above the wall boxes.
-    const nodeY = office ? 2.6 : 1.0;
+    // Links: from a panel to a circuit node and on to the station's back
+    // (stationBackPoint, which follows the row's turn).
+    const nodeY = 1.0;
     const yAt = (p: Point): number => panelY.get(`${String(p.x)}:${String(p.z)}`) ?? nodeY;
     for (const seg of layout.links.segments) {
       const from = lotPoint(seg.from, yAt(seg.from));
       let to: THREE.Vector3;
       if (seg.kind === 'station') {
-        const onWall = objects.get(seg.id.slice('station:'.length))?.station.wall === true;
-        to = lotPoint(seg.to, onWall ? 1.2 : 0.9);
+        to = lotPoint(seg.to, 0.9);
       } else {
         to = lotPoint(seg.to, yAt(seg.to));
       }
@@ -1877,7 +3023,6 @@ export function createSiteScene(
       }),
     );
     const nodeGeometry = track(new THREE.SphereGeometry(0.16, 16, 12));
-    const mountOf = new Map(layout.panels.map((p) => [`panel:${p.id}`, p.mount]));
     for (const label of layout.links.labels) {
       if (label.kind === 'circuit') {
         const node = new THREE.Mesh(nodeGeometry, nodeMaterial);
@@ -1885,13 +3030,8 @@ export function createSiteScene(
         node.raycast = () => undefined;
         site.add(node);
       }
-      const mount = mountOf.get(label.id);
       const y =
-        label.kind === 'station'
-          ? 1.6
-          : label.kind === 'panel' && mount != null
-            ? PANEL_LABEL_Y[mount]
-            : nodeY + 0.5;
+        label.kind === 'station' ? 1.6 : label.kind === 'panel' ? PANEL_LABEL_Y : nodeY + 0.5;
       linkLabels.set(label.id, lotPoint(label.point, y));
     }
     applySelection();
@@ -1903,6 +3043,38 @@ export function createSiteScene(
       obj.ring.material.opacity = id === selected ? 0.9 : 0;
       // An unselected ring costs a draw call for nothing.
       obj.ring.visible = id === selected || editing;
+      if (obj.handle != null) obj.handle.visible = editing && id === selected;
+    }
+    for (const [id, g] of solarObjects) {
+      // A selected canopy (Edit Layout) shows in the edit color.
+      g.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.userData['solarOutline'] === true) {
+          o.visible = editing && id === selectedSolar;
+        }
+      });
+      if (editing && id === selectedSolar && !g.children.some((c) => c.userData['solarOutline'])) {
+        const box3 = new THREE.Box3().setFromObject(g);
+        const size = box3.getSize(new THREE.Vector3());
+        const outline = new THREE.Mesh(
+          track(new THREE.RingGeometry(0.98, 1, 4, 1)),
+          track(
+            new THREE.MeshBasicMaterial({
+              color: theme.primary,
+              transparent: true,
+              opacity: 0.9,
+              side: THREE.DoubleSide,
+            }),
+          ),
+        );
+        outline.rotation.x = -Math.PI / 2;
+        outline.rotation.z = Math.PI / 4;
+        const local = Math.max(size.x, size.z);
+        outline.scale.set(local * 0.75, local * 0.75, 1);
+        outline.position.y = 0.05;
+        outline.userData['solarOutline'] = true;
+        outline.raycast = () => undefined;
+        g.add(outline);
+      }
     }
   }
 
@@ -1960,6 +3132,8 @@ export function createSiteScene(
         const material = o.material as THREE.Material | THREE.Material[];
         if (Array.isArray(material) || keep.has(material)) return;
         if (material.blending === THREE.AdditiveBlending || o.userData['ring'] === true) return;
+        // The rotation handle shows only in Edit Layout, where stations are not merged.
+        if (o.userData['rotateHandle'] != null) return;
         const part = flatGeometry(o.geometry as THREE.BufferGeometry);
         if (part == null) return;
         part.computeBoundingBox();
@@ -2000,15 +3174,24 @@ export function createSiteScene(
     }
   }
 
-  function fit(): void {
+  // `toggle`: an explicit Fit to View; on a narrow stage it alternates the
+  // densest part and the whole site. Otherwise a narrow stage frames the
+  // densest part of a wide site (denseFrameBox) and a wide stage the whole.
+  function fit(toggle = false): void {
     const width = container.clientWidth || 1;
     const height = container.clientHeight || 1;
     applyZoomLimit();
+    const narrow = container.clientWidth > 0 && width < NARROW_STAGE_PX;
+    const wantDense = narrow && !(toggle && lastFitDense);
+    const points = layout.stations.map((s) => poseOf(s).point);
+    const framed = (box: Box): Box => (wantDense ? denseFrameBox(box, points, width) : box);
+    const viewBox = options.view === 'front' ? lotBox : siteBox;
+    lastFitDense = wantDense && framed(viewBox) !== viewBox;
     // The front camera, and the overview of an office or retail site (the
     // building stays behind the lot), turn with the facing.
     if (options.view === 'front' || layout.lot.siteType === 'office_retail') {
       const front = frontCamera(
-        options.view === 'front' ? lotBox : siteBox,
+        framed(viewBox),
         layout.lot.facing,
         width / height,
         options.view === 'front' ? FRONT_CAMERA_OFFSET : OVERVIEW_CAMERA_OFFSET,
@@ -2016,7 +3199,10 @@ export function createSiteScene(
       controls.target.set(front.target.x, front.target.y, front.target.z);
       camera.position.set(front.position.x, front.position.y, front.position.z);
     } else {
-      const { target, distance } = fitFrame(frameBox, width / height);
+      const { target, distance } = fitFrame(
+        rotateBox(framed(siteBox), layout.lot.facing),
+        width / height,
+      );
       controls.target.set(target.x, target.y, target.z);
       camera.position.set(
         target.x + distance * 0.22,
@@ -2117,8 +3303,16 @@ export function createSiteScene(
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  let drag: { kind: 'station' | 'transformer' | 'battery'; id: string; pointerId: number } | null =
-    null;
+  type PickKind = 'station' | 'transformer' | 'battery' | 'solar' | 'handle';
+  let drag: {
+    kind: PickKind;
+    id: string;
+    pointerId: number;
+    /** Ground point minus the object's position at the grab (custom site moves). */
+    grab: Point;
+    start: { x: number; y: number };
+    moved: boolean;
+  } | null = null;
   let downAt: { x: number; y: number } | null = null;
   const canvas = renderer.domElement;
   function setRay(e: PointerEvent): void {
@@ -2129,15 +3323,32 @@ export function createSiteScene(
     );
     ray.setFromCamera(ndc, camera);
   }
-  function pick(
-    e: PointerEvent,
-  ): { kind: 'station' | 'transformer' | 'battery'; id: string } | null {
+  function pick(e: PointerEvent): { kind: PickKind; id: string } | null {
     setRay(e);
     const groups = [...objects.values()].map((o) => o.group);
-    groups.push(...transformerObjects.values(), ...batteryObjects.values());
-    const hit = ray
+    groups.push(
+      ...transformerObjects.values(),
+      ...batteryObjects.values(),
+      ...solarObjects.values(),
+    );
+    const hits = ray
       .intersectObjects(groups, true)
-      .find((h) => h.object.type === 'Mesh' && h.object.userData['ring'] !== true);
+      .filter(
+        (h) =>
+          h.object.type === 'Mesh' &&
+          h.object.userData['ring'] !== true &&
+          (h.object.userData['rotateHandle'] == null || editing),
+      );
+    // A visible rotation handle wins over the station under it.
+    const handleHit = hits.find((h) => {
+      const id: unknown = h.object.userData['rotateHandle'];
+      return typeof id === 'string' && objects.get(id)?.handle?.visible === true;
+    });
+    if (handleHit != null)
+      return { kind: 'handle', id: String(handleHit.object.userData['rotateHandle']) };
+    // A station under a solar canopy wins over the roof above it.
+    const rest = hits.filter((h) => h.object.userData['rotateHandle'] == null);
+    const hit = rest.find((h) => typeof h.object.userData['stationId'] === 'string') ?? rest[0];
     if (hit == null) return null;
     const stationId: unknown = hit.object.userData['stationId'];
     if (typeof stationId === 'string') return { kind: 'station', id: stationId };
@@ -2145,6 +3356,8 @@ export function createSiteScene(
     if (typeof transformerId === 'string') return { kind: 'transformer', id: transformerId };
     const batteryId: unknown = hit.object.userData['batteryId'];
     if (typeof batteryId === 'string') return { kind: 'battery', id: batteryId };
+    const solarId: unknown = hit.object.userData['solarId'];
+    if (typeof solarId === 'string') return { kind: 'solar', id: solarId };
     return null;
   }
   // The pointer on the ground, in lot coordinates.
@@ -2154,12 +3367,50 @@ export function createSiteScene(
     if (ray.ray.intersectPlane(floor, p) == null) return null;
     return site.worldToLocal(p);
   }
+  // Stations move freely on a custom site only; a depot station moves by slot.
+  function freeMoves(): boolean {
+    return layout.lot.siteType === 'custom';
+  }
+  // The free position a station's group shows now (custom site).
+  function groupPlacement(g: THREE.Object3D): FreePlacement {
+    const id = g.userData['stationId'] as string | undefined;
+    const spotType = id != null ? objects.get(id)?.station.free?.spotType : undefined;
+    return {
+      x: g.position.x,
+      z: g.position.z,
+      rotationDeg: (-g.rotation.y * 180) / Math.PI,
+      ...(spotType != null ? { spotType } : {}),
+    };
+  }
+  function showFreeState(obj: StationObject, p: FreePlacement): void {
+    const state = callbacks.freeDropState?.(obj.station.id, p) ?? { blocked: false, guides: [] };
+    obj.ring.material.color.set(state.blocked ? theme.destructive : theme.primary);
+    obj.ring.material.opacity = 0.9;
+    showGuides(state.guides);
+  }
   function onPointerDown(e: PointerEvent): void {
     downAt = { x: e.clientX, y: e.clientY };
     if (!editing) return;
     const hit = pick(e);
     if (hit == null) return;
-    drag = { ...hit, pointerId: e.pointerId };
+    // A grid site's canopy covers a row: it does not move.
+    if (hit.kind === 'solar' && !solarObjects.has(hit.id)) return;
+    const p = groundPoint(e);
+    let grab: Point = { x: 0, z: 0 };
+    const g =
+      hit.kind === 'station' || hit.kind === 'handle'
+        ? objects.get(hit.id)?.group
+        : hit.kind === 'solar'
+          ? solarObjects.get(hit.id)
+          : undefined;
+    if (p != null && g != null) grab = { x: p.x - g.position.x, z: p.z - g.position.z };
+    drag = {
+      ...hit,
+      pointerId: e.pointerId,
+      grab,
+      start: { x: e.clientX, y: e.clientY },
+      moved: false,
+    };
     controls.enabled = false;
     canvas.setPointerCapture(e.pointerId);
   }
@@ -2170,6 +3421,8 @@ export function createSiteScene(
       }
       return;
     }
+    if (!drag.moved && Math.hypot(e.clientX - drag.start.x, e.clientY - drag.start.y) <= 5) return;
+    drag.moved = true;
     const p = groundPoint(e);
     if (p == null) return;
     if (drag.kind === 'transformer' || drag.kind === 'battery') {
@@ -2179,12 +3432,46 @@ export function createSiteScene(
       g.position.set(snapped.x, 0, snapped.z);
       return;
     }
+    if (drag.kind === 'solar') {
+      const g = solarObjects.get(drag.id);
+      if (g == null || callbacks.snapFree == null) return;
+      const snapped = callbacks.snapFree(
+        { x: p.x - drag.grab.x, z: p.z - drag.grab.z, rotationDeg: 0 },
+        false,
+      );
+      g.position.set(snapped.x, 0, snapped.z);
+      return;
+    }
     const obj = objects.get(drag.id);
     if (obj == null) return;
+    if (obj.station.free != null && freeMoves() && callbacks.snapFree != null) {
+      if (drag.kind === 'handle') {
+        // Turn toward the pointer; Shift turns to any angle.
+        const deg = handleRotation(
+          { x: obj.group.position.x, z: obj.group.position.z },
+          p,
+          e.shiftKey,
+        );
+        obj.group.rotation.y = (-deg * Math.PI) / 180;
+      } else {
+        const snapped = callbacks.snapFree(
+          {
+            x: p.x - drag.grab.x,
+            z: p.z - drag.grab.z,
+            rotationDeg: groupPlacement(obj.group).rotationDeg,
+          },
+          true,
+        );
+        obj.group.position.set(snapped.x, 0, snapped.z);
+      }
+      showFreeState(obj, groupPlacement(obj.group));
+      return;
+    }
     const clamped = clampToLot(p.x, p.z, layout.lot);
     obj.group.position.x = clamped.x;
     obj.group.position.z = clamped.z;
     const over = lotToBay(obj.group.position.x, obj.group.position.z, layout.lot);
+    if (over == null) return;
     // Turn with the row it is over, so the drop preview faces its lane.
     obj.group.rotation.y = bayTurn(over, layout.lot);
     const blocked = callbacks.isBayTaken(over, drag.id);
@@ -2193,10 +3480,22 @@ export function createSiteScene(
   }
   function onPointerUp(e: PointerEvent): void {
     if (drag != null) {
-      const { id, kind } = drag;
+      const { id, kind, moved } = drag;
       drag = null;
       controls.enabled = true;
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      showGuides([]);
+      // A click without a move selects (Edit Layout).
+      if (!moved) {
+        if (kind === 'station' || kind === 'handle') {
+          callbacks.onSolarPick?.(null);
+          callbacks.onPick(id);
+        } else if (kind === 'solar') {
+          callbacks.onPick(null);
+          callbacks.onSolarPick?.(id);
+        }
+        return;
+      }
       if (kind === 'transformer') {
         const g = transformerObjects.get(id);
         if (g != null) callbacks.onTransformerDrop(id, { x: g.position.x, z: g.position.z });
@@ -2207,19 +3506,35 @@ export function createSiteScene(
         if (g != null) callbacks.onBatteryDrop(id, { x: g.position.x, z: g.position.z });
         return;
       }
+      if (kind === 'solar') {
+        const g = solarObjects.get(id);
+        if (g != null) callbacks.onSolarDrop?.(id, { x: g.position.x, z: g.position.z });
+        return;
+      }
       const obj = objects.get(id);
       if (obj != null) {
+        if (obj.station.free != null && freeMoves()) {
+          const placement = groupPlacement(obj.group);
+          // Back to its position until the new layout arrives (or for good when refused).
+          const pose = poseOf(obj.station);
+          obj.group.position.copy(lotPoint(pose.point));
+          obj.group.rotation.y = pose.turn;
+          applySelection();
+          callbacks.onFreeDrop?.(id, placement);
+          return;
+        }
         const bay = lotToBay(obj.group.position.x, obj.group.position.z, layout.lot);
         // Back to its spot until the new positions arrive.
         obj.group.position.copy(lotPoint(bayToLot(obj.station.bay, layout.lot)));
         obj.group.rotation.y = bayTurn(obj.station.bay, layout.lot);
         applySelection();
-        callbacks.onDrop(id, bay);
+        if (bay != null) callbacks.onDrop(id, bay);
       }
       return;
     }
     if (downAt != null && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 5) return;
     const hit = pick(e);
+    if (editing) callbacks.onSolarPick?.(null);
     callbacks.onPick(hit?.kind === 'station' ? hit.id : null);
   }
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -2264,6 +3579,8 @@ export function createSiteScene(
       }
       // A gentle flow from the transformer toward the stations.
       for (const tex of flowTextures) tex.offset.x = -time * 0.35;
+      // Long display messages scroll across the charger screens.
+      for (const scroll of screenScrolls) scroll.texture.offset.x = time * scroll.speed;
       const beat = beaconLevel(time);
       for (const b of beacons) {
         b.core.emissiveIntensity = beat.intensity;
@@ -2285,7 +3602,8 @@ export function createSiteScene(
         next.lot.width !== layout.lot.width ||
         next.lot.depth !== layout.lot.depth ||
         next.lot.facing !== layout.lot.facing ||
-        next.lot.siteType !== layout.lot.siteType;
+        next.lot.siteType !== layout.lot.siteType ||
+        next.lot.rowLengths.join(',') !== layout.lot.rowLengths.join(',');
       const first = !hasFitted && next.stations.length > 0;
       layout = next;
       rebuild();
@@ -2305,6 +3623,8 @@ export function createSiteScene(
       // A merged site splits its stations again to drag them (and merges them after).
       if (remerge) rebuild();
       editGrid.visible = next;
+      // The rotation handle shows only in Edit Layout.
+      applySelection();
       if (!next && drag != null) {
         drag = null;
         controls.enabled = true;
@@ -2312,6 +3632,10 @@ export function createSiteScene(
     },
     setSelected(id) {
       selected = id;
+      applySelection();
+    },
+    setSelectedSolar(id) {
+      selectedSolar = id;
       applySelection();
     },
     setLogo(url) {
@@ -2337,9 +3661,9 @@ export function createSiteScene(
         rebuild();
       });
     },
-    fit() {
+    fit(toggle) {
       hasFitted = true;
-      fit();
+      fit(toggle === true);
     },
     setActive(next) {
       if (next === active || disposed) return;
@@ -2367,8 +3691,14 @@ export function createSiteScene(
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       controls.dispose();
+      showGuides([]);
+      guideDash.dispose();
+      guideMaterial.dispose();
       for (const item of built) item.dispose();
       built = [];
+      for (const kit of carKits.values()) for (const g of kit.geometries) g.dispose();
+      carKits.clear();
+      environment.dispose();
       logo?.texture.dispose();
       logo = null;
       renderer.dispose();
