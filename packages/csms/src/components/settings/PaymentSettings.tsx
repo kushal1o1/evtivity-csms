@@ -1,7 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { useLoadedValues, useSavedBaseline } from '@/hooks/use-loaded-values';
 import { useTranslation } from 'react-i18next';
 import { useTab } from '@/hooks/use-tab';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -85,6 +86,21 @@ interface SitePaymentConfig {
   isEnabled: boolean;
 }
 
+interface StripeForm {
+  publishableKey: string;
+  secretKey: string;
+  webhookSecret: string;
+  connectWebhookSecret: string;
+  removing: Record<StripeSecretField, boolean>;
+}
+
+interface SiteForm {
+  siteId: string | null;
+  connectedAccountId: string;
+  preAuthAmount: string;
+  platformFee: string;
+}
+
 interface PaymentSettingsProps {
   /** The generic settings (GET /v1/settings), for the prepaid card settings. */
   settings?: Record<string, unknown> | undefined;
@@ -112,20 +128,9 @@ export function PaymentSettings({ settings }: PaymentSettingsProps = {}): React.
     'sub',
   );
 
-  const [stripeSecretKey, setStripeSecretKey] = useState('');
-  const [stripePublishableKey, setStripePublishableKey] = useState('');
-  const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
-  const [stripeConnectWebhookSecret, setStripeConnectWebhookSecret] = useState('');
-  const [stripeRemoving, setStripeRemoving] = useState(NO_STRIPE_REMOVALS);
   const { currency } = useCompanyCurrency();
-  const [stripeHasUnsavedChanges, setStripeHasUnsavedChanges] = useState(false);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-
-  const [siteConnectedAccountId, setSiteConnectedAccountId] = useState('');
-  const [sitePreAuthAmount, setSitePreAuthAmount] = useState(centsToMajorInput(5000));
-  const [sitePlatformFee, setSitePlatformFee] = useState('');
   const [siteHasSubmitted, setSiteHasSubmitted] = useState(false);
-  const [siteHasUnsavedChanges, setSiteHasUnsavedChanges] = useState(false);
 
   const { data: stripeSettings } = useQuery({
     queryKey: ['stripe-settings'],
@@ -178,33 +183,88 @@ export function PaymentSettings({ settings }: PaymentSettingsProps = {}): React.
     enabled: selectedSiteId != null,
   });
 
-  useEffect(() => {
-    if (selectedSiteConfig != null) {
-      setSiteConnectedAccountId(selectedSiteConfig.payoutAccountId ?? '');
-      setSitePreAuthAmount(centsToMajorInput(selectedSiteConfig.preAuthAmountCents));
-      setSitePlatformFee(
-        selectedSiteConfig.platformFeePercent != null ? selectedSiteConfig.platformFeePercent : '',
-      );
-    } else if (selectedSiteId != null) {
-      setSiteConnectedAccountId('');
-      setSitePreAuthAmount(centsToMajorInput(5000));
-      setSitePlatformFee('');
-    }
+  // The site form follows the selected site. A reload of the same site
+  // replaces it only while it has no unsaved edits; another site replaces it.
+  const siteLoaded = useMemo<SiteForm>(
+    () => ({
+      siteId: selectedSiteId,
+      connectedAccountId: selectedSiteConfig?.payoutAccountId ?? '',
+      preAuthAmount: centsToMajorInput(selectedSiteConfig?.preAuthAmountCents ?? 5000),
+      platformFee: selectedSiteConfig?.platformFeePercent ?? '',
+    }),
+    [selectedSiteConfig, selectedSiteId],
+  );
+  const [siteForm, setSiteForm, takeNextSiteLoad] = useLoadedValues<SiteForm>(siteLoaded, () => {
     setSiteHasSubmitted(false);
-    setSiteHasUnsavedChanges(false);
-  }, [selectedSiteConfig, selectedSiteId]);
+  });
+  if (siteForm.siteId !== siteLoaded.siteId) {
+    setSiteForm(siteLoaded);
+    setSiteHasSubmitted(false);
+  }
+  const [siteBaseline, markSiteSaved] = useSavedBaseline(siteLoaded);
+  const siteHasUnsavedChanges =
+    siteForm.siteId === siteLoaded.siteId &&
+    JSON.stringify(siteForm) !== JSON.stringify(siteBaseline);
+  const {
+    connectedAccountId: siteConnectedAccountId,
+    preAuthAmount: sitePreAuthAmount,
+    platformFee: sitePlatformFee,
+  } = siteForm;
+  function setSiteConnectedAccountId(value: string): void {
+    setSiteForm((f) => ({ ...f, connectedAccountId: value }));
+  }
+  function setSitePreAuthAmount(value: string): void {
+    setSiteForm((f) => ({ ...f, preAuthAmount: value }));
+  }
+  function setSitePlatformFee(value: string): void {
+    setSiteForm((f) => ({ ...f, platformFee: value }));
+  }
 
-  useEffect(() => {
-    if (stripeSettings == null) return;
-    setStripePublishableKey(
-      typeof stripeSettings.publishableKey === 'string' ? stripeSettings.publishableKey : '',
-    );
-    setStripeSecretKey(stripeSettings.secretKey ?? '');
-    setStripeWebhookSecret(stripeSettings.webhookSecret ?? '');
-    setStripeConnectWebhookSecret(stripeSettings.connectWebhookSecret ?? '');
-    setStripeRemoving(NO_STRIPE_REMOVALS);
-    setStripeHasUnsavedChanges(false);
-  }, [stripeSettings]);
+  // A reload replaces the Stripe form only while it has no unsaved edits.
+  const stripeLoaded = useMemo<StripeForm>(
+    () => ({
+      publishableKey:
+        typeof stripeSettings?.publishableKey === 'string' ? stripeSettings.publishableKey : '',
+      secretKey: stripeSettings?.secretKey ?? '',
+      webhookSecret: stripeSettings?.webhookSecret ?? '',
+      connectWebhookSecret: stripeSettings?.connectWebhookSecret ?? '',
+      removing: NO_STRIPE_REMOVALS,
+    }),
+    [stripeSettings],
+  );
+  const [stripeForm, setStripeForm, takeNextStripeLoad] = useLoadedValues<StripeForm>(stripeLoaded);
+  const [stripeBaseline, markStripeSaved] = useSavedBaseline(stripeLoaded);
+  const stripeHasUnsavedChanges = JSON.stringify(stripeForm) !== JSON.stringify(stripeBaseline);
+  const {
+    publishableKey: stripePublishableKey,
+    secretKey: stripeSecretKey,
+    webhookSecret: stripeWebhookSecret,
+    connectWebhookSecret: stripeConnectWebhookSecret,
+    removing: stripeRemoving,
+  } = stripeForm;
+  function setStripeField(
+    field: 'publishableKey' | 'secretKey' | 'webhookSecret' | 'connectWebhookSecret',
+    value: string,
+  ): void {
+    setStripeForm((f) => ({ ...f, [field]: value }));
+  }
+  function setStripeSecretKey(value: string): void {
+    setStripeField('secretKey', value);
+  }
+  function setStripePublishableKey(value: string): void {
+    setStripeField('publishableKey', value);
+  }
+  function setStripeWebhookSecret(value: string): void {
+    setStripeField('webhookSecret', value);
+  }
+  function setStripeConnectWebhookSecret(value: string): void {
+    setStripeField('connectWebhookSecret', value);
+  }
+  function setStripeRemoving(
+    change: (current: Record<StripeSecretField, boolean>) => Record<StripeSecretField, boolean>,
+  ): void {
+    setStripeForm((f) => ({ ...f, removing: change(f.removing) }));
+  }
 
   const stripeSaveMutation = useMutation({
     mutationFn: (vals: StripeSettingsBody) => api.put('/v1/settings/stripe', vals),
@@ -244,13 +304,11 @@ export function PaymentSettings({ settings }: PaymentSettingsProps = {}): React.
   });
 
   function markStripeChanged(): void {
-    setStripeHasUnsavedChanges(true);
     stripeSaveMutation.reset();
     stripeTestMutation.reset();
   }
 
   function markSiteChanged(): void {
-    setSiteHasUnsavedChanges(true);
     sitePaymentSaveMutation.reset();
   }
 
@@ -289,7 +347,13 @@ export function PaymentSettings({ settings }: PaymentSettingsProps = {}): React.
     if (stripePublishableKey.trim() !== storedPublishableKey) {
       vals.publishableKey = stripePublishableKey.trim();
     }
-    stripeSaveMutation.mutate(vals);
+    const sent = stripeForm;
+    stripeSaveMutation.mutate(vals, {
+      onSuccess: () => {
+        markStripeSaved(sent);
+        takeNextStripeLoad(sent);
+      },
+    });
   }
 
   function handleSiteSubmit(e: React.SyntheticEvent): void {
@@ -297,13 +361,22 @@ export function PaymentSettings({ settings }: PaymentSettingsProps = {}): React.
     if (selectedSiteId == null) return;
     setSiteHasSubmitted(true);
     if (Object.keys(siteErrors).length > 0) return;
-    sitePaymentSaveMutation.mutate({
-      siteId: selectedSiteId,
-      payoutAccountId: siteConnectedAccountId !== '' ? siteConnectedAccountId : null,
-      preAuthAmountCents: parseMajorInputToCents(sitePreAuthAmount) ?? 0,
-      platformFeePercent: sitePlatformFee !== '' ? Number(sitePlatformFee) : null,
-      isEnabled: paymentConfigMap.get(selectedSiteId)?.isEnabled ?? true,
-    });
+    const sent = siteForm;
+    sitePaymentSaveMutation.mutate(
+      {
+        siteId: selectedSiteId,
+        payoutAccountId: siteConnectedAccountId !== '' ? siteConnectedAccountId : null,
+        preAuthAmountCents: parseMajorInputToCents(sitePreAuthAmount) ?? 0,
+        platformFeePercent: sitePlatformFee !== '' ? Number(sitePlatformFee) : null,
+        isEnabled: paymentConfigMap.get(selectedSiteId)?.isEnabled ?? true,
+      },
+      {
+        onSuccess: () => {
+          markSiteSaved(sent);
+          takeNextSiteLoad(sent);
+        },
+      },
+    );
   }
 
   const sitePaymentToggleMutation = useMutation({

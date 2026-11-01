@@ -55,4 +55,33 @@ describe('useLoadedValues', () => {
     expect(result.current[0]).toBe(before);
     expect(onReplace).not.toHaveBeenCalled();
   });
+
+  it('takes the stored form of its own save on the next reload', () => {
+    const { result, rerender } = setup({ minLength: 12 });
+    act(() => {
+      result.current[1]({ minLength: 16 });
+    });
+    act(() => {
+      result.current[2]({ minLength: 16 });
+    });
+    // The server stored another form of the saved value.
+    rerender({ loaded: { minLength: 17 } });
+    expect(result.current[0]).toEqual({ minLength: 17 });
+    // Clean again: the next reload replaces it.
+    rerender({ loaded: { minLength: 18 } });
+    expect(result.current[0]).toEqual({ minLength: 18 });
+  });
+
+  it('keeps an edit made after its own save', () => {
+    const { result, rerender } = setup({ minLength: 12 });
+    act(() => {
+      result.current[1]({ minLength: 16 });
+      result.current[2]({ minLength: 16 });
+    });
+    act(() => {
+      result.current[1]({ minLength: 30 });
+    });
+    rerender({ loaded: { minLength: 17 } });
+    expect(result.current[0]).toEqual({ minLength: 30 });
+  });
 });

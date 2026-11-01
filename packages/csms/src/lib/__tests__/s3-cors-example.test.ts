@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { describe, expect, it } from 'vitest';
-import { buildS3CorsExample, originOrPlaceholder } from '../s3-cors-example';
+import {
+  PORTAL_ORIGIN_PLACEHOLDER,
+  STORAGE_ACCESS_ACTIONS,
+  buildS3CorsExample,
+  originOrPlaceholder,
+  storageBrowserOrigins,
+} from '../s3-cors-example';
 
 interface CorsRule {
   AllowedMethods: string[];
@@ -57,5 +63,37 @@ describe('buildS3CorsExample', () => {
 describe('originOrPlaceholder', () => {
   it('refuses a non-http scheme', () => {
     expect(originOrPlaceholder('ftp://files.example.com', 'X')).toBe('X');
+  });
+});
+
+describe('storageBrowserOrigins', () => {
+  it('lists the CSMS and portal origins once each', () => {
+    expect(
+      storageBrowserOrigins('https://csms.example.com/settings', 'https://portal.example.com/'),
+    ).toEqual([
+      { origin: 'https://csms.example.com', placeholder: false },
+      { origin: 'https://portal.example.com', placeholder: false },
+    ]);
+    expect(storageBrowserOrigins('https://ev.example.com', 'https://ev.example.com/x')).toEqual([
+      { origin: 'https://ev.example.com', placeholder: false },
+    ]);
+  });
+
+  it('marks an unknown portal address as a placeholder', () => {
+    expect(storageBrowserOrigins('https://csms.example.com', null)).toEqual([
+      { origin: 'https://csms.example.com', placeholder: false },
+      { origin: PORTAL_ORIGIN_PLACEHOLDER, placeholder: true },
+    ]);
+  });
+});
+
+describe('STORAGE_ACCESS_ACTIONS', () => {
+  it('names the S3 actions the storage code uses', () => {
+    expect(STORAGE_ACCESS_ACTIONS.map((a) => a.action)).toEqual([
+      's3:PutObject',
+      's3:GetObject',
+      's3:DeleteObject',
+      's3:ListBucket',
+    ]);
   });
 });

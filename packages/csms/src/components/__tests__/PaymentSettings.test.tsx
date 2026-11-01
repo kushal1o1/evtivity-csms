@@ -128,6 +128,17 @@ const STRIPE_SETTINGS_HIDDEN = {
 
 let stripeSettings: Record<string, unknown> = STRIPE_SETTINGS_WITH_SECRETS;
 
+const SITE_CONFIG = {
+  id: 1,
+  siteId: 'sit_1',
+  payoutAccountId: 'acct_site_1',
+  preAuthAmountCents: 5000,
+  platformFeePercent: null,
+  isEnabled: true,
+};
+
+let siteConfig: Record<string, unknown> = SITE_CONFIG;
+
 function mockGets(
   webhook: (url: string) => Promise<unknown> = () => Promise.resolve(webhookSetup()),
 ): void {
@@ -140,16 +151,7 @@ function mockGets(
       return Promise.resolve({ data: [{ id: 'sit_1', name: 'Main Street' }], total: 1 });
     }
     if (url === '/v1/sites/payment-configs') return Promise.resolve([]);
-    if (url === '/v1/sites/sit_1/payment-config') {
-      return Promise.resolve({
-        id: 1,
-        siteId: 'sit_1',
-        payoutAccountId: 'acct_site_1',
-        preAuthAmountCents: 5000,
-        platformFeePercent: null,
-        isEnabled: true,
-      });
-    }
+    if (url === '/v1/sites/sit_1/payment-config') return Promise.resolve(siteConfig);
     return Promise.reject(new Error(`unexpected GET ${url}`));
   });
 }
@@ -167,7 +169,7 @@ function webhookSetup(endpoints = ENDPOINTS): Record<string, unknown> {
   };
 }
 
-function renderSettings(path = '/settings?sub=stripe'): void {
+function renderSettings(path = '/settings?sub=stripe'): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -176,6 +178,7 @@ function renderSettings(path = '/settings?sub=stripe'): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 async function stripeForm(): Promise<HTMLFormElement> {
@@ -195,6 +198,7 @@ afterEach(() => {
   permission.canWriteProvider = true;
   permission.hasAllSiteAccess = true;
   stripeSettings = STRIPE_SETTINGS_WITH_SECRETS;
+  siteConfig = SITE_CONFIG;
 });
 
 describe('PaymentSettings sub-tabs', () => {
@@ -671,5 +675,97 @@ describe('PaymentSettings Stripe tab', () => {
     });
     const body = putMock.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(body).not.toHaveProperty('stripeConnectedAccountId');
+  });
+});
+
+describe('PaymentSettings settings reload', () => {
+  async function reload(client: QueryClient, url: string, queryKey: unknown[]): Promise<void> {
+    const calls = getMock.mock.calls.filter(([u]) => u === url).length;
+    await client.invalidateQueries({ queryKey });
+    await waitFor(() => {
+      expect(getMock.mock.calls.filter(([u]) => u === url).length).toBe(calls + 1);
+    });
+  }
+
+  async function publishableKey(): Promise<HTMLInputElement> {
+    const input = asInput(await screen.findByLabelText('settings.stripePublishableKey'));
+    await waitFor(() => {
+      expect(input.value).not.toBe('');
+    });
+    return input;
+  }
+
+  async function connectedAccount(): Promise<HTMLInputElement> {
+    fireEvent.click(await screen.findByText('Main Street'));
+    const input = asInput(await screen.findByLabelText('payments.connectedAccountId'));
+    await waitFor(() => {
+      expect(input.value).toBe('acct_site_1');
+    });
+    return input;
+  }
+
+  it('keeps unsaved Stripe edits when the settings reload, takes them while clean', async () => {
+    mockGets();
+    const client = renderSettings();
+    const input = await publishableKey();
+    stripeSettings = { ...STRIPE_SETTINGS_WITH_SECRETS, publishableKey: 'pk_test_reloaded' };
+    await reload(client, '/v1/settings/stripe', ['stripe-settings']);
+    expect(input.value).toBe('pk_test_reloaded');
+    fireEvent.change(input, { target: { value: 'pk_test_edit' } });
+    stripeSettings = { ...STRIPE_SETTINGS_WITH_SECRETS, publishableKey: 'pk_test_other' };
+    await reload(client, '/v1/settings/stripe', ['stripe-settings']);
+    expect(input.value).toBe('pk_test_edit');
+    expect(screen.getByText('settings.unsavedChanges')).toBeTruthy();
+  });
+
+  it('takes the stored Stripe values after its own save', async () => {
+    mockGets();
+    putMock.mockImplementation(() => {
+      stripeSettings = { ...STRIPE_SETTINGS_WITH_SECRETS, publishableKey: 'pk_test_saved' };
+      return Promise.resolve({ success: true });
+    });
+    const client = renderSettings();
+    const input = await publishableKey();
+    fireEvent.change(input, { target: { value: '  pk_test_saved  ' } });
+    fireEvent.submit(await stripeForm());
+    await waitFor(() => {
+      expect(input.value).toBe('pk_test_saved');
+    });
+    expect(screen.queryByText('settings.unsavedChanges')).toBeNull();
+    stripeSettings = { ...STRIPE_SETTINGS_WITH_SECRETS, publishableKey: 'pk_test_later' };
+    await reload(client, '/v1/settings/stripe', ['stripe-settings']);
+    expect(input.value).toBe('pk_test_later');
+  });
+
+  it('keeps unsaved site config edits when the config reloads, takes them while clean', async () => {
+    mockGets();
+    const client = renderSettings('/settings?sub=siteConfigs');
+    const input = await connectedAccount();
+    const url = '/v1/sites/sit_1/payment-config';
+    siteConfig = { ...SITE_CONFIG, payoutAccountId: 'acct_reloaded' };
+    await reload(client, url, ['sites', 'sit_1', 'payment-config']);
+    expect(input.value).toBe('acct_reloaded');
+    fireEvent.change(input, { target: { value: 'acct_edit' } });
+    siteConfig = { ...SITE_CONFIG, payoutAccountId: 'acct_other' };
+    await reload(client, url, ['sites', 'sit_1', 'payment-config']);
+    expect(input.value).toBe('acct_edit');
+  });
+
+  it('takes the stored site config after its own save', async () => {
+    mockGets();
+    putMock.mockImplementation(() => {
+      siteConfig = { ...SITE_CONFIG, preAuthAmountCents: 6000 };
+      return Promise.resolve({});
+    });
+    renderSettings('/settings?sub=siteConfigs');
+    const input = await connectedAccount();
+    const preAuth = asInput(screen.getByLabelText('settings.stripePreAuthAmount'));
+    fireEvent.change(preAuth, { target: { value: '60' } });
+    const form = input.closest('form');
+    if (form == null) throw new Error('form not found');
+    fireEvent.submit(form);
+    await waitFor(() => {
+      expect(preAuth.value).toBe('60.00');
+    });
   });
 });

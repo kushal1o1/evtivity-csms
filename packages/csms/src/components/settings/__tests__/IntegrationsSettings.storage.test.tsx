@@ -84,6 +84,10 @@ function save(): void {
   fireEvent.click(saveButton());
 }
 
+function openAdvanced(): void {
+  fireEvent.click(screen.getByRole('button', { name: /settings.s3Advanced/ }));
+}
+
 /** GET /v1/users/me/mfa answers these proof kinds; other GETs answer {}. */
 function proofKinds(kinds: string[]): void {
   apiMock.get.mockImplementation((url: string) =>
@@ -130,8 +134,14 @@ describe('IntegrationsSettings storage tab', () => {
     });
     expect(valueOf('settings.s3Provider')).toBe('s3-compatible');
     expect(valueOf('settings.s3Endpoint')).toBe('http://minio.internal:9000');
-    expect(screen.getByLabelText<HTMLInputElement>('settings.s3ForcePathStyle').checked).toBe(true);
     screen.getByText('settings.s3ImageOriginHint');
+    // Path-style requests and the private hosts sit in the closed Advanced section.
+    expect(screen.queryByLabelText('settings.s3ForcePathStyle')).toBeNull();
+    expect(
+      screen.getByTestId('s3-advanced').querySelector('[data-collapsible-summary]')?.textContent,
+    ).toBe('settings.s3AdvancedPathStyle, settings.s3AdvancedPrivateHosts');
+    openAdvanced();
+    expect(screen.getByLabelText<HTMLInputElement>('settings.s3ForcePathStyle').checked).toBe(true);
 
     fireEvent.change(screen.getByLabelText('settings.s3AllowedPrivateHosts'), {
       target: { value: 'minio.internal\n 10.0.0.5 \n' },
@@ -194,7 +204,86 @@ describe('IntegrationsSettings storage tab', () => {
 
   it('says the https rule and the metadata refusal in the private hosts hint', () => {
     renderStorageTab({ ...AWS_SETTINGS, 's3.provider': 's3-compatible' });
+    openAdvanced();
     screen.getByText('settings.s3AllowedPrivateHostsHint');
+  });
+
+  it('shows the IAM policy and CORS guides for AWS S3, and no Advanced section or setup note', () => {
+    renderStorageTab(AWS_SETTINGS);
+    screen.getByRole('button', { name: /settings.s3PolicyTitle/ });
+    screen.getByRole('button', { name: /settings.s3CorsTitle/ });
+    expect(screen.queryByTestId('s3-advanced')).toBeNull();
+    expect(screen.queryByTestId('s3-compatible-setup')).toBeNull();
+    expect(screen.queryByText('settings.s3RegionCompatibleHint')).toBeNull();
+  });
+
+  it('needs a region for AWS S3', () => {
+    renderStorageTab(AWS_SETTINGS);
+    fireEvent.change(screen.getByLabelText('settings.s3Region'), { target: { value: ' ' } });
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  describe('S3-compatible provider', () => {
+    const COMPATIBLE = {
+      ...AWS_SETTINGS,
+      's3.provider': 's3-compatible',
+      's3.endpoint': 'https://s3.wasabisys.com',
+    };
+
+    it('shows the main fields, the optional region and a closed Advanced section', () => {
+      renderStorageTab(COMPATIBLE);
+      for (const label of [
+        'settings.s3Endpoint',
+        'settings.s3Bucket',
+        'settings.s3Region',
+        'settings.s3AccessKeyId',
+        'settings.s3SecretAccessKey',
+      ]) {
+        screen.getByLabelText(label);
+      }
+      screen.getByText('settings.s3RegionCompatibleHint');
+      expect(screen.getByLabelText<HTMLInputElement>('settings.s3Region').placeholder).toBe(
+        'us-east-1',
+      );
+      const advanced = screen.getByTestId('s3-advanced');
+      expect(advanced.querySelector('[data-collapsible-summary]')?.textContent).toBe(
+        'settings.s3AdvancedNone',
+      );
+      expect(
+        screen.getByRole('button', { name: /settings.s3Advanced/ }).getAttribute('aria-expanded'),
+      ).toBe('false');
+      expect(screen.queryByLabelText('settings.s3ForcePathStyle')).toBeNull();
+      expect(screen.queryByLabelText('settings.s3AllowedPrivateHosts')).toBeNull();
+    });
+
+    it('saves with an empty region (the server signs with us-east-1)', async () => {
+      renderStorageTab(COMPATIBLE);
+      fireEvent.change(screen.getByLabelText('settings.s3Region'), { target: { value: '' } });
+      expect(saveButton().disabled).toBe(false);
+      save();
+      await waitFor(() => {
+        expect(apiMock.put).toHaveBeenCalledWith(
+          '/v1/settings/s3',
+          expect.objectContaining({ provider: 's3-compatible', region: '' }),
+        );
+      });
+    });
+
+    it('replaces the AWS guides with one note: permissions, origins with copy buttons and the docs link', () => {
+      renderStorageTab(COMPATIBLE);
+      expect(screen.queryByRole('button', { name: /settings.s3PolicyTitle/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /settings.s3CorsTitle/ })).toBeNull();
+      const note = screen.getByTestId('s3-compatible-setup');
+      for (const action of ['s3:PutObject', 's3:GetObject', 's3:DeleteObject', 's3:ListBucket']) {
+        expect(note.textContent).toContain(action);
+      }
+      const origins = screen.getByTestId('s3-cors-origins');
+      expect(origins.textContent).toContain(window.location.origin);
+      expect(origins.querySelectorAll('button').length).toBeGreaterThan(0);
+      expect(
+        screen.getByRole('link', { name: 'settings.s3SetupDocsLink' }).getAttribute('href'),
+      ).toBe('https://evtivity.com/docs/csms/settings#minio-and-wasabi-setup');
+    });
   });
 
   describe('fresh proof for the provider and endpoint', () => {
@@ -335,13 +424,14 @@ describe('IntegrationsSettings storage tab', () => {
       expect(apiMock.put.mock.calls[0]?.[1]).not.toHaveProperty('proof');
     });
 
-    it('shows the R2 token guide and a CORS rule for PUT', () => {
+    it('shows the R2 token guide and a CORS rule for PUT instead of the AWS guides', () => {
       renderStorageTab(R2_SETTINGS);
-      fireEvent.click(screen.getByText('settings.s3R2TokenTitle'));
-      screen.getByText('settings.s3R2TokenDescription');
-      fireEvent.click(screen.getByText('settings.s3CorsTitle'));
-      screen.getByText('settings.s3R2CorsDescription');
+      const setup = screen.getByTestId('s3-r2-setup');
+      expect(setup.textContent).toContain('settings.s3R2TokenDescription');
+      expect(setup.textContent).toContain('settings.s3R2CorsDescription');
       expect(screen.getByTestId('s3-cors-example').textContent).toContain('"PUT"');
+      expect(screen.queryByText('settings.s3PolicyTitle')).toBeNull();
+      expect(screen.queryByTestId('s3-compatible-setup')).toBeNull();
     });
   });
 

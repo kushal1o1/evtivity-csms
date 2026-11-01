@@ -11,6 +11,7 @@ import { STATUS_COLORS, SVG_COLORS } from '@/lib/chart-theme';
 import { stationDisplayState, stationStateLabelKey } from '@/lib/station-display-state';
 import { CellularBadge, StationStateIcon } from './StationStateIcon';
 import type { AvatarData } from '@/components/AccountAvatar';
+import type { FreePlacement } from '@evtivity/lib/site-layout';
 
 const GRID_SIZE = 20;
 
@@ -46,6 +47,8 @@ export interface LayoutSession {
   currentCostCents: number | null;
   currency: string;
   driver: LayoutSessionDriver | null;
+  /** The car the layout draws (color and body type); null or absent draws a grey sedan. */
+  vehicle?: { color: string | null; bodyType: string | null } | null | undefined;
 }
 
 export interface LayoutStation {
@@ -67,6 +70,8 @@ export interface LayoutStation {
   evses: EvseData[];
   /** The active session: null without one or without sessions:read (absent in older replies). */
   session?: LayoutSession | null | undefined;
+  /** Custom site: where the station stands (meters and turn); null or absent on the other site types. */
+  freePosition?: FreePlacement | null | undefined;
 }
 
 interface StationCardProps {

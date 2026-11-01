@@ -2,14 +2,25 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // The site layout demo as plain data (no database import), so the seed, its
-// tests and the docs screenshot fixtures read one plan. Two sites, each with
-// one kind of charger, as on real sites: Harbor Point Charging Hub, a parking
-// lot (an outdoor hub of DC fast chargers, 2 rows of 6 spots, two transformers
-// and a battery on the grass, a solar carport over the back row, one faulted
-// station without a simulator), and Lakeside Retail Park, an office or retail site (one row of
-// 12 spots along the building front with AC wall boxes, turned 90 degrees).
-// Both are load managed with panels, a sub-panel and circuits, so the 3D view
-// draws the panels and their links.
+// tests and the docs screenshot fixtures read one plan. Four sites, one per
+// site type and charger mounting, as on real sites: Harbor Point Charging Hub,
+// a parking lot (an outdoor hub of DC fast chargers, 2 rows of 6 spots, two
+// transformers and a battery on the grass, a solar carport over the back row,
+// one faulted station without a simulator, switchboards with load management
+// links); Lakeside Retail Park, an office or retail site with 12 charger
+// positions along the building front and AC wall boxes on the facade;
+// Riverside Medical Offices, an office or retail site with AC posts at the
+// head of 6 spots (stall mounting); Maple Street, a curbside site with AC
+// posts at the curb, 4 on each side of the street; and Willow Creek Park and
+// Ride, a custom site whose stations stand along a curved access road, each
+// turned to face it with its own parking spots (three DC fast chargers with
+// two spots each, five AC pedestals, three of them in a row under a solar
+// carport), with a transformer and a battery placed freely and an active
+// display message on the DC charger at the apex of the curve; and Northgate
+// Fleet Depot, a depot with nose-in bus bays under pantograph poles and at
+// plug-in dispensers, and truck pull-through lanes with megawatt dispensers.
+// Every site is load managed, so the station popups show the allocated limit;
+// the parking lot and the custom site draw their panels and links.
 //
 // Earlier releases of the demo mixed DC and AC chargers on both sites. A rerun
 // moves the stations of the earlier plan (`movedFrom`), renames its panels and
@@ -17,7 +28,8 @@
 // (`LAYOUT_DEMO_PREVIOUS_SETTINGS`), each only while the row still holds what
 // that plan wrote, so an operator's own change stays.
 
-import type { SiteLayoutSettings } from '@evtivity/lib/site-layout';
+import type { FreePlacement, SiteLayoutSettings } from '@evtivity/lib/site-layout';
+import type { VehicleBodyType, VehicleColor } from '@evtivity/lib/vehicle-appearance';
 
 export interface LayoutDemoStation {
   id: string;
@@ -37,6 +49,16 @@ export interface LayoutDemoStation {
   faulted?: boolean;
   /** Where the earlier plan seeded the station (a rerun moves it from there). */
   movedFrom?: { siteId: string; circuitId: string };
+  /** Custom site: where the station stands and its turn. */
+  free?: FreePlacement;
+  /** An active display message the station accepted (shown on its screen in 3D). */
+  message?: string;
+  /** The connector type of every EVSE (default CCS2 for DC, Type2 for AC). */
+  connectorType?: string;
+  /** The maximum power of every connector, in kW (default 150 DC, 22 AC). */
+  maxPowerKw?: number;
+  /** The EVSEs of the station (default 2 for DC, 1 for AC). */
+  evses?: number;
 }
 
 export interface LayoutDemoPanel {
@@ -75,7 +97,16 @@ export interface LayoutDemoSite {
 
 type StationExtra = Pick<
   LayoutDemoStation,
-  'cellular' | 'offline' | 'maintenance' | 'faulted' | 'movedFrom'
+  | 'cellular'
+  | 'offline'
+  | 'maintenance'
+  | 'faulted'
+  | 'movedFrom'
+  | 'free'
+  | 'message'
+  | 'connectorType'
+  | 'maxPowerKw'
+  | 'evses'
 >;
 
 const dc = (
@@ -121,12 +152,65 @@ export interface LayoutDemoTerminal {
 
 const HARBOR = 'sit_demolayout01';
 const LAKESIDE = 'sit_demolayout02';
+const RIVERSIDE = 'sit_demolayout03';
+const MAPLE = 'sit_demolayout04';
+const WILLOW = 'sit_demolayout05';
+const DEPOT = 'sit_demolayout06';
+
+/** A driver of the fleet depot demo and the one vehicle it drives (its body type decides what the layout draws). */
+export interface LayoutDemoFleetDriver {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  /** The RFID card the driver charges with (ISO14443). */
+  idToken: string;
+  vehicle: {
+    id: string;
+    make: string;
+    model: string;
+    year: string;
+    licensePlate: string;
+    bodyType: VehicleBodyType;
+    color: VehicleColor;
+  };
+}
+
+/** The fleet of the depot: its drivers charge only at the depot's stations (fleet_stations). */
+export interface LayoutDemoFleet {
+  id: string;
+  name: string;
+  description: string;
+  siteId: string;
+  drivers: LayoutDemoFleetDriver[];
+}
+
+const depotDriver = (
+  n: number,
+  firstName: string,
+  lastName: string,
+  vehicle: Omit<LayoutDemoFleetDriver['vehicle'], 'id' | 'licensePlate'>,
+): LayoutDemoFleetDriver => {
+  const nn = String(n).padStart(2, '0');
+  return {
+    id: `drv_demodepot${nn}`,
+    firstName,
+    lastName,
+    email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@northgate-fleet.example`,
+    idToken: `RFID-DEPOT-${nn}`,
+    vehicle: { id: `veh_demodepot${nn}`, licensePlate: `NGF-${String(100 + n)}`, ...vehicle },
+  };
+};
+
+/** The fixed id of the demo display message on each station that has one (OCPP message id). */
+export const LAYOUT_DEMO_MESSAGE_ID = 9001;
 
 export const LAYOUT_DEMO: {
   sites: LayoutDemoSite[];
   maintenanceEventId: string;
   faultInsightId: string;
   terminals: LayoutDemoTerminal[];
+  fleet: LayoutDemoFleet;
 } = {
   sites: [
     {
@@ -140,9 +224,6 @@ export const LAYOUT_DEMO: {
         siteType: 'parking_lot',
         spotsPerRow: 6,
         rows: 2,
-        spotWidthM: 3.4,
-        spotDepthM: 5.8,
-        laneWidthM: 7,
         facingDeg: 0,
         transformers: [
           { id: 'tx-1', name: 'Utility Transformer', ratedKva: 2500, x: -14, z: 2.5 },
@@ -225,10 +306,9 @@ export const LAYOUT_DEMO: {
         siteType: 'office_retail',
         spotsPerRow: 12,
         rows: 1,
-        spotWidthM: 2.8,
-        spotDepthM: 5.5,
-        laneWidthM: 6,
-        facingDeg: 90,
+        facingDeg: 0,
+        chargers: 12,
+        mounting: 'wall',
         transformers: [],
       },
       panels: [
@@ -296,7 +376,387 @@ export const LAYOUT_DEMO: {
         ac(20, 9, 0, 'cir_demolayout04'),
       ],
     },
+    {
+      id: RIVERSIDE,
+      name: 'Riverside Medical Offices',
+      address: '40 River Street',
+      city: 'Troy',
+      latitude: '42.728400',
+      longitude: '-73.691800',
+      settings: {
+        siteType: 'office_retail',
+        spotsPerRow: 10,
+        rows: 2,
+        facingDeg: 0,
+        chargers: 6,
+        mounting: 'stall',
+        transformers: [],
+      },
+      panels: [
+        {
+          id: 'pnl_demolayout05',
+          parentPanelId: null,
+          name: 'Parking Panel',
+          breakerRatingAmps: 200,
+          voltageV: 208,
+          phases: 3,
+          maxContinuousKw: 57.6,
+          circuits: [
+            {
+              id: 'cir_demolayout05',
+              name: 'Level 2 Posts',
+              breakerRatingAmps: 125,
+              maxContinuousKw: 36,
+            },
+          ],
+        },
+      ],
+      stations: [
+        ac(22, 0, 0, 'cir_demolayout05'),
+        ac(23, 1, 0, 'cir_demolayout05'),
+        ac(24, 2, 0, 'cir_demolayout05', { cellular: true }),
+        ac(25, 4, 0, 'cir_demolayout05'),
+      ],
+    },
+    {
+      id: MAPLE,
+      name: 'Maple Street Curbside',
+      address: '120 Maple Street',
+      city: 'Schenectady',
+      latitude: '42.812500',
+      longitude: '-73.939600',
+      settings: {
+        siteType: 'curbside',
+        spotsPerRow: 10,
+        rows: 2,
+        facingDeg: 0,
+        chargersLeft: 4,
+        chargersRight: 4,
+        transformers: [],
+      },
+      panels: [
+        {
+          id: 'pnl_demolayout06',
+          parentPanelId: null,
+          name: 'Street Cabinet',
+          breakerRatingAmps: 225,
+          voltageV: 208,
+          phases: 3,
+          maxContinuousKw: 64.8,
+          circuits: [
+            {
+              id: 'cir_demolayout06',
+              name: 'Curb Posts',
+              breakerRatingAmps: 175,
+              maxContinuousKw: 50.4,
+            },
+          ],
+        },
+      ],
+      stations: [
+        ac(26, 0, 0, 'cir_demolayout06'),
+        ac(27, 1, 0, 'cir_demolayout06'),
+        ac(28, 2, 0, 'cir_demolayout06', { cellular: true }),
+        ac(29, 3, 0, 'cir_demolayout06'),
+        ac(30, 0, 1, 'cir_demolayout06'),
+        ac(31, 1, 1, 'cir_demolayout06'),
+        ac(32, 2, 1, 'cir_demolayout06', { cellular: true }),
+        ac(33, 3, 1, 'cir_demolayout06', { offline: true }),
+      ],
+    },
+    {
+      id: WILLOW,
+      name: 'Willow Creek Park and Ride',
+      address: '75 Willow Creek Road',
+      city: 'Clifton Park',
+      latitude: '42.865600',
+      longitude: '-73.770900',
+      settings: {
+        siteType: 'custom',
+        spotsPerRow: 10,
+        rows: 2,
+        facingDeg: 0,
+        transformers: [{ id: 'tx-1', name: 'Pad Transformer', ratedKva: 1000, x: -30, z: -26 }],
+        energyAssets: [
+          {
+            id: 'bat-1',
+            type: 'battery',
+            name: 'Battery Storage',
+            capacityKwh: 500,
+            x: 30,
+            z: -24,
+          },
+          // Over the three AC pedestals in a row.
+          {
+            id: 'pv-1',
+            type: 'solar',
+            name: 'Solar Carport',
+            capacityKwp: 10,
+            row: 0,
+            x: 4.5,
+            z: -22,
+            rotationDeg: 0,
+          },
+        ],
+      },
+      panels: [
+        {
+          id: 'pnl_demolayout07',
+          parentPanelId: null,
+          name: 'Park and Ride Switchboard',
+          breakerRatingAmps: 600,
+          voltageV: 480,
+          phases: 3,
+          maxContinuousKw: 400,
+          circuits: [
+            {
+              id: 'cir_demolayout07',
+              name: 'Fast Charge Circuit',
+              breakerRatingAmps: 400,
+              maxContinuousKw: 266,
+            },
+            {
+              id: 'cir_demolayout08',
+              name: 'Level 2 Circuit',
+              breakerRatingAmps: 200,
+              maxContinuousKw: 96,
+            },
+          ],
+        },
+      ],
+      // Along the curve of the access road, each turned to face the road; at
+      // its far end three AC pedestals in a straight row under the solar carport.
+      stations: [
+        dc(34, 0, 0, 'cir_demolayout07', { free: { x: -21.5, z: -11, rotationDeg: 297 } }),
+        ac(35, 1, 0, 'cir_demolayout08', { free: { x: -17.5, z: -17.5, rotationDeg: 315 } }),
+        ac(36, 2, 0, 'cir_demolayout08', {
+          cellular: true,
+          free: { x: -11.5, z: -21, rotationDeg: 332 },
+        }),
+        dc(37, 3, 0, 'cir_demolayout07', {
+          free: { x: -4, z: -24, rotationDeg: 0 },
+          message: 'Welcome to Willow Creek. Idle fees apply 15 minutes after charging ends.',
+        }),
+        ac(38, 4, 0, 'cir_demolayout08', { free: { x: 1.5, z: -24, rotationDeg: 0 } }),
+        ac(39, 5, 0, 'cir_demolayout08', { free: { x: 4.5, z: -24, rotationDeg: 0 } }),
+        ac(40, 6, 0, 'cir_demolayout08', { free: { x: 7.5, z: -24, rotationDeg: 0 } }),
+        dc(41, 7, 0, 'cir_demolayout07', { free: { x: 16, z: -19, rotationDeg: 40 } }),
+      ],
+    },
+    {
+      id: DEPOT,
+      name: 'Northgate Fleet Depot',
+      address: '1200 Northgate Industrial Parkway',
+      city: 'Latham',
+      latitude: '42.747800',
+      longitude: '-73.758900',
+      // Six bus bays (one free) and three truck lanes. The substation and the
+      // battery stand on the grass behind the yard, clear of the gate.
+      settings: {
+        siteType: 'depot',
+        spotsPerRow: 8,
+        rows: 1,
+        facingDeg: 0,
+        busBays: 6,
+        truckLanes: 3,
+        transformers: [{ id: 'tx-1', name: 'Depot Substation', ratedKva: 5000, x: 8, z: -16 }],
+        energyAssets: [
+          {
+            id: 'bat-1',
+            type: 'battery',
+            name: 'Depot Battery Storage',
+            capacityKwh: 2000,
+            x: 20,
+            z: -16,
+          },
+        ],
+      },
+      panels: [
+        {
+          id: 'pnl_demolayout08',
+          parentPanelId: null,
+          name: 'Depot Main Switchboard',
+          breakerRatingAmps: 4000,
+          voltageV: 480,
+          phases: 3,
+          maxContinuousKw: 2660,
+          circuits: [
+            {
+              id: 'cir_demolayout09',
+              name: 'Bus Pantograph Circuit',
+              breakerRatingAmps: 2000,
+              maxContinuousKw: 1330,
+            },
+            {
+              id: 'cir_demolayout10',
+              name: 'Bus Plug-In Circuit',
+              breakerRatingAmps: 800,
+              maxContinuousKw: 532,
+            },
+          ],
+        },
+        {
+          id: 'pnl_demolayout09',
+          parentPanelId: 'pnl_demolayout08',
+          name: 'Truck Charging Switchboard',
+          breakerRatingAmps: 2500,
+          voltageV: 480,
+          phases: 3,
+          maxContinuousKw: 1660,
+          circuits: [
+            {
+              id: 'cir_demolayout11',
+              name: 'Megawatt Charging Circuit',
+              breakerRatingAmps: 2000,
+              maxContinuousKw: 1330,
+            },
+            {
+              id: 'cir_demolayout12',
+              name: 'Box Truck Circuit',
+              breakerRatingAmps: 600,
+              maxContinuousKw: 400,
+            },
+          ],
+        },
+      ],
+      // The bus bays (row 0): three depot pantograph poles and two plug-in
+      // dispensers, one bay each. The truck lanes (row 1): two megawatt
+      // dispensers and a box truck dispenser, one lane each.
+      stations: [
+        dc(42, 0, 0, 'cir_demolayout09', {
+          connectorType: 'OppCharge',
+          maxPowerKw: 450,
+          message: 'Depot charging: buses leave at 05:30. Park nose in under the pantograph.',
+        }),
+        dc(43, 1, 0, 'cir_demolayout09', {
+          connectorType: 'OppCharge',
+          maxPowerKw: 450,
+        }),
+        dc(44, 2, 0, 'cir_demolayout09', {
+          connectorType: 'OppCharge',
+          maxPowerKw: 450,
+        }),
+        dc(45, 3, 0, 'cir_demolayout10', {
+          connectorType: 'CCS1',
+          maxPowerKw: 150,
+        }),
+        dc(46, 4, 0, 'cir_demolayout10', {
+          connectorType: 'CCS1',
+          maxPowerKw: 150,
+        }),
+        dc(47, 0, 1, 'cir_demolayout11', {
+          connectorType: 'cMCS',
+          maxPowerKw: 1000,
+        }),
+        dc(48, 1, 1, 'cir_demolayout11', {
+          connectorType: 'cMCS',
+          maxPowerKw: 1000,
+        }),
+        dc(49, 2, 1, 'cir_demolayout12', {
+          connectorType: 'CCS1',
+          maxPowerKw: 240,
+        }),
+      ],
+    },
   ],
+  /**
+   * The fleet of Northgate Fleet Depot: transit buses, semi trucks and box
+   * trucks, one vehicle per driver, in the colors such fleets run. The depot's
+   * stations are the fleet's stations, so the simulator charges them with
+   * these drivers' cards and the layout draws their vehicles.
+   */
+  fleet: {
+    id: 'flt_demodepot01',
+    name: 'Northgate Transit and Freight',
+    description: 'Transit buses, semi trucks and box trucks charging at Northgate Fleet Depot',
+    siteId: DEPOT,
+    drivers: [
+      depotDriver(1, 'Daniel', 'Reyes', {
+        make: 'New Flyer',
+        model: 'Xcelsior CHARGE NG',
+        year: '2025',
+        bodyType: 'bus',
+        color: 'white',
+      }),
+      depotDriver(2, 'Grace', 'Okafor', {
+        make: 'New Flyer',
+        model: 'Xcelsior CHARGE NG',
+        year: '2025',
+        bodyType: 'bus',
+        color: 'blue',
+      }),
+      depotDriver(3, 'Hector', 'Alvarez', {
+        make: 'Gillig',
+        model: 'Low Floor Battery Electric',
+        year: '2024',
+        bodyType: 'bus',
+        color: 'green',
+      }),
+      depotDriver(4, 'Priya', 'Nair', {
+        make: 'Gillig',
+        model: 'Low Floor Battery Electric',
+        year: '2024',
+        bodyType: 'bus',
+        color: 'yellow_orange',
+      }),
+      depotDriver(5, 'Samuel', 'Brooks', {
+        make: 'New Flyer',
+        model: 'Xcelsior CHARGE NG',
+        year: '2023',
+        bodyType: 'bus',
+        color: 'red',
+      }),
+      depotDriver(6, 'Lena', 'Fischer', {
+        make: 'Nova Bus',
+        model: 'LFSe+',
+        year: '2024',
+        bodyType: 'bus',
+        color: 'silver',
+      }),
+      depotDriver(7, 'Marcus', 'Hill', {
+        make: 'Freightliner',
+        model: 'eCascadia',
+        year: '2025',
+        bodyType: 'semi_truck',
+        color: 'white',
+      }),
+      depotDriver(8, 'Elena', 'Petrova', {
+        make: 'Volvo',
+        model: 'VNR Electric',
+        year: '2025',
+        bodyType: 'semi_truck',
+        color: 'blue',
+      }),
+      depotDriver(9, 'Tom', 'Becker', {
+        make: 'Freightliner',
+        model: 'eCascadia',
+        year: '2024',
+        bodyType: 'semi_truck',
+        color: 'red',
+      }),
+      depotDriver(10, 'Aisha', 'Bello', {
+        make: 'Tesla',
+        model: 'Semi',
+        year: '2025',
+        bodyType: 'semi_truck',
+        color: 'black',
+      }),
+      depotDriver(11, 'Kevin', 'Tran', {
+        make: 'Freightliner',
+        model: 'eM2',
+        year: '2024',
+        bodyType: 'box_truck',
+        color: 'white',
+      }),
+      depotDriver(12, 'Rosa', 'Medina', {
+        make: 'Freightliner',
+        model: 'eM2',
+        year: '2025',
+        bodyType: 'box_truck',
+        color: 'yellow_orange',
+      }),
+    ],
+  },
   /** The demo maintenance event of Harbor Point (one station). */
   maintenanceEventId: 'mev_demolayout01',
   /** The open AI insight on the faulted station (seed-ai-insights.ts `seedStationFaultInsight`). */
@@ -332,17 +792,18 @@ export const LAYOUT_DEMO: {
 /**
  * The layout settings earlier plans seeded, by site, oldest first: a rerun
  * replaces stored settings only while they are still one of these (an
- * operator's edit stays). Harbor Point's second entry is the plan before the
- * battery and the solar canopy.
+ * operator's edit stays). The spot and lane sizes the earlier plans also
+ * stored are no settings any more (standard dimensions) and are left out:
+ * comparing ignores them. Harbor Point's second entry is the plan before the
+ * battery and the solar canopy; Lakeside's second the plan before charger
+ * counts and mountings (one row of 12 spots turned 90 degrees); Northgate's
+ * the custom site it was before the Depot site type.
  */
 export const LAYOUT_DEMO_PREVIOUS_SETTINGS: Readonly<Record<string, SiteLayoutSettings[]>> = {
   [HARBOR]: [
     {
       spotsPerRow: 10,
       rows: 2,
-      spotWidthM: 3.2,
-      spotDepthM: 5.6,
-      laneWidthM: 6,
       facingDeg: 0,
       transformers: [
         { id: 'tx-1', name: 'Utility Transformer', ratedKva: 2500, x: 36, z: 2.8 },
@@ -353,9 +814,6 @@ export const LAYOUT_DEMO_PREVIOUS_SETTINGS: Readonly<Record<string, SiteLayoutSe
       siteType: 'parking_lot',
       spotsPerRow: 6,
       rows: 2,
-      spotWidthM: 3.4,
-      spotDepthM: 5.8,
-      laneWidthM: 7,
       facingDeg: 0,
       transformers: [
         { id: 'tx-1', name: 'Utility Transformer', ratedKva: 2500, x: -14, z: 2.5 },
@@ -367,11 +825,34 @@ export const LAYOUT_DEMO_PREVIOUS_SETTINGS: Readonly<Record<string, SiteLayoutSe
     {
       spotsPerRow: 6,
       rows: 3,
-      spotWidthM: 3.6,
-      spotDepthM: 6,
-      laneWidthM: 7,
       facingDeg: 90,
       transformers: [{ id: 'tx-1', name: 'Lakeside Substation', ratedKva: 1500, x: 26.1, z: 4 }],
+    },
+    {
+      siteType: 'office_retail',
+      spotsPerRow: 12,
+      rows: 1,
+      facingDeg: 90,
+      transformers: [],
+    },
+  ],
+  [DEPOT]: [
+    {
+      siteType: 'custom',
+      spotsPerRow: 8,
+      rows: 1,
+      facingDeg: 0,
+      transformers: [{ id: 'tx-1', name: 'Depot Substation', ratedKva: 5000, x: -14, z: 8 }],
+      energyAssets: [
+        {
+          id: 'bat-1',
+          type: 'battery',
+          name: 'Depot Battery Storage',
+          capacityKwh: 2000,
+          x: -14,
+          z: 20,
+        },
+      ],
     },
   ],
 };

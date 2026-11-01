@@ -80,6 +80,8 @@ import {
 import * as vehicleService from '../services/vehicle.service.js';
 import {
   replyVehicleServiceError,
+  vehicleAppearanceBodyFields,
+  vehicleAppearanceItemFields,
   vehicleAutochargeFields,
   vehicleLastSeen,
 } from '../lib/vehicle-response.js';
@@ -396,6 +398,7 @@ const vehicleItem = z
       .nullable()
       .describe('Model year (4-digit)'),
     licensePlate: z.string().max(20).nullable().describe('Vehicle license plate'),
+    ...vehicleAppearanceItemFields,
     ...vehicleAutochargeFields,
     autochargeBlockedAt: z.coerce
       .date()
@@ -438,6 +441,7 @@ const createVehicleBody = z.object({
     .optional()
     .describe('Model year (4-digit)'),
   licensePlate: z.string().max(20).optional().describe('License plate number'),
+  ...vehicleAppearanceBodyFields,
   ...vehicleIdFields,
 });
 
@@ -456,6 +460,7 @@ const updateVehicleBody = z.object({
     .nullable()
     .optional()
     .describe('License plate. Null removes it.'),
+  ...vehicleAppearanceBodyFields,
   ...vehicleIdFields,
 });
 

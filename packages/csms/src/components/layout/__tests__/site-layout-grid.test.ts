@@ -2,11 +2,19 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_LAYOUT_GRID, bayToPosition, positionToBay } from '@evtivity/lib/site-layout';
+import {
+  DEFAULT_LAYOUT_GRID,
+  bayToPosition,
+  effectiveLayoutSettings,
+  positionToBay,
+  type SiteLayoutSettings,
+} from '@evtivity/lib/site-layout';
 import {
   BAY_STATION_Z,
   CAMERA_FOV,
   CURB_M,
+  CURB_POST_BACK_M,
+  CURB_POST_IN_M,
   FACADE_Z,
   SIDEWALK_M,
   buildingBox,
@@ -28,29 +36,47 @@ import {
   bayTurn,
   chargersAtBack,
   clampTarget,
+  depotStationPlacement,
   clampToLot,
   fitFrame,
   fogRange,
   frontCamera,
   groundBox,
+  isSpot,
+  layoutGroundBox,
   logoFit,
   lotOf,
   maxZoomDistance,
   panBox,
   rotateBox,
   sceneBox,
+  spotRect,
   stationBackPoint,
   stationProp,
   worldToBay,
 } from '../site-layout-grid';
 
 const lot = lotOf(DEFAULT_LAYOUT_GRID);
+const office = lotOf({ ...DEFAULT_LAYOUT_GRID, siteType: 'office_retail', chargers: 6 });
+const officeStall = lotOf({
+  ...DEFAULT_LAYOUT_GRID,
+  siteType: 'office_retail',
+  chargers: 6,
+  mounting: 'stall',
+});
+const street = lotOf({
+  ...DEFAULT_LAYOUT_GRID,
+  siteType: 'curbside',
+  chargersLeft: 4,
+  chargersRight: 6,
+});
 
 describe('site layout 3D lot', () => {
-  it('takes the default lot of 2 rows of 10 spots with a lane between the rows', () => {
-    expect(lot).toMatchObject({ cols: 10, rows: 2, spotW: 3.2, spotD: 5.6, lane: 6, pitch: 11.6 });
-    expect(lot.width).toBeCloseTo(32);
-    expect(lot.depth).toBeCloseTo(17.2);
+  it('takes the default lot of 2 rows of 10 standard spots with a two-way aisle between the rows', () => {
+    expect(lot).toMatchObject({ cols: 10, rows: 2, spotW: 2.6, spotD: 5.5, lane: 7, pitch: 12.5 });
+    expect(lot.rowLengths).toEqual([10, 10]);
+    expect(lot.width).toBeCloseTo(26);
+    expect(lot.depth).toBeCloseTo(18);
     expect(lot.facing).toBe(-0);
   });
 
@@ -67,23 +93,26 @@ describe('site layout 3D lot', () => {
       expect(worldToBay(p.x + lot.spotW * 0.45, z0 + 0.05, lot)).toEqual(bay);
       expect(worldToBay(p.x - lot.spotW * 0.45, z0 + lot.spotD - 0.05, lot)).toEqual(bay);
       expect(positionToBay(bayToPosition(bay))).toEqual(bay);
+      expect(spotRect(bay, lot)).toEqual({
+        minX: lot.spotW * bay.col,
+        maxX: lot.spotW * bay.col + lot.spotW,
+        minZ: z0,
+        maxZ: z0 + lot.spotD,
+      });
     }
   });
 
-  it('spaces the rows by the spot depth plus the lane', () => {
-    const wide = lotOf({ ...DEFAULT_LAYOUT_GRID, spotWidthM: 4, spotDepthM: 6, laneWidthM: 8 });
-    expect(bayToWorld({ col: 2, row: 0 }, wide)).toEqual({ x: 10, z: BAY_STATION_Z });
-    // Row 1 is turned: its chargers stand at its back edge, 14 + 6 m.
-    expect(bayToWorld({ col: 2, row: 1 }, wide)).toEqual({ x: 10, z: 20 - BAY_STATION_Z });
+  it('spaces the rows by the standard spot depth plus the aisle', () => {
+    expect(bayToWorld({ col: 2, row: 0 }, lot)).toEqual({ x: 6.5, z: BAY_STATION_Z });
+    // Row 1 is turned: its chargers stand at its back edge, 12.5 + 5.5 m.
+    expect(bayToWorld({ col: 2, row: 1 }, lot).z).toBeCloseTo(18 - BAY_STATION_Z);
   });
 
   it('puts the chargers of both rows of the default lot at the outer edges, bays opening onto the lane', () => {
     const row0 = bayToWorld({ col: 3, row: 0 }, lot);
     const row1 = bayToWorld({ col: 3, row: 1 }, lot);
-    // Row 0 at the front edge (z 0), row 1 at the back edge (the lot depth).
     expect(row0.z).toBeCloseTo(BAY_STATION_Z);
     expect(row1.z).toBeCloseTo(lot.depth - BAY_STATION_Z);
-    // Row 0 faces +z, row 1 is turned to face -z: both face the lane between them.
     expect(bayTurn({ col: 3, row: 0 }, lot)).toBe(0);
     expect(bayTurn({ col: 3, row: 1 }, lot)).toBeCloseTo(Math.PI);
     const laneMid = lot.spotD + lot.lane / 2;
@@ -92,24 +121,19 @@ describe('site layout 3D lot', () => {
   });
 
   it('pairs rows around the lanes in a lot of more than two rows', () => {
-    expect([0].map((r) => chargersAtBack(r, 1))).toEqual([false]);
-    expect([0, 1].map((r) => chargersAtBack(r, 2))).toEqual([false, true]);
+    const rows = (n: number) => lotOf({ ...DEFAULT_LAYOUT_GRID, rows: n });
+    const turned = (n: number) => Array.from({ length: n }, (_, r) => chargersAtBack(r, rows(n)));
+    expect(turned(1)).toEqual([false]);
+    expect(turned(2)).toEqual([false, true]);
     // An odd last row opens onto the lane before it: chargers at the back edge of the lot.
-    expect([0, 1, 2].map((r) => chargersAtBack(r, 3))).toEqual([false, true, true]);
-    expect([0, 1, 2, 3].map((r) => chargersAtBack(r, 4))).toEqual([false, true, false, true]);
-    expect([0, 1, 2, 3, 4].map((r) => chargersAtBack(r, 5))).toEqual([
-      false,
-      true,
-      false,
-      true,
-      true,
-    ]);
+    expect(turned(3)).toEqual([false, true, true]);
+    expect(turned(4)).toEqual([false, true, false, true]);
+    expect(turned(5)).toEqual([false, true, false, true, true]);
     // A station on the grass below the lot keeps the unturned model.
-    expect(chargersAtBack(3, 3)).toBe(false);
-    const three = lotOf({ ...DEFAULT_LAYOUT_GRID, rows: 3 });
+    expect(chargersAtBack(3, rows(3))).toBe(false);
+    const three = rows(3);
     expect(bayToWorld({ col: 0, row: 0 }, three).z).toBeCloseTo(BAY_STATION_Z);
     expect(bayToWorld({ col: 0, row: 2 }, three).z).toBeCloseTo(three.depth - BAY_STATION_Z);
-    // Every station maps back to its own spot, turned or not.
     for (const row of [0, 1, 2]) {
       const p = bayToWorld({ col: 5, row }, three);
       expect(worldToBay(p.x, p.z, three)).toEqual({ col: 5, row });
@@ -124,6 +148,16 @@ describe('site layout 3D lot', () => {
     }
   });
 
+  it('turns only a parking lot by its facing', () => {
+    expect(lotOf({ ...DEFAULT_LAYOUT_GRID, facingDeg: 90 }).facing).toBeCloseTo(-Math.PI / 2);
+    expect(
+      lotOf({ ...DEFAULT_LAYOUT_GRID, facingDeg: 90, siteType: 'office_retail' }).facing,
+    ).toBeCloseTo(0);
+    expect(
+      lotOf({ ...DEFAULT_LAYOUT_GRID, facingDeg: 90, siteType: 'curbside' }).facing,
+    ).toBeCloseTo(0);
+  });
+
   it('ends a load management link behind the charger, on the curb side of its row', () => {
     const front = stationBackPoint({ col: 2, row: 0 }, lot);
     const back = stationBackPoint({ col: 2, row: 1 }, lot);
@@ -134,38 +168,95 @@ describe('site layout 3D lot', () => {
 
   it('takes the site type into the lot, a parking lot by default', () => {
     expect(lot.siteType).toBe('parking_lot');
-    expect(lotOf({ ...DEFAULT_LAYOUT_GRID, siteType: 'office_retail' }).siteType).toBe(
-      'office_retail',
-    );
+    expect(office.siteType).toBe('office_retail');
+    expect(street.siteType).toBe('curbside');
   });
 
-  it('hangs the AC chargers of the first row of an office or retail site on the facade, nothing else', () => {
-    const office = lotOf({ ...DEFAULT_LAYOUT_GRID, siteType: 'office_retail' });
+  it('gives an office or retail site one row of its chargers with the aisle in front of it', () => {
+    expect(office).toMatchObject({ rows: 1, cols: 6, spotW: 2.6, spotD: 5.5, lane: 7 });
+    expect(office.rowLengths).toEqual([6]);
+    expect(office.depth).toBeCloseTo(12.5);
+    expect(office.mounting).toBe('wall');
+    expect(officeStall.mounting).toBe('stall');
+    expect(chargersAtBack(0, office)).toBe(false);
+    expect(isSpot({ col: 5, row: 0 }, office)).toBe(true);
+    expect(isSpot({ col: 6, row: 0 }, office)).toBe(false);
+    expect(isSpot({ col: 0, row: 1 }, office)).toBe(false);
+  });
+
+  it('hangs the AC chargers of a wall-mounted office or retail row on the facade, nothing else', () => {
     expect(wallMounted({ col: 3, row: 0 }, office, 'ac')).toBe(true);
-    // A DC charger, another row, a station beside the lot and every parking lot charger stand at the curb.
+    // A DC charger, a station off the row, stall posts and every other site type stand at the curb.
     expect(wallMounted({ col: 3, row: 0 }, office, 'dc')).toBe(false);
     expect(wallMounted({ col: 3, row: 1 }, office, 'ac')).toBe(false);
     expect(wallMounted({ col: 12, row: 0 }, office, 'ac')).toBe(false);
+    expect(wallMounted({ col: 3, row: 0 }, officeStall, 'ac')).toBe(false);
     expect(wallMounted({ col: 3, row: 0 }, lot, 'ac')).toBe(false);
-    // The wall box is on the facade behind its spot, and its link ends there.
+    expect(wallMounted({ col: 3, row: 0 }, street, 'ac')).toBe(false);
+    // The wall box is on the facade behind its spot.
     expect(BAY_STATION_Z + wallBoxOffset()).toBeCloseTo(FACADE_Z);
-    expect(stationBackPoint({ col: 3, row: 0 }, office, 'ac').z).toBeCloseTo(FACADE_Z + 0.15);
-    expect(stationBackPoint({ col: 3, row: 0 }, office, 'dc').z).toBeCloseTo(
-      BAY_STATION_Z - STATION_BACK_OFFSET,
-    );
   });
 
-  it('puts the building along the front of the lot past the sidewalk, with room for the wall panels', () => {
-    const office = lotOf({ ...DEFAULT_LAYOUT_GRID, siteType: 'office_retail' });
+  it('puts the building along the front of the office or retail row past the sidewalk', () => {
     const b = buildingBox(office);
     expect(b.maxZ).toBeCloseTo(FACADE_Z);
     expect(FACADE_Z).toBeCloseTo(-(CURB_M + SIDEWALK_M));
     expect(b.minX).toBeLessThan(0);
     expect(b.maxX).toBeGreaterThan(office.width);
-    // Many panels widen the part left of the lot.
-    expect(buildingBox(office, 12).minX).toBeLessThan(b.minX);
     // The framing takes in the facade, not the whole building behind it.
     for (const p of buildingFramePoints(office)) expect(p.z).toBeGreaterThan(b.minZ + 10);
+    expect(layoutGroundBox(office).minZ).toBeCloseTo(FACADE_Z);
+  });
+
+  it('lays out a street: a parallel parking lane along each curb around two travel lanes', () => {
+    expect(street).toMatchObject({ rows: 2, cols: 6, spotW: 6, spotD: 2.4, lane: 7 });
+    expect(street.rowLengths).toEqual([4, 6]);
+    expect(street.depth).toBeCloseTo(11.8);
+    expect(street.width).toBeCloseTo(36);
+    // The left curb faces the street (+z); the right curb is turned.
+    expect(bayTurn({ col: 0, row: 0 }, street)).toBe(0);
+    expect(bayTurn({ col: 0, row: 1 }, street)).toBeCloseTo(Math.PI);
+    // Posts stand on the sidewalks behind the curbs, near the front end of their spot.
+    const left = bayToWorld({ col: 2, row: 0 }, street);
+    expect(left.z).toBeCloseTo(-(CURB_M + CURB_POST_BACK_M));
+    expect(left.x).toBeCloseTo(12 + CURB_POST_IN_M);
+    const right = bayToWorld({ col: 2, row: 1 }, street);
+    expect(right.z).toBeCloseTo(street.depth + CURB_M + CURB_POST_BACK_M);
+    expect(right.x).toBeCloseTo(18 - CURB_POST_IN_M);
+    // The parallel spots are the parking lanes.
+    expect(spotRect({ col: 2, row: 0 }, street)).toEqual({
+      minX: 12,
+      maxX: 18,
+      minZ: 0,
+      maxZ: 2.4,
+    });
+    expect(spotRect({ col: 2, row: 1 }, street).minZ).toBeCloseTo(9.4);
+    // Both sidewalks belong to the site.
+    const ground = layoutGroundBox(street);
+    expect(ground.minZ).toBeCloseTo(-(CURB_M + SIDEWALK_M));
+    expect(ground.maxZ).toBeCloseTo(street.depth + CURB_M + SIDEWALK_M);
+    // Every post maps back to its own spot.
+    for (const bay of [
+      { col: 0, row: 0 },
+      { col: 3, row: 0 },
+      { col: 5, row: 1 },
+    ]) {
+      const p = bayToWorld(bay, street);
+      expect(worldToBay(p.x, p.z, street)).toEqual(bay);
+    }
+  });
+
+  it('never picks a curb without chargers', () => {
+    const oneSide = lotOf({
+      ...DEFAULT_LAYOUT_GRID,
+      siteType: 'curbside',
+      chargersLeft: 0,
+      chargersRight: 3,
+    });
+    expect(oneSide.rowLengths).toEqual([0, 3]);
+    expect(worldToBay(1, -1, oneSide)).toEqual({ col: 0, row: 1 });
+    expect(isSpot({ col: 0, row: 0 }, oneSide)).toBe(false);
+    expect(clampToLot(-50, -50, oneSide)).toEqual(bayToWorld({ col: 0, row: 1 }, oneSide));
   });
 
   it('pulses the charging glow gently, steady with reduced motion', () => {
@@ -189,7 +280,6 @@ describe('site layout 3D lot', () => {
   });
 
   it('turns the lot by the facing (clockwise from above)', () => {
-    expect(lotOf({ ...DEFAULT_LAYOUT_GRID, facingDeg: 90 }).facing).toBeCloseTo(-Math.PI / 2);
     const box = { minX: 0, maxX: 10, minZ: 0, maxZ: 4 };
     const turned = rotateBox(box, Math.PI / 2);
     expect(turned.minX).toBeCloseTo(0);
@@ -294,5 +384,28 @@ describe('site layout 3D lot', () => {
     expect(stationLabelInRange(41, 10, 150)).toBe(false);
     expect(stationLabelInRange(130, 100, 150)).toBe(true);
     expect(stationLabelInRange(150, 100, 150)).toBe(false);
+  });
+
+  it('maps depot slots to their bus bays and truck lanes and back', () => {
+    const settings: SiteLayoutSettings = {
+      ...effectiveLayoutSettings(null),
+      siteType: 'depot',
+      busBays: 3,
+      truckLanes: 2,
+    };
+    const lot = lotOf(settings);
+    expect(lot.depot?.bays).toHaveLength(3);
+    expect(bayToWorld({ col: 1, row: 0 }, lot)).toEqual({ x: 6.45, z: 0.9 });
+    expect(bayTurn({ col: 1, row: 1 }, lot)).toBe(0);
+    const lane = spotRect({ col: 1, row: 1 }, lot);
+    expect(lane.maxX - lane.minX).toBe(25);
+    // A point in a lane finds that lane; one on the drive lane the nearest spot.
+    expect(worldToBay((lane.minX + lane.maxX) / 2, (lane.minZ + lane.maxZ) / 2, lot)).toEqual({
+      col: 1,
+      row: 1,
+    });
+    expect(worldToBay(2, 6, lot)).toEqual({ col: 0, row: 0 });
+    expect(layoutGroundBox(lot)).toEqual(lot.depot?.yard);
+    expect(depotStationPlacement({ col: 0, row: 1 }, lot).spotType).toBe('truck_pull_through');
   });
 });

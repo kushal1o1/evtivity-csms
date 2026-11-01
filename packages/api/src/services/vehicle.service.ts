@@ -40,6 +40,7 @@ import {
   normalizeVin,
   vehicleIdColumn,
 } from '@evtivity/lib/vehicle-id';
+import type { VehicleBodyType, VehicleColor } from '@evtivity/lib/vehicle-appearance';
 import type { AuditActorInfo } from '../lib/audit-actor.js';
 import { tokenVehicleIdKeySql } from '../lib/token-vehicle-id-sql.js';
 
@@ -105,6 +106,8 @@ export interface VehicleFields {
   year?: string | null | undefined;
   vin?: string | null | undefined;
   licensePlate?: string | null | undefined;
+  color?: VehicleColor | null | undefined;
+  bodyType?: VehicleBodyType | null | undefined;
   evccid?: string | null | undefined;
   autochargeEnabled?: boolean | undefined;
 }
@@ -300,6 +303,8 @@ export async function createVehicle(
         year: values.year ?? null,
         vin: values.vin ?? null,
         licensePlate: values.licensePlate ?? null,
+        color: values.color ?? null,
+        bodyType: values.bodyType ?? null,
         evccid: values.evccid ?? null,
         autochargeEnabled: values.autochargeEnabled ?? false,
       })
@@ -348,6 +353,8 @@ export async function updateVehicle(
       if (values.year !== undefined) set.year = values.year;
       if (values.vin !== undefined) set.vin = values.vin;
       if (values.licensePlate !== undefined) set.licensePlate = values.licensePlate;
+      if (values.color !== undefined) set.color = values.color;
+      if (values.bodyType !== undefined) set.bodyType = values.bodyType;
       if (values.evccid !== undefined) set.evccid = values.evccid;
       if (values.autochargeEnabled !== undefined) set.autochargeEnabled = values.autochargeEnabled;
       const vin = set.vin !== undefined ? set.vin : before.vin;

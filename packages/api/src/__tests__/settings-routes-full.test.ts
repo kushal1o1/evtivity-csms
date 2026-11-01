@@ -891,6 +891,24 @@ describe('Settings routes - full coverage', () => {
       },
     );
 
+    it('returns configured: true for an S3-compatible provider without a region (us-east-1)', async () => {
+      setupDbResults([
+        { key: 's3.provider', value: 's3-compatible' },
+        { key: 's3.endpoint', value: 'https://storage.example.com' },
+        { key: 's3.bucket', value: 'my-bucket' },
+        { key: 's3.region', value: '' },
+        { key: 's3.accessKeyIdEnc', value: 'enc-key-id' },
+        { key: 's3.secretAccessKeyEnc', value: 'enc-secret' },
+      ]);
+      const res = await app.inject({
+        method: 'GET',
+        url: '/settings/s3/status',
+        headers: { authorization: `Bearer ${operatorToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().configured).toBe(true);
+    });
+
     it('ignores non-s3 settings in the result set', async () => {
       setupDbResults([
         { key: 'smtp.host', value: 'mail.example.com' },
@@ -1064,6 +1082,38 @@ describe('Settings routes - full coverage', () => {
     }
 
     const PROOF = { kind: 'password', password: 'current-password' };
+
+    it('needs a region for AWS S3 (400 VALIDATION_ERROR, nothing written)', async () => {
+      for (const region of [undefined, '', '   ']) {
+        vi.mocked(db.insert).mockClear();
+        const res = await putS3({ region });
+        expect(res.statusCode).toBe(400);
+        expect(res.json()).toMatchObject({ code: 'VALIDATION_ERROR', field: 'region' });
+        expect(upserted()).toEqual({});
+      }
+    });
+
+    it('saves an S3-compatible provider without a region, stored empty (us-east-1 at use)', async () => {
+      const res = await putS3({
+        proof: PROOF,
+        provider: 's3-compatible',
+        endpoint: 'https://s3.wasabisys.com',
+        region: '',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(upserted()).toMatchObject({ 's3.provider': 's3-compatible', 's3.region': '' });
+    });
+
+    it('stores a sent S3-compatible region trimmed', async () => {
+      const res = await putS3({
+        proof: PROOF,
+        provider: 's3-compatible',
+        endpoint: 'https://s3.eu-central-1.wasabisys.com',
+        region: ' eu-central-1 ',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(upserted()['s3.region']).toBe('eu-central-1');
+    });
 
     it('saves an S3-compatible endpoint with path-style addressing', async () => {
       const res = await putS3({
@@ -1324,18 +1374,6 @@ describe('Settings routes - full coverage', () => {
         expect(proofState.calls).toBe(1);
         expect(db.insert).not.toHaveBeenCalled();
       });
-    });
-
-    it.each(['s3', 's3-compatible'])('requires a region for %s', async (provider) => {
-      const res = await putS3({
-        proof: PROOF,
-        provider,
-        region: undefined,
-        endpoint: 'https://s3.wasabisys.com',
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toMatchObject({ code: 'VALIDATION_ERROR', field: 'region' });
-      expect(db.insert).not.toHaveBeenCalled();
     });
   });
 

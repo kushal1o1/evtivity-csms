@@ -668,14 +668,22 @@ export {
 export type { DataPlanChange, DataPlanDb, StationDataPlanState } from './lib/station-data-plan.js';
 export {
   LayoutGridTooSmallError,
+  LayoutSpotsOverlapError,
   moveStationLayout,
   placeStationOnLayout,
   readSiteLayoutPositions,
   readSiteLayoutSettings,
+  readSiteStationCounts,
   readStoredLayoutSettings,
   saveSiteLayout,
+  setSiteLayoutType,
 } from './lib/station-layout.js';
-export type { LayoutPosition, SavedSiteLayout, StationLayoutDb } from './lib/station-layout.js';
+export type {
+  LayoutPosition,
+  SavedSiteLayout,
+  SiteTypeChange,
+  StationLayoutDb,
+} from './lib/station-layout.js';
 export {
   deleteUserDashboardLayout,
   existingDashboardSiteIds,

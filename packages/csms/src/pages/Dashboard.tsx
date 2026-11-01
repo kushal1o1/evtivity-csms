@@ -1547,7 +1547,10 @@ function DashboardBody({
         </div>
       </div>
 
-      {layout == null ? (
+      {/* The feature flags decide whether Active insights shows above the
+          charts: render the charts once they answered, so the grid never
+          shifts under a chart being moved. */}
+      {layout == null || featureFlags.isLoading ? (
         <LoadingLogo size="inline" />
       ) : (
         renderCharts(layout.charts, chartWidgets, editing)

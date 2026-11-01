@@ -1,7 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { useLoadedValues } from '@/hooks/use-loaded-values';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tryParseJson } from '@evtivity/lib/safe-json';
@@ -89,25 +90,84 @@ function parseDomains(text: string): string[] {
   ];
 }
 
+interface SsoForm {
+  enabled: boolean;
+  provider: string;
+  entryPoint: string;
+  issuer: string;
+  /** The stored certificate when returned, else empty. */
+  cert: string;
+  autoProvision: boolean;
+  defaultRoleId: string;
+  attrEmail: string;
+  attrFirstName: string;
+  attrLastName: string;
+  /** The allowed domains as typed (comma or space separated). */
+  allowedDomains: string;
+}
+
+/** The form values of the stored SSO settings. */
+function ssoFormFrom(s: Record<string, unknown> | undefined): SsoForm {
+  const str = (key: string, fallback: string): string => {
+    const v = s?.[key];
+    return typeof v === 'string' ? v : fallback;
+  };
+  let mapping: Record<string, string> = {
+    email: 'email',
+    firstName: 'firstName',
+    lastName: 'lastName',
+  };
+  const rawMapping = s?.['sso.attributeMapping'];
+  if (typeof rawMapping === 'string') {
+    // Invalid JSON keeps the default mapping.
+    const parsed = tryParseJson(rawMapping);
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      mapping = parsed as Record<string, string>;
+    }
+  } else if (typeof rawMapping === 'object' && rawMapping !== null) {
+    mapping = rawMapping as Record<string, string>;
+  }
+  const rawDomains = s?.['sso.allowedDomains'];
+  const certVal = s?.['sso.certEnc'];
+  return {
+    enabled: s?.['sso.enabled'] === true,
+    provider: str('sso.provider', ''),
+    entryPoint: str('sso.entryPoint', ''),
+    issuer: str('sso.issuer', 'evtivity-csms'),
+    cert: typeof certVal === 'string' && certVal !== '""' ? certVal : '',
+    autoProvision: s?.['sso.autoProvision'] === true,
+    defaultRoleId: str('sso.defaultRoleId', ''),
+    attrEmail: mapping['email'] ?? 'email',
+    attrFirstName: mapping['firstName'] ?? 'firstName',
+    attrLastName: mapping['lastName'] ?? 'lastName',
+    allowedDomains: Array.isArray(rawDomains)
+      ? rawDomains.map(String).join(', ')
+      : typeof rawDomains === 'string'
+        ? rawDomains
+        : '',
+  };
+}
+
+/** The fields of the form that the save sends and that need a proof to change. */
+function protectedOf(form: SsoForm): ProtectedSsoFields {
+  return {
+    enabled: form.enabled,
+    entryPoint: form.entryPoint,
+    issuer: form.issuer,
+    autoProvision: form.autoProvision,
+    defaultRoleId: form.defaultRoleId,
+    attributeMapping: {
+      email: form.attrEmail,
+      firstName: form.attrFirstName,
+      lastName: form.attrLastName,
+    },
+    allowedDomains: parseDomains(form.allowedDomains),
+  };
+}
+
 export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-
-  const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState('');
-  const [entryPoint, setEntryPoint] = useState('');
-  const [issuer, setIssuer] = useState('evtivity-csms');
-  const [cert, setCert] = useState('');
-  const [certSet, setCertSet] = useState(false);
-  const [autoProvision, setAutoProvision] = useState(false);
-  const [defaultRoleId, setDefaultRoleId] = useState('');
-  const [attrEmail, setAttrEmail] = useState('email');
-  const [attrFirstName, setAttrFirstName] = useState('firstName');
-  const [attrLastName, setAttrLastName] = useState('lastName');
-  const [allowedDomains, setAllowedDomains] = useState('');
-  // The saved values, to tell whether the form changed what needs a fresh proof.
-  const [loadedCert, setLoadedCert] = useState('');
-  const [loadedFields, setLoadedFields] = useState('');
 
   // A signed-in session proves the account again to change who signs in as whom.
   const { data: mfaStatus } = useMfaStatus();
@@ -124,72 +184,50 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
     queryFn: () => api.get<Record<string, unknown>>('/v1/sso/settings'),
   });
 
+  // A reload replaces the form only while it has no unsaved edits.
+  const stored = ssoSettings ?? settings;
+  const loaded = useMemo(() => ssoFormFrom(stored), [stored]);
+  const [form, setForm, takeNextLoad] = useLoadedValues<SsoForm>(loaded);
+  const {
+    enabled,
+    provider,
+    entryPoint,
+    issuer,
+    cert,
+    autoProvision,
+    defaultRoleId,
+    attrEmail,
+    attrFirstName,
+    attrLastName,
+    allowedDomains,
+  } = form;
+  function setField<K extends keyof SsoForm>(key: K): (value: SsoForm[K]) => void {
+    return (value) => {
+      setForm((f) => ({ ...f, [key]: value }));
+    };
+  }
+  const setEnabled = setField('enabled');
+  const setProvider = setField('provider');
+  const setEntryPoint = setField('entryPoint');
+  const setIssuer = setField('issuer');
+  const setCert = setField('cert');
+  const setAutoProvision = setField('autoProvision');
+  const setDefaultRoleId = setField('defaultRoleId');
+  const setAttrEmail = setField('attrEmail');
+  const setAttrFirstName = setField('attrFirstName');
+  const setAttrLastName = setField('attrLastName');
+  const setAllowedDomains = setField('allowedDomains');
+  // The saved values, to tell whether the form changed what needs a fresh proof.
+  const certSet = loaded.cert !== '';
+  const loadedCert = loaded.cert;
+  const loadedFields = JSON.stringify(protectedFields(protectedOf(loaded)));
+
   // Load roles for default role dropdown
   const { data: rolesData } = useQuery({
     queryKey: ['roles'],
     queryFn: () => api.get<Role[]>('/v1/roles'),
     enabled: autoProvision,
   });
-
-  useEffect(() => {
-    const s = ssoSettings ?? settings;
-    if (s == null) return;
-    setEnabled(s['sso.enabled'] === true);
-    setProvider(typeof s['sso.provider'] === 'string' ? s['sso.provider'] : '');
-    setEntryPoint(typeof s['sso.entryPoint'] === 'string' ? s['sso.entryPoint'] : '');
-    setIssuer(typeof s['sso.issuer'] === 'string' ? s['sso.issuer'] : 'evtivity-csms');
-    setAutoProvision(s['sso.autoProvision'] === true);
-    setDefaultRoleId(typeof s['sso.defaultRoleId'] === 'string' ? s['sso.defaultRoleId'] : '');
-
-    const certVal = s['sso.certEnc'];
-    setCertSet(typeof certVal === 'string' && certVal !== '' && certVal !== '""');
-    const loaded = typeof certVal === 'string' && certVal !== '""' ? certVal : '';
-    setCert(loaded);
-    setLoadedCert(loaded);
-
-    let mapping: Record<string, string> = {
-      email: 'email',
-      firstName: 'firstName',
-      lastName: 'lastName',
-    };
-    const rawMapping = s['sso.attributeMapping'];
-    if (typeof rawMapping === 'string') {
-      // Invalid JSON keeps the default mapping.
-      const parsed = tryParseJson(rawMapping);
-      if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        mapping = parsed as Record<string, string>;
-      }
-    } else if (typeof rawMapping === 'object' && rawMapping !== null) {
-      mapping = rawMapping as Record<string, string>;
-    }
-    setAttrEmail(mapping['email'] ?? 'email');
-    setAttrFirstName(mapping['firstName'] ?? 'firstName');
-    setAttrLastName(mapping['lastName'] ?? 'lastName');
-    const rawDomains = s['sso.allowedDomains'];
-    const domains = Array.isArray(rawDomains)
-      ? rawDomains.map(String).join(', ')
-      : typeof rawDomains === 'string'
-        ? rawDomains
-        : '';
-    setAllowedDomains(domains);
-    setLoadedFields(
-      JSON.stringify(
-        protectedFields({
-          enabled: s['sso.enabled'] === true,
-          entryPoint: typeof s['sso.entryPoint'] === 'string' ? s['sso.entryPoint'] : '',
-          issuer: typeof s['sso.issuer'] === 'string' ? s['sso.issuer'] : 'evtivity-csms',
-          autoProvision: s['sso.autoProvision'] === true,
-          defaultRoleId: typeof s['sso.defaultRoleId'] === 'string' ? s['sso.defaultRoleId'] : '',
-          attributeMapping: {
-            email: mapping['email'] ?? 'email',
-            firstName: mapping['firstName'] ?? 'firstName',
-            lastName: mapping['lastName'] ?? 'lastName',
-          },
-          allowedDomains: parseDomains(domains),
-        }),
-      ),
-    );
-  }, [ssoSettings, settings]);
 
   const mutation = useMutation({
     mutationFn: (vals: Record<string, unknown>) =>
@@ -210,15 +248,7 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
     },
   });
 
-  const current = {
-    enabled,
-    entryPoint,
-    issuer,
-    autoProvision,
-    defaultRoleId,
-    attributeMapping: { email: attrEmail, firstName: attrFirstName, lastName: attrLastName },
-    allowedDomains: parseDomains(allowedDomains),
-  };
+  const current = protectedOf(form);
   const needsProof =
     proofKinds.length > 0 &&
     (JSON.stringify(protectedFields(current)) !== loadedFields ||
@@ -235,7 +265,12 @@ export function SecuritySsoSettings({ settings }: Props): React.JSX.Element {
       payload['cert'] = cert;
     }
     if (needsProof && proof != null) payload['proof'] = proof;
-    mutation.mutate(payload);
+    const sent = form;
+    mutation.mutate(payload, {
+      onSuccess: () => {
+        takeNextLoad(sent);
+      },
+    });
   }
 
   const callbackUrl = `${window.location.origin}/v1/auth/sso/callback`;

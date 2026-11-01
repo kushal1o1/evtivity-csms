@@ -22,6 +22,7 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { VehicleBodyType, VehicleColor } from '@evtivity/lib/vehicle-appearance';
 import { createId } from '../lib/id.js';
 import { chargingStations } from './assets.js';
 import { chargingSessions } from './charging.js';
@@ -291,6 +292,10 @@ export const vehicles = pgTable(
     // Stored normalized (uppercase, @evtivity/lib/vehicle-id).
     vin: varchar('vin', { length: 17 }),
     licensePlate: varchar('license_plate', { length: 20 }),
+    // How the vehicle looks (@evtivity/lib/vehicle-appearance): the 3D site
+    // layout draws a car of this body type in this color. Both optional.
+    color: varchar('color', { length: 20 }).$type<VehicleColor>(),
+    bodyType: varchar('body_type', { length: 20 }).$type<VehicleBodyType>(),
     // The EV charging controller id (ISO 15118 EVCCID, the MAC address for
     // ISO 15118-2 and DIN 70121) as normalized by @evtivity/lib/vehicle-id:
     // a MAC address as 12 uppercase hex digits.
@@ -318,6 +323,14 @@ export const vehicles = pgTable(
     check(
       'vehicles_autocharge_id_check',
       sql`NOT ${table.autochargeEnabled} OR ${table.evccid} IS NOT NULL OR ${table.vin} IS NOT NULL`,
+    ),
+    check(
+      'vehicles_color_check',
+      sql`${table.color} IS NULL OR ${table.color} IN ('white', 'black', 'silver', 'grey', 'blue', 'red', 'green', 'brown_beige', 'yellow_orange', 'other')`,
+    ),
+    check(
+      'vehicles_body_type_check',
+      sql`${table.bodyType} IS NULL OR ${table.bodyType} IN ('sedan', 'hatchback', 'suv', 'pickup_truck', 'van', 'box_truck', 'bus', 'semi_truck')`,
     ),
   ],
 );

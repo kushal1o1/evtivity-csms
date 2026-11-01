@@ -7,17 +7,31 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isVehicleBodyType, type VehicleBodyType } from '@evtivity/lib/vehicle-appearance';
 import { Link } from 'react-router';
-import { List, Sparkles, User, X } from 'lucide-react';
+import { List, Maximize2, Minimize2, Scan, Sparkles, User, X } from 'lucide-react';
 import {
   assignBays,
   bayToPosition,
   energyAssetsOf,
+  freeFootprintsOverlap,
+  freeSolarPlacement,
+  freeSpotTypeOf,
+  freeStationsBox,
+  layoutRowLengths,
   nearestFreeBay,
   positionToBay,
+  showsBatteries,
+  showsLoadPanels,
   showsSolar,
   showsTransformers,
+  snapFreePlacement,
   snapTransformerToGrass,
+  solarCanopySize,
+  spotVehicleBodyType,
+  usesDepotSpots,
+  usesFreePositions,
+  type FreePlacement,
   type LayoutBay,
   type SiteLayoutSettings,
 } from '@evtivity/lib/site-layout';
@@ -39,7 +53,13 @@ import {
 } from './site-layout-scene';
 import type { LayoutStation } from './StationCard';
 import {
+  alignmentGuides,
+  depotStationPlacement,
+  freeBackPoint,
+  layoutGroundBox,
   lotOf,
+  NARROW_STAGE_PX,
+  screenMessageText,
   stationBackPoint,
   stationLabelInRange,
   stationProp,
@@ -64,10 +84,21 @@ import {
   nextStationInState,
   type SummaryState,
 } from './LayoutStationList';
+import { sceneCar } from './site-layout-car';
 import { terminalSide, type LayoutTerminal } from './layout-terminals';
 import { StationLayoutPopup } from './StationLayoutPopup';
 import { placeLayoutPopup } from './layout-popup-position';
 import { STAGE_HEIGHT_CLASS } from './site-layout-stage';
+import {
+  freePropOffset,
+  freePropSpot,
+  freeChargerModel,
+  stationConnectorTypes,
+  freeStationPlaces,
+  labelPriority,
+  type FreeStationPlace,
+} from './site-layout-free';
+import { useStageFullScreen } from './use-stage-full-screen';
 import { cn } from '@/lib/utils';
 import { CellularBadge } from './StationStateIcon';
 
@@ -91,6 +122,10 @@ export interface SiteLayout3DProps {
   onTransformerMove: (transformerId: string, x: number, z: number) => void;
   /** A battery dragged on the grass in edit mode (lot meters, already on the grass). */
   onEnergyAssetMove?: (assetId: string, x: number, z: number) => void;
+  /** Custom site: a station moved or turned in edit mode (snapped, its spots free). */
+  onFreeMove?: ((stationId: string, placement: FreePlacement) => void) | undefined;
+  /** Custom site: a solar canopy moved or turned in edit mode (snapped). */
+  onSolarMove?: ((assetId: string, placement: FreePlacement) => void) | undefined;
   /** The browser could not create a WebGL context: the parent shows the 2D view. */
   onUnavailable: () => void;
   /** Where Fit to View puts the camera (default `overview`). */
@@ -105,6 +140,13 @@ export interface SiteLayout3DProps {
   insights?: ReadonlyMap<string, readonly LayoutInsight[]> | undefined;
   /** A replayed day shows (Layout tab): no live session avatars, insights or popups of today. */
   replaying?: boolean;
+  /**
+   * Shown at the bottom of the stage while it is full screen (the day replay
+   * bar of the Layout tab, which otherwise sits above the stage).
+   */
+  fullScreenFooter?: React.ReactNode | undefined;
+  /** The stage went full screen (true) or back (false). */
+  onFullScreenChange?: ((fullScreen: boolean) => void) | undefined;
 }
 
 /** The bar color of a panel's live draw against its limit. */
@@ -148,12 +190,18 @@ function PanelLoadBar({ load }: { load: FlowLoad }): React.JSX.Element {
  * The spot of every station: its 2D slot, or the nearest free spot when
  * another holds it. A station below or beside the lot keeps its slot there.
  */
+/** The body type of a station's session vehicle, null when it names none or an unknown one. */
+function sessionBodyType(s: LayoutStation): VehicleBodyType | null {
+  const bodyType = s.session?.vehicle?.bodyType;
+  return isVehicleBodyType(bodyType) ? bodyType : null;
+}
+
 export function stationBays(
   stations: readonly LayoutStation[],
   settings: SiteLayoutSettings,
 ): Map<string, LayoutBay> {
   const cols = Math.max(
-    settings.spotsPerRow,
+    ...layoutRowLengths(settings),
     ...stations.map((s) => positionToBay({ x: s.positionX, y: s.positionY }).col + 1),
   );
   const assigned = assignBays(
@@ -225,7 +273,7 @@ function placeLabel(
   placed: Rect[],
   size: Size = { width: el.offsetWidth, height: el.offsetHeight },
   lifts: readonly number[] = [0, size.height + 4],
-): void {
+): boolean {
   let shown = false;
   if (p != null && p.visible) {
     for (const lift of lifts) {
@@ -250,6 +298,7 @@ function placeLabel(
     }
   }
   el.style.visibility = shown ? 'visible' : 'hidden';
+  return shown;
 }
 
 export default function SiteLayout3D({
@@ -265,6 +314,8 @@ export default function SiteLayout3D({
   onMove,
   onTransformerMove,
   onEnergyAssetMove,
+  onFreeMove,
+  onSolarMove,
   onUnavailable,
   cameraView = 'overview',
   stageClassName = STAGE_HEIGHT_CLASS,
@@ -272,6 +323,8 @@ export default function SiteLayout3D({
   viewOnly = false,
   insights,
   replaying = false,
+  fullScreenFooter,
+  onFullScreenChange,
 }: SiteLayout3DProps): React.JSX.Element {
   const { t } = useTranslation();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -281,6 +334,16 @@ export default function SiteLayout3D({
   const energyLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const linkLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const avatarRefs = useRef(new Map<string, HTMLDivElement>());
+  // A small dot in the state color where a station label does not fit (dense sites, phones).
+  const dotRefs = useRef(new Map<string, HTMLButtonElement>());
+  const chipRefs = useRef(new Map<string, HTMLButtonElement>());
+  // The display state of every station, for the label order.
+  const statesRef = useRef(new Map<string, string>());
+  // Custom site in Edit Layout: the selected solar canopy (R turns it, arrows move it).
+  const [selectedSolarId, setSelectedSolarId] = useState<string | null>(null);
+  // A refused move (spots overlap) shows for a few seconds; a move is announced.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
   const popupRef = useRef<HTMLDivElement>(null);
   const sessionPopupRef = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -300,30 +363,62 @@ export default function SiteLayout3D({
   const pageVisible = usePageVisible();
   const lot = useMemo(() => lotOf(settings), [settings]);
   const bays = useMemo(() => stationBays(stations, settings), [stations, settings]);
-  // Transformers show on a parking lot only; an office or retail site keeps them hidden.
+  const custom = usesFreePositions(settings);
+  const depot = usesDepotSpots(settings);
+  const freePlaces = useMemo(
+    () => (custom ? freeStationPlaces(stations) : new Map<string, FreeStationPlace>()),
+    [custom, stations],
+  );
+  // A depot: each station in its slot's bus bay or truck lane, one spot each.
+  const depotPlaces = useMemo(() => {
+    const places = new Map<string, FreeStationPlace>();
+    if (!depot) return places;
+    for (const [id, bay] of bays) {
+      places.set(id, { placement: depotStationPlacement(bay, lot), spots: 1 });
+    }
+    return places;
+  }, [depot, bays, lot]);
+  // The ground the equipment stands beside: a custom site's stations' spots, a depot's yard.
+  const freeGround = useMemo(
+    () =>
+      custom
+        ? (freeStationsBox([...freePlaces.values()]) ?? undefined)
+        : depot
+          ? layoutGroundBox(lot)
+          : undefined,
+    [custom, depot, freePlaces, lot],
+  );
+  // Transformers, batteries, solar canopies and load management panels show on
+  // a parking lot only; the other site types keep them stored, hidden.
   const transformers = useMemo(
     () => (showsTransformers(settings) ? settings.transformers : []),
     [settings],
   );
-  // Batteries on both site types; solar canopies on a parking lot only.
   const energyAssets = useMemo(
-    () => energyAssetsOf(settings).filter((a) => a.type === 'battery' || showsSolar(settings)),
+    () =>
+      energyAssetsOf(settings).filter((a) =>
+        a.type === 'battery' ? showsBatteries(settings) : showsSolar(settings),
+      ),
     [settings],
   );
   // One panel model per load management panel, only while the site is load managed.
+  const drawsPanels = hierarchy != null && showsLoadPanels(settings);
   const panels = useMemo(
-    () => (hierarchy == null ? [] : placePanels(hierarchy, lot)),
-    [hierarchy, lot],
+    () => (hierarchy == null || !drawsPanels ? [] : placePanels(hierarchy, lot, freeGround)),
+    [hierarchy, lot, drawsPanels, freeGround],
   );
   const links = useMemo(() => {
-    if (hierarchy == null) return { segments: [], labels: [] };
-    const kinds = new Map(stations.map((s) => [s.id, s.chargingKind]));
+    if (hierarchy == null || !drawsPanels) return { segments: [], labels: [] };
     const points = new Map<string, Point>();
-    for (const [id, bay] of bays) {
-      points.set(id, stationBackPoint(bay, lot, kinds.get(id) ?? 'dc'));
+    if (custom || depot) {
+      for (const [id, place] of custom ? freePlaces : depotPlaces) {
+        points.set(id, freeBackPoint(place.placement));
+      }
+    } else {
+      for (const [id, bay] of bays) points.set(id, stationBackPoint(bay, lot));
     }
     return loadLinks(hierarchy, panels, points);
-  }, [hierarchy, panels, bays, lot, stations]);
+  }, [hierarchy, panels, bays, lot, drawsPanels, custom, depot, freePlaces, depotPlaces]);
 
   // The live power on the links and the panels' draw against their limits.
   const flows = useMemo(
@@ -331,8 +426,12 @@ export default function SiteLayout3D({
     [hierarchy, currentDrawKw],
   );
 
-  const stateRef = useRef({ bays, settings });
+  const stateRef = useRef({ bays, settings, freePlaces });
   const onMoveRef = useRef(onMove);
+  const onFreeMoveRef = useRef(onFreeMove);
+  const onSolarMoveRef = useRef(onSolarMove);
+  const tRef = useRef(t);
+  const stationIdsRef = useRef(new Map(stations.map((s) => [s.id, s.stationId])));
   const onTransformerMoveRef = useRef(onTransformerMove);
   const onEnergyAssetMoveRef = useRef(onEnergyAssetMove);
   const onUnavailableRef = useRef(onUnavailable);
@@ -343,7 +442,20 @@ export default function SiteLayout3D({
     const sceneStations: SceneStation[] = stations.map((s) => {
       const state = stationDisplayState(s);
       const bay = bays.get(s.id) ?? { col: 0, row: 0 };
+      const place = freePlaces.get(s.id) ?? depotPlaces.get(s.id);
+      const spotType = freeSpotTypeOf(place?.placement);
+      const message = s.displayMessage != null ? screenMessageText(s.displayMessage) : '';
       return {
+        ...(place != null
+          ? {
+              free: place.placement,
+              spots: place.spots,
+              carOffsetX: freePropOffset(s, place.spots),
+              propSpot: freePropSpot(s, place.spots),
+              charger: freeChargerModel(spotType, s.chargingKind, stationConnectorTypes(s)),
+            }
+          : {}),
+        message: message === '' ? null : message,
         id: s.id,
         kind: s.chargingKind,
         bay,
@@ -353,6 +465,12 @@ export default function SiteLayout3D({
         glow: state === 'charging',
         wall: wallMounted(bay, lot, s.chargingKind),
         prop: stationProp(state),
+        // No known vehicle: a sedan, a bus in a bus bay, a semi truck in a truck lane;
+        // a vehicle that does not fit a bus bay or truck lane (a car) draws that default.
+        car: sceneCar(
+          s.session?.vehicle != null ? { ...s.session.vehicle, bodyType: null } : null,
+          spotVehicleBodyType(spotType, sessionBodyType(s)),
+        ),
         beacon: state === 'faulted',
         terminals: (terminals.get(s.id) ?? []).map((term) => ({
           id: term.id,
@@ -369,11 +487,42 @@ export default function SiteLayout3D({
       batteries: energyAssets.flatMap((a) =>
         a.type === 'battery' ? [{ id: a.id, x: a.x, z: a.z }] : [],
       ),
-      solar: energyAssets.flatMap((a) => (a.type === 'solar' ? [{ id: a.id, row: a.row }] : [])),
-      panels: panels.map((p) => ({ id: p.id, x: p.point.x, z: p.point.z, mount: p.mount })),
+      solar: energyAssets.flatMap((a) =>
+        a.type === 'solar'
+          ? [
+              {
+                id: a.id,
+                row: a.row,
+                ...(custom || depot
+                  ? {
+                      free: {
+                        ...freeSolarPlacement(a, settings),
+                        ...solarCanopySize(a.capacityKwp),
+                      },
+                    }
+                  : {}),
+              },
+            ]
+          : [],
+      ),
+      panels: panels.map((p) => ({ id: p.id, x: p.point.x, z: p.point.z })),
       links,
     };
-  }, [stations, bays, lot, transformers, energyAssets, panels, terminals, links]);
+  }, [
+    stations,
+    bays,
+    lot,
+    transformers,
+    energyAssets,
+    panels,
+    terminals,
+    links,
+    freePlaces,
+    depotPlaces,
+    custom,
+    depot,
+    settings,
+  ]);
   const sceneLayoutRef = useRef(sceneLayout);
   const cameraViewRef = useRef(cameraView);
 
@@ -399,7 +548,7 @@ export default function SiteLayout3D({
           onDrop: (id, bay) => {
             const { bays: current, settings: s } = stateRef.current;
             const others = [...current].filter(([other]) => other !== id).map(([, b]) => b);
-            const target = nearestFreeBay(bay, others, s.spotsPerRow, s.rows);
+            const target = nearestFreeBay(bay, others, layoutRowLengths(s));
             if (target == null) return;
             const own = current.get(id);
             if (own != null && own.col === target.col && own.row === target.row) return;
@@ -412,6 +561,33 @@ export default function SiteLayout3D({
           },
           onBatteryDrop: (id, p) => {
             onEnergyAssetMoveRef.current?.(id, p.x, p.z);
+          },
+          snapFree: (p, freeRotation) => snapFreePlacement(p, { freeRotation }),
+          freeDropState: (id, p) => {
+            const places = stateRef.current.freePlaces;
+            const own = places.get(id);
+            const others = [...places].filter(([other]) => other !== id).map(([, o]) => o);
+            return {
+              blocked: others.some((o) =>
+                freeFootprintsOverlap({ placement: p, spots: own?.spots ?? 1 }, o),
+              ),
+              guides: alignmentGuides(
+                { x: p.x, z: p.z },
+                others.map((o) => ({ x: o.placement.x, z: o.placement.z })),
+              ),
+            };
+          },
+          onFreeDrop: (id, p) => {
+            moveFreeStation(id, p);
+          },
+          onSolarDrop: (id, p) => {
+            const asset = energyAssetsOf(stateRef.current.settings).find((a) => a.id === id);
+            if (asset?.type !== 'solar') return;
+            const at = freeSolarPlacement(asset, stateRef.current.settings);
+            onSolarMoveRef.current?.(id, snapFreePlacement({ ...at, x: p.x, z: p.z }));
+          },
+          onSolarPick: (id) => {
+            setSelectedSolarId(id);
           },
           onFrame: () => {
             const current = sceneRef.current;
@@ -437,17 +613,36 @@ export default function SiteLayout3D({
                 sizes.set(el, { width: el.offsetWidth, height: el.offsetHeight });
               }
             }
-            const place = (el: HTMLElement, p: ScreenPoint | null): void => {
+            const place = (el: HTMLElement, p: ScreenPoint | null): boolean =>
               placeLabel(el, p, placed, sizes.get(el));
-            };
-            // The nearer station labels first, then the driver avatars over the
-            // charging cars: an avatar that would cover a label sits lower (on
-            // the roof) or higher, else hides.
+            // The station labels by priority (the selected one, faulted,
+            // charging, then the rest), nearer first; a label that does not
+            // fit becomes a dot in the state color, and on a phone a far
+            // label of the rest shows as a dot too. Then the driver avatars
+            // over the charging cars: an avatar that would cover a label sits
+            // lower (on the roof) or higher, else hides.
+            const narrow = stage.clientWidth > 0 && stage.clientWidth < NARROW_STAGE_PX;
+            const selectedNow = selectedRef.current;
             const stationPoints = [...labelRefs.current]
-              .map(([id, el]) => ({ el, p: current.labelPoint(id) }))
-              .sort((a, b) => (a.p?.depth ?? 1) - (b.p?.depth ?? 1));
-            for (const { el, p } of stationPoints) {
-              place(el, p != null && stationLabelInRange(p.distance, view, count) ? p : null);
+              .map(([id, el]) => ({
+                id,
+                el,
+                p: current.labelPoint(id),
+                rank: labelPriority(statesRef.current.get(id) ?? '', id === selectedNow),
+              }))
+              .sort((a, b) => a.rank - b.rank || (a.p?.depth ?? 1) - (b.p?.depth ?? 1));
+            for (const { id, el, p, rank } of stationPoints) {
+              const inRange = p != null && stationLabelInRange(p.distance, view, count);
+              const far = narrow && rank >= 3 && p != null && p.distance > view * 1.15;
+              const full = place(el, inRange && !far ? p : null);
+              const dot = dotRefs.current.get(id);
+              if (dot == null) continue;
+              if (full || !inRange) {
+                dot.style.visibility = 'hidden';
+              } else {
+                // At the label point, else just below it (under a label placed there).
+                placeLabel(dot, p, placed, { width: 14, height: 14 }, [0, -16, -32]);
+              }
             }
             for (const [id, el] of avatarRefs.current) {
               const p = current.avatarPoint(id);
@@ -523,10 +718,31 @@ export default function SiteLayout3D({
   }, []);
 
   useEffect(() => {
-    stateRef.current = { bays, settings };
+    stateRef.current = { bays, settings, freePlaces };
     sceneLayoutRef.current = sceneLayout;
     sceneRef.current?.setLayout(sceneLayout);
-  }, [sceneLayout, bays, settings]);
+  }, [sceneLayout, bays, settings, freePlaces]);
+
+  useEffect(() => {
+    tRef.current = t;
+    stationIdsRef.current = new Map(stations.map((s) => [s.id, s.stationId]));
+    statesRef.current = new Map(stations.map((s) => [s.id, stationDisplayState(s)]));
+  });
+
+  // A refused move shows its notice for a few seconds.
+  useEffect(() => {
+    if (notice == null) return;
+    const timer = window.setTimeout(() => {
+      setNotice(null);
+    }, 4000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [notice]);
+
+  useEffect(() => {
+    sceneRef.current?.setSelectedSolar(editing ? selectedSolarId : null);
+  }, [selectedSolarId, editing]);
 
   useEffect(() => {
     sceneRef.current?.setLogo(logoUrl);
@@ -545,7 +761,9 @@ export default function SiteLayout3D({
     onMoveRef.current = onMove;
     onTransformerMoveRef.current = onTransformerMove;
     onEnergyAssetMoveRef.current = onEnergyAssetMove;
-  }, [onMove, onTransformerMove, onEnergyAssetMove]);
+    onFreeMoveRef.current = onFreeMove;
+    onSolarMoveRef.current = onSolarMove;
+  }, [onMove, onTransformerMove, onEnergyAssetMove, onFreeMove, onSolarMove]);
 
   // The Reserved sign follows the UI language.
   useEffect(() => {
@@ -560,6 +778,7 @@ export default function SiteLayout3D({
       setSelectedId(null);
       setSessionStationId(null);
     }
+    setSelectedSolarId(null);
   }, [editing]);
 
   useEffect(() => {
@@ -576,7 +795,7 @@ export default function SiteLayout3D({
   }, [listOpen]);
 
   useEffect(() => {
-    if (fitKey > 0) sceneRef.current?.fit();
+    if (fitKey > 0) sceneRef.current?.fit(true);
   }, [fitKey]);
 
   useEffect(() => {
@@ -597,10 +816,109 @@ export default function SiteLayout3D({
     setSelectedId(id);
   }
 
+  // Full screen: the stage itself (labels, popups, the summary chip, the
+  // station list and the footer are inside it). Escape closes an open popup
+  // or the list first.
+  const fullScreen = useStageFullScreen(
+    stageRef,
+    () => selectedRef.current == null && sessionStationRef.current == null && !listOpenRef.current,
+  );
+  const isFullScreen = fullScreen.mode !== 'off';
+  const onFullScreenChangeRef = useRef(onFullScreenChange);
+  useEffect(() => {
+    onFullScreenChangeRef.current = onFullScreenChange;
+  });
+  useEffect(() => {
+    onFullScreenChangeRef.current?.(isFullScreen);
+  }, [isFullScreen]);
+
   function focusStation(id: string): void {
     sceneRef.current?.focus(id);
     openStation(id);
   }
+
+  // Custom site: a station moved or turned (drag, handle or keys). A position
+  // on another station's spots is refused: the station stays and a notice says why.
+  function moveFreeStation(id: string, p: FreePlacement): void {
+    const places = stateRef.current.freePlaces;
+    const own = places.get(id);
+    if (own == null) return;
+    const snapped = snapFreePlacement(p, { freeRotation: true });
+    const name = stationIdsRef.current.get(id) ?? id;
+    const blocked = [...places].some(
+      ([other, o]) =>
+        other !== id && freeFootprintsOverlap({ placement: snapped, spots: own.spots }, o),
+    );
+    if (blocked) {
+      setNotice(tRef.current('sites.layoutView.spotsOverlap', { id: name }));
+      return;
+    }
+    if (
+      snapped.x === own.placement.x &&
+      snapped.z === own.placement.z &&
+      snapped.rotationDeg === own.placement.rotationDeg &&
+      freeSpotTypeOf(snapped) === freeSpotTypeOf(own.placement)
+    )
+      return;
+    setNotice(null);
+    setAnnouncement(
+      tRef.current('sites.layoutView.freeMoved', {
+        id: name,
+        x: formatNumber(snapped.x, 1),
+        z: formatNumber(snapped.z, 1),
+        deg: formatNumber(snapped.rotationDeg, 0),
+      }),
+    );
+    onFreeMoveRef.current?.(id, snapped);
+  }
+
+  // Custom site in Edit Layout: arrow keys move the selected station or
+  // canopy by the snap step, R turns it by 15 degrees (Shift+R by 1 degree).
+  function onStageKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    if (!editing || !custom) return;
+    const step = 0.5;
+    const move: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const delta = move[e.key];
+    const turn = e.key === 'r' || e.key === 'R' ? (e.shiftKey ? 1 : 15) : 0;
+    if (delta == null && turn === 0) return;
+    if (selectedId != null) {
+      const own = freePlaces.get(selectedId);
+      if (own == null) return;
+      e.preventDefault();
+      const p = own.placement;
+      const next = {
+        x: p.x + (delta?.[0] ?? 0),
+        z: p.z + (delta?.[1] ?? 0),
+        rotationDeg: p.rotationDeg + turn,
+      };
+      moveFreeStation(selectedId, turn === 15 ? snapFreePlacement(next) : next);
+      return;
+    }
+    if (selectedSolarId != null) {
+      const asset = energyAssetsOf(settings).find((a) => a.id === selectedSolarId);
+      if (asset?.type !== 'solar') return;
+      e.preventDefault();
+      const p = freeSolarPlacement(asset, settings);
+      const next = {
+        x: p.x + (delta?.[0] ?? 0),
+        z: p.z + (delta?.[1] ?? 0),
+        rotationDeg: p.rotationDeg + turn,
+      };
+      onSolarMove?.(selectedSolarId, snapFreePlacement(next, { freeRotation: turn !== 15 }));
+    }
+  }
+
+  // A station picked in Edit Layout on a custom site takes the keyboard focus (arrows and R).
+  useEffect(() => {
+    if (!editing || !custom || selectedId == null) return;
+    const chip = chipRefs.current.get(selectedId);
+    if (chip != null && document.activeElement !== chip) chip.focus({ preventScroll: true });
+  }, [editing, custom, selectedId]);
 
   function focusState(state: SummaryState): void {
     const next = nextStationInState(stations, state, selectedId);
@@ -611,9 +929,13 @@ export default function SiteLayout3D({
     <div
       ref={stageRef}
       data-testid="site-layout-3d"
+      data-full-screen={fullScreen.mode}
+      onKeyDown={onStageKeyDown}
       className={cn(
-        'relative w-full overflow-clip rounded-lg border-2 border-dashed',
-        stageClassName,
+        'relative w-full overflow-clip bg-background',
+        fullScreen.mode === 'off' && ['rounded-lg border-2 border-dashed', stageClassName],
+        fullScreen.mode === 'native' && 'h-full',
+        fullScreen.mode === 'overlay' && 'fixed inset-0 z-[1000] h-dvh w-screen',
       )}
     >
       <div className="pointer-events-none absolute inset-0">
@@ -691,6 +1013,41 @@ export default function SiteLayout3D({
           const state = stationDisplayState(s);
           const stateLabel = t(stationStateLabelKey(state));
           return (
+            <button
+              key={`dot-${s.id}`}
+              type="button"
+              ref={(el) => {
+                if (el == null) dotRefs.current.delete(s.id);
+                else dotRefs.current.set(s.id, el);
+              }}
+              data-testid={`site-layout-3d-dot-${s.id}`}
+              data-state={state}
+              className={cn(
+                'absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-full rounded-full border-2 border-card shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                editing && !custom ? '' : 'pointer-events-auto',
+              )}
+              style={{
+                left: 0,
+                top: 0,
+                visibility: 'hidden',
+                backgroundColor: stationStateColor(state),
+              }}
+              aria-label={t('sites.layoutView.stateDetailsLabel', {
+                id: s.stationId,
+                state: stateLabel,
+              })}
+              onClick={() => {
+                if (!editing || custom) setSelectedId(s.id);
+              }}
+            />
+          );
+        })}
+        {stations.map((s) => {
+          const state = stationDisplayState(s);
+          const stateLabel = t(stationStateLabelKey(state));
+          // Custom site in Edit Layout: the chip selects the station (arrows and R move it).
+          const selectable = !editing || custom;
+          return (
             <div
               key={s.id}
               ref={(el) => {
@@ -706,14 +1063,22 @@ export default function SiteLayout3D({
                 type="button"
                 variant="outline"
                 size="chip"
-                className={editing ? 'shadow-xs' : 'pointer-events-auto shadow-xs'}
-                tabIndex={editing ? -1 : 0}
+                ref={(el) => {
+                  if (el == null) chipRefs.current.delete(s.id);
+                  else chipRefs.current.set(s.id, el);
+                }}
+                className={selectable ? 'pointer-events-auto shadow-xs' : 'shadow-xs'}
+                tabIndex={selectable ? 0 : -1}
+                aria-pressed={editing && custom ? s.id === selectedId : undefined}
                 aria-label={t('sites.layoutView.stateDetailsLabel', {
                   id: s.stationId,
                   state: stateLabel,
                 })}
+                onFocus={() => {
+                  if (editing && custom) setSelectedId(s.id);
+                }}
                 onClick={() => {
-                  if (!editing) setSelectedId(s.id);
+                  if (selectable) setSelectedId(s.id);
                 }}
               >
                 <span>{s.stationId}</span>
@@ -816,25 +1181,67 @@ export default function SiteLayout3D({
         })}
       </div>
       {!editing && (
-        <div className="pointer-events-none absolute left-3 top-3 right-14">
+        <div
+          className={cn(
+            'pointer-events-none absolute left-3 top-3',
+            isFullScreen ? 'right-32' : 'right-24',
+          )}
+        >
           <LayoutSummaryChip stations={stations} onFocusState={focusState} />
         </div>
       )}
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        className="absolute right-3 top-3 bg-card shadow-xs"
-        aria-pressed={listOpen}
-        aria-label={listOpen ? t('sites.layoutView.hideList') : t('sites.layoutView.showList')}
-        title={listOpen ? t('sites.layoutView.hideList') : t('sites.layoutView.showList')}
-        data-testid="site-layout-list-toggle"
-        onClick={() => {
-          setListOpen((o) => !o);
-        }}
-      >
-        {listOpen ? <X className="h-4 w-4" /> : <List className="h-4 w-4" />}
-      </Button>
+      <div className="absolute right-3 top-3 flex gap-1">
+        {isFullScreen && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            className="bg-card shadow-xs"
+            aria-label={t('sites.layoutView.fitToView')}
+            title={t('sites.layoutView.fitToView')}
+            data-testid="site-layout-full-screen-fit"
+            onClick={() => {
+              sceneRef.current?.fit(true);
+            }}
+          >
+            <Scan className="h-4 w-4" />
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="bg-card shadow-xs"
+          aria-label={
+            isFullScreen ? t('sites.layoutView.exitFullScreen') : t('sites.layoutView.fullScreen')
+          }
+          title={
+            isFullScreen ? t('sites.layoutView.exitFullScreen') : t('sites.layoutView.fullScreen')
+          }
+          data-testid="site-layout-full-screen"
+          onClick={() => {
+            if (isFullScreen) fullScreen.exit();
+            else fullScreen.enter();
+          }}
+        >
+          {isFullScreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="bg-card shadow-xs"
+          aria-pressed={listOpen}
+          aria-label={listOpen ? t('sites.layoutView.hideList') : t('sites.layoutView.showList')}
+          title={listOpen ? t('sites.layoutView.hideList') : t('sites.layoutView.showList')}
+          data-testid="site-layout-list-toggle"
+          onClick={() => {
+            setListOpen((o) => !o);
+          }}
+        >
+          {listOpen ? <X className="h-4 w-4" /> : <List className="h-4 w-4" />}
+        </Button>
+      </div>
       {listOpen && (
         <div
           className="absolute bottom-14 right-3 top-12 z-[900] w-64 max-w-[calc(100%-24px)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-lg border bg-card/95 p-2 shadow-lg backdrop-blur-xs"
@@ -851,14 +1258,41 @@ export default function SiteLayout3D({
           />
         </div>
       )}
-      <p className="pointer-events-none absolute bottom-3 left-3 max-w-[calc(100%-24px)] rounded-md border bg-card px-2.5 py-1.5 text-xs text-muted-foreground">
+      {isFullScreen && fullScreenFooter != null && (
+        <div
+          className="absolute inset-x-3 bottom-3 z-[950] rounded-lg border bg-card/95 p-2 shadow-lg backdrop-blur-xs"
+          data-testid="site-layout-full-screen-footer"
+        >
+          {fullScreenFooter}
+        </div>
+      )}
+      <p
+        className={cn(
+          'pointer-events-none absolute bottom-3 left-3 max-w-[calc(100%-24px)] rounded-md border bg-card px-2.5 py-1.5 text-xs text-muted-foreground',
+          isFullScreen && fullScreenFooter != null && 'hidden',
+        )}
+      >
         {editing
-          ? t('sites.layoutView.hintEdit')
+          ? custom
+            ? t('sites.layoutView.hintEditCustom')
+            : t('sites.layoutView.hintEdit')
           : replaying
             ? t('sites.layoutView.hintReplay')
             : viewOnly
               ? t('sites.layoutView.hintViewOnly')
               : t('sites.layoutView.hint')}
+      </p>
+      {notice != null && (
+        <p
+          role="alert"
+          data-testid="site-layout-3d-notice"
+          className="pointer-events-none absolute bottom-14 left-3 z-[950] max-w-[calc(100%-24px)] rounded-md border border-destructive/50 bg-card px-2.5 py-1.5 text-xs text-destructive shadow-sm"
+        >
+          {notice}
+        </p>
+      )}
+      <p className="sr-only" aria-live="polite" data-testid="site-layout-3d-announcement">
+        {announcement}
       </p>
       {sessionStation?.session != null && !editing && live && (
         <SessionLayoutPopup

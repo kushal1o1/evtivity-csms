@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Upload } from 'lucide-react';
@@ -31,6 +31,7 @@ import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 import { getErrorMessage } from '@/lib/error-message';
+import { useLoadedValues } from '@/hooks/use-loaded-values';
 
 const CURRENCY_NAMES: Record<SupportedCurrency, string> = {
   USD: 'US Dollar',
@@ -66,6 +67,52 @@ const CURRENCY_NAMES: Record<SupportedCurrency, string> = {
   IDR: 'Indonesian Rupiah',
 };
 
+interface CompanyValues {
+  name: string;
+  currency: string;
+  priceDisplay: PriceDisplay;
+  taxBasis: TaxBasis;
+  contactEmail: string;
+  supportEmail: string;
+  supportPhone: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  portalUrl: string;
+  themeColor: string;
+  metaDescription: string;
+  metaKeywords: string;
+}
+
+/** The company form values as stored (defaults while the settings load). */
+function companyValuesFrom(settings: Record<string, unknown> | undefined): CompanyValues {
+  const s = (key: string): string => {
+    const v = settings?.[key];
+    return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+  };
+  const priceDisplay = s('company.priceDisplay');
+  return {
+    name: s('company.name') || 'EVtivity',
+    currency: s('company.currency').trim().toUpperCase() || DEFAULT_CURRENCY,
+    priceDisplay: isPriceDisplay(priceDisplay) ? priceDisplay : DEFAULT_PRICE_DISPLAY,
+    taxBasis: settings == null ? DEFAULT_TAX_BASIS : resolveTaxBasis(settings['company.taxBasis']),
+    contactEmail: s('company.contactEmail'),
+    supportEmail: s('company.supportEmail'),
+    supportPhone: s('company.supportPhone'),
+    street: s('company.street'),
+    city: s('company.city'),
+    state: s('company.state'),
+    zip: s('company.zip'),
+    country: s('company.country'),
+    portalUrl: s('company.portalUrl'),
+    themeColor: s('company.themeColor') || '#2563eb',
+    metaDescription: s('company.metaDescription'),
+    metaKeywords: s('company.metaKeywords'),
+  };
+}
+
 interface CompanySettingsProps {
   settings: Record<string, unknown> | undefined;
   svgDataUri: string | null;
@@ -98,70 +145,53 @@ export function CompanySettings({
       : '';
   const savedCurrencyUnsupported = savedCurrency !== '' && !isSupportedCurrency(savedCurrency);
 
-  const [companyName, setCompanyName] = useState('EVtivity');
-  const [companyCurrency, setCompanyCurrency] = useState(DEFAULT_CURRENCY);
-  const [companyPriceDisplay, setCompanyPriceDisplay] =
-    useState<PriceDisplay>(DEFAULT_PRICE_DISPLAY);
-  const [companyTaxBasis, setCompanyTaxBasis] = useState<TaxBasis>(DEFAULT_TAX_BASIS);
+  const loadedCompany = useMemo(() => companyValuesFrom(settings), [settings]);
+  const [companyValues, setCompanyValues, takeNextCompanyLoad] =
+    useLoadedValues<CompanyValues>(loadedCompany);
+  const companyField =
+    <K extends keyof CompanyValues>(key: K) =>
+    (value: CompanyValues[K]): void => {
+      setCompanyValues((prev) => ({ ...prev, [key]: value }));
+    };
+  const {
+    name: companyName,
+    currency: companyCurrency,
+    priceDisplay: companyPriceDisplay,
+    taxBasis: companyTaxBasis,
+    contactEmail: companyContactEmail,
+    supportEmail: companySupportEmail,
+    supportPhone: companySupportPhone,
+    street: companyStreet,
+    city: companyCity,
+    state: companyState,
+    zip: companyZip,
+    country: companyCountry,
+    portalUrl: companyPortalUrl,
+    themeColor: companyThemeColor,
+    metaDescription,
+    metaKeywords,
+  } = companyValues;
+  const setCompanyName = companyField('name');
+  const setCompanyCurrency = companyField('currency');
+  const setCompanyPriceDisplay = companyField('priceDisplay');
+  const setCompanyTaxBasis = companyField('taxBasis');
+  const setCompanyContactEmail = companyField('contactEmail');
+  const setCompanySupportEmail = companyField('supportEmail');
+  const setCompanySupportPhone = companyField('supportPhone');
+  const setCompanyStreet = companyField('street');
+  const setCompanyCity = companyField('city');
+  const setCompanyState = companyField('state');
+  const setCompanyZip = companyField('zip');
+  const setCompanyCountry = companyField('country');
+  const setCompanyPortalUrl = companyField('portalUrl');
+  const setCompanyThemeColor = companyField('themeColor');
+  const setMetaDescription = companyField('metaDescription');
+  const setMetaKeywords = companyField('metaKeywords');
   const [taxBasisConfirmOpen, setTaxBasisConfirmOpen] = useState(false);
   const savedTaxBasis = resolveTaxBasis(settings?.['company.taxBasis']);
-  const [companyContactEmail, setCompanyContactEmail] = useState('');
-  const [companySupportEmail, setCompanySupportEmail] = useState('');
-  const [companySupportPhone, setCompanySupportPhone] = useState('');
-  const [companyStreet, setCompanyStreet] = useState('');
-  const [companyCity, setCompanyCity] = useState('');
-  const [companyState, setCompanyState] = useState('');
-  const [companyZip, setCompanyZip] = useState('');
-  const [companyCountry, setCompanyCountry] = useState('');
-  const [companyPortalUrl, setCompanyPortalUrl] = useState('');
-  const [companyThemeColor, setCompanyThemeColor] = useState('#2563eb');
-  const [metaDescription, setMetaDescription] = useState('');
-  const [metaKeywords, setMetaKeywords] = useState('');
-
-  useEffect(() => {
-    if (settings == null) return;
-    const s = (key: string): string => {
-      const v = settings[key];
-      return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
-    };
-    setCompanyName(s('company.name') || 'EVtivity');
-    setCompanyCurrency(s('company.currency').trim().toUpperCase() || DEFAULT_CURRENCY);
-    const priceDisplay = s('company.priceDisplay');
-    setCompanyPriceDisplay(isPriceDisplay(priceDisplay) ? priceDisplay : DEFAULT_PRICE_DISPLAY);
-    setCompanyTaxBasis(resolveTaxBasis(settings['company.taxBasis']));
-    setCompanyContactEmail(s('company.contactEmail'));
-    setCompanySupportEmail(s('company.supportEmail'));
-    setCompanySupportPhone(s('company.supportPhone'));
-    setCompanyStreet(s('company.street'));
-    setCompanyCity(s('company.city'));
-    setCompanyState(s('company.state'));
-    setCompanyZip(s('company.zip'));
-    setCompanyCountry(s('company.country'));
-    setCompanyPortalUrl(s('company.portalUrl'));
-    setCompanyThemeColor(s('company.themeColor') || '#2563eb');
-    setMetaDescription(s('company.metaDescription'));
-    setMetaKeywords(s('company.metaKeywords'));
-  }, [settings]);
 
   const companyMutation = useMutation({
-    mutationFn: (vals: {
-      name: string;
-      currency: string;
-      priceDisplay: PriceDisplay;
-      taxBasis: TaxBasis;
-      contactEmail: string;
-      supportEmail: string;
-      supportPhone: string;
-      street: string;
-      city: string;
-      state: string;
-      zip: string;
-      country: string;
-      portalUrl: string;
-      themeColor: string;
-      metaDescription: string;
-      metaKeywords: string;
-    }) =>
+    mutationFn: (vals: CompanyValues) =>
       Promise.all([
         api.put('/v1/settings/company.name', { value: vals.name }),
         api.put('/v1/settings/company.currency', { value: vals.currency }),
@@ -186,23 +216,11 @@ export function CompanySettings({
   });
 
   const saveCompany = (): void => {
-    companyMutation.mutate({
-      name: companyName,
-      currency: companyCurrency,
-      priceDisplay: companyPriceDisplay,
-      taxBasis: companyTaxBasis,
-      contactEmail: companyContactEmail,
-      supportEmail: companySupportEmail,
-      supportPhone: companySupportPhone,
-      street: companyStreet,
-      city: companyCity,
-      state: companyState,
-      zip: companyZip,
-      country: companyCountry,
-      portalUrl: companyPortalUrl,
-      themeColor: companyThemeColor,
-      metaDescription,
-      metaKeywords,
+    const sent = companyValues;
+    companyMutation.mutate(sent, {
+      onSuccess: () => {
+        takeNextCompanyLoad(sent);
+      },
     });
   };
 

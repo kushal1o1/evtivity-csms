@@ -1,7 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { EditButton } from '@/components/edit-button';
@@ -21,6 +22,17 @@ import { HoursOfOperationField } from '@/components/site/HoursOfOperationField';
 import { SiteAiInsightsRow } from '@/components/site/SiteAiInsightsRow';
 import { SiteDataPlanCard } from '@/components/site/SiteDataPlanCard';
 import type { DataPlan } from '@evtivity/lib/station-data-plan';
+import {
+  effectiveLayoutSettings,
+  positionToBay,
+  siteTypeOf,
+  type SiteLayoutSettings,
+  type SiteType,
+} from '@evtivity/lib/site-layout';
+import { SiteTypeField } from '@/components/site/SiteTypeField';
+import type { LayoutStation } from '@/components/layout/StationCard';
+import { layoutStationCountsOf } from '@/components/layout/site-layout-free';
+import { SITE_TYPE_LABEL, layoutSummary } from '@/components/site/site-type';
 import type { SiteAiInsightsState } from '@/components/site/SiteAiInsightsRow';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { api } from '@/lib/api';
@@ -53,6 +65,8 @@ interface Site extends SiteAiInsightsState {
   autochargeEnabled?: boolean | null;
   dataPlan?: DataPlan | null;
   stationCount: number;
+  /** Stored layout settings, null when never saved (the default parking lot shows). */
+  layoutSettings?: SiteLayoutSettings | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -104,6 +118,28 @@ export function SiteDetailsTab({
   const [contactIsPublic, setContactIsPublic] = useState(false);
   const [hoursOfOperation, setHoursOfOperation] = useState('');
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [siteType, setSiteType] = useState<SiteType>('parking_lot');
+
+  // A site that never saved a layout shows the default lot grown to hold its
+  // stations, so its summary reads the station positions (the Layout tab's
+  // query); a depot reads its stations' connectors (bus bays and truck lanes
+  // follow them until a layout Save stores the counts).
+  const storedLayout = site.layoutSettings ?? null;
+  const readsStations = storedLayout == null || siteTypeOf(storedLayout) === 'depot';
+  const { data: layoutStations } = useQuery({
+    queryKey: ['sites', siteId, 'layout'],
+    queryFn: () => api.get<LayoutStation[]>(`/v1/sites/${siteId}/layout`),
+    enabled: readsStations && site.stationCount > 0,
+  });
+  const layout = useMemo(
+    () =>
+      effectiveLayoutSettings(
+        storedLayout,
+        (layoutStations ?? []).map((s) => positionToBay({ x: s.positionX, y: s.positionY })),
+        layoutStations != null ? layoutStationCountsOf(layoutStations) : site.stationCount,
+      ),
+    [storedLayout, layoutStations, site.stationCount],
+  );
 
   const { data: carbonFactors } = useQuery({
     queryKey: ['carbon-factors'],
@@ -158,6 +194,7 @@ export function SiteDetailsTab({
     setContactPhone(site.contactPhone ?? '');
     setContactIsPublic(site.contactIsPublic);
     setHoursOfOperation(site.hoursOfOperation ?? '');
+    setSiteType(siteTypeOf(layout));
     updateMutation.reset();
     setEditing(true);
   }
@@ -195,6 +232,7 @@ export function SiteDetailsTab({
       hoursOfOperation: orNull(hoursOfOperation),
     };
     if (editTimezone !== '') body['timezone'] = editTimezone;
+    if (siteType !== siteTypeOf(layout)) body['siteType'] = siteType;
     updateMutation.mutate(body);
   }
 
@@ -357,6 +395,7 @@ export function SiteDetailsTab({
               value={hoursOfOperation}
               onChange={setHoursOfOperation}
             />
+            <SiteTypeField id="edit-site-type" value={siteType} onChange={setSiteType} />
             <div className="border-t pt-4 space-y-4">
               <div>
                 <p className="text-sm font-medium">{t('sites.contact')}</p>
@@ -465,6 +504,24 @@ export function SiteDetailsTab({
             <div>
               <dt className="text-muted-foreground">{t('sites.hoursOfOperation')}</dt>
               <dd className="font-medium whitespace-pre-line">{site.hoursOfOperation ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{t('sites.layoutSettings.siteType')}</dt>
+              <dd className="font-medium" data-testid="site-type-value">
+                {t(SITE_TYPE_LABEL[siteTypeOf(layout)])}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{t('sites.layout')}</dt>
+              <dd className="font-medium">
+                <Link
+                  to={`/sites/${siteId}?tab=layout`}
+                  className="text-link underline-offset-4 hover:underline"
+                  data-testid="site-layout-summary"
+                >
+                  {layoutSummary(t, layout)}
+                </Link>
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t('common.created')}</dt>

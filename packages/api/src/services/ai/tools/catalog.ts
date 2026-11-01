@@ -4383,7 +4383,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     pathTemplate: '/v1/drivers/{id}/vehicles',
     pathParams: ['id'],
     queryParams: [],
-    bodyParams: ['make', 'model', 'year', 'licensePlate'],
+    bodyParams: ['make', 'model', 'year', 'licensePlate', 'color', 'bodyType'],
     parameters: {
       type: 'object',
       properties: {
@@ -4396,8 +4396,40 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
           pattern: '^\\d{4}$',
         },
         licensePlate: { description: 'License plate number', type: ['string', 'null'] },
+        color: {
+          description: 'Vehicle color group. Null removes it.',
+          type: ['string', 'null'],
+          enum: [
+            'white',
+            'black',
+            'silver',
+            'grey',
+            'blue',
+            'red',
+            'green',
+            'brown_beige',
+            'yellow_orange',
+            'other',
+            null,
+          ],
+        },
+        bodyType: {
+          description: 'Vehicle body type. Null removes it.',
+          type: ['string', 'null'],
+          enum: [
+            'sedan',
+            'hatchback',
+            'suv',
+            'pickup_truck',
+            'van',
+            'box_truck',
+            'bus',
+            'semi_truck',
+            null,
+          ],
+        },
       },
-      required: ['id', 'make', 'model', 'year', 'licensePlate'],
+      required: ['id', 'make', 'model', 'year', 'licensePlate', 'color', 'bodyType'],
       additionalProperties: false,
     },
     strict: true,
@@ -4419,6 +4451,40 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
         },
         year: { description: 'Model year (4-digit)', type: 'string', pattern: '^\\d{4}$' },
         licensePlate: { description: 'License plate number', type: 'string', maxLength: 20 },
+        color: {
+          description: 'Vehicle color group. Null removes it.',
+          nullable: true,
+          type: 'string',
+          enum: [
+            'white',
+            'black',
+            'silver',
+            'grey',
+            'blue',
+            'red',
+            'green',
+            'brown_beige',
+            'yellow_orange',
+            'other',
+            null,
+          ],
+        },
+        bodyType: {
+          description: 'Vehicle body type. Null removes it.',
+          nullable: true,
+          type: 'string',
+          enum: [
+            'sedan',
+            'hatchback',
+            'suv',
+            'pickup_truck',
+            'van',
+            'box_truck',
+            'bus',
+            'semi_truck',
+            null,
+          ],
+        },
       },
       required: ['id', 'make', 'model'],
       additionalProperties: false,
@@ -4426,6 +4492,8 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     responseFields: [
       'at',
       'autochargeBlockedAt',
+      'bodyType',
+      'color',
       'createdAt',
       'driverId',
       'evccid',
@@ -5069,6 +5137,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'contactIsPublic',
       'hoursOfOperation',
       'metadata',
+      'siteType',
     ],
     parameters: {
       type: 'object',
@@ -5090,6 +5159,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
         contactIsPublic: { type: 'boolean' },
         hoursOfOperation: { nullable: true, type: 'string', maxLength: 500 },
         metadata: { type: 'object', additionalProperties: {} },
+        siteType: {
+          description:
+            'Site type of the layout: parking_lot, office_retail, curbside, depot or custom. Stored in layoutSettings.siteType; every other layout setting is kept, so switching back restores it. A station outside the new layout moves to the nearest free spot; one with no free spot keeps its position (off the layout). Switching to depot puts the stations with an MCS connector into truck lanes and the others into bus bays. Switching to custom gives every station a free position where it stands now (stations whose spots would overlap slide along their row); switching from custom returns the stations to their grid spots. Omitted keeps the type',
+          type: 'string',
+          enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
+        },
       },
       required: ['name'],
       additionalProperties: false,
@@ -5115,6 +5190,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
         contactIsPublic: { type: 'boolean' },
         hoursOfOperation: { nullable: true, type: 'string', maxLength: 500 },
         metadata: { type: 'object', additionalProperties: {} },
+        siteType: {
+          description:
+            'Site type of the layout: parking_lot, office_retail, curbside, depot or custom. Stored in layoutSettings.siteType; every other layout setting is kept, so switching back restores it. A station outside the new layout moves to the nearest free spot; one with no free spot keeps its position (off the layout). Switching to depot puts the stations with an MCS connector into truck lanes and the others into bus bays. Switching to custom gives every station a free position where it stands now (stations whose spots would overlap slide along their row); switching from custom returns the stations to their grid spots. Omitted keeps the type',
+          type: 'string',
+          enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
+        },
       },
       required: ['name'],
       additionalProperties: false,
@@ -7734,6 +7815,8 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     responseFields: [
       'at',
       'autochargeBlockedAt',
+      'bodyType',
+      'color',
       'createdAt',
       'driverId',
       'evccid',
@@ -8817,8 +8900,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'aiInsightsSuppressedReason',
       'aiInsightsSuppressedUntil',
       'aiMonthlyTokenBudget',
+      'busBays',
       'capacityKwh',
       'capacityKwp',
+      'chargers',
+      'chargersLeft',
+      'chargersRight',
       'city',
       'contactEmail',
       'contactName',
@@ -8829,25 +8916,25 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'facingDeg',
       'hoursOfOperation',
       'id',
-      'laneWidthM',
       'latitude',
       'longitude',
       'maxPowerKw',
+      'mounting',
       'name',
       'postalCode',
       'ratedKva',
       'reason',
+      'rotationDeg',
       'row',
       'rows',
       'siteType',
-      'spotDepthM',
-      'spotWidthM',
       'spotsPerRow',
       'state',
       'stationCount',
       'stationMessageLanguage',
       'timezone',
       'totalDrawKw',
+      'truckLanes',
       'type',
       'updatedAt',
       'x',
@@ -9016,7 +9103,9 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       additionalProperties: false,
     },
     responseFields: [
+      'bodyType',
       'chargingKind',
+      'color',
       'connectorId',
       'connectorType',
       'currency',
@@ -9032,6 +9121,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'name',
       'positionX',
       'positionY',
+      'rotationDeg',
       'securityProfile',
       'seed',
       'startedAt',
@@ -9041,6 +9131,8 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'style',
       'updatedAt',
       'url',
+      'x',
+      'z',
     ],
   },
   {
@@ -12478,6 +12570,8 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     responseFields: [
       'at',
       'autochargeBlockedAt',
+      'bodyType',
+      'color',
       'createdAt',
       'driverId',
       'evccid',
@@ -15270,8 +15364,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'aiInsightsSuppressedReason',
       'aiInsightsSuppressedUntil',
       'aiMonthlyTokenBudget',
+      'busBays',
       'capacityKwh',
       'capacityKwp',
+      'chargers',
+      'chargersLeft',
+      'chargersRight',
       'city',
       'contactEmail',
       'contactName',
@@ -15282,19 +15380,18 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'facingDeg',
       'hoursOfOperation',
       'id',
-      'laneWidthM',
       'latitude',
       'longitude',
       'maxPowerKw',
+      'mounting',
       'name',
       'postalCode',
       'ratedKva',
       'reason',
+      'rotationDeg',
       'row',
       'rows',
       'siteType',
-      'spotDepthM',
-      'spotWidthM',
       'spotsPerRow',
       'state',
       'stationCount',
@@ -15302,6 +15399,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'timezone',
       'total',
       'totalDrawKw',
+      'truckLanes',
       'type',
       'updatedAt',
       'x',
@@ -26646,7 +26744,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     pathTemplate: '/v1/drivers/{id}/vehicles/{vehicleId}',
     pathParams: ['id', 'vehicleId'],
     queryParams: [],
-    bodyParams: ['make', 'model', 'year', 'licensePlate'],
+    bodyParams: ['make', 'model', 'year', 'licensePlate', 'color', 'bodyType'],
     parameters: {
       type: 'object',
       properties: {
@@ -26660,8 +26758,40 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
           pattern: '^\\d{4}$',
         },
         licensePlate: { description: 'License plate. Null removes it.', type: ['string', 'null'] },
+        color: {
+          description: 'Vehicle color group. Null removes it.',
+          type: ['string', 'null'],
+          enum: [
+            'white',
+            'black',
+            'silver',
+            'grey',
+            'blue',
+            'red',
+            'green',
+            'brown_beige',
+            'yellow_orange',
+            'other',
+            null,
+          ],
+        },
+        bodyType: {
+          description: 'Vehicle body type. Null removes it.',
+          type: ['string', 'null'],
+          enum: [
+            'sedan',
+            'hatchback',
+            'suv',
+            'pickup_truck',
+            'van',
+            'box_truck',
+            'bus',
+            'semi_truck',
+            null,
+          ],
+        },
       },
-      required: ['id', 'vehicleId', 'make', 'model', 'year', 'licensePlate'],
+      required: ['id', 'vehicleId', 'make', 'model', 'year', 'licensePlate', 'color', 'bodyType'],
       additionalProperties: false,
     },
     strict: true,
@@ -26684,6 +26814,40 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
           type: 'string',
           maxLength: 20,
         },
+        color: {
+          description: 'Vehicle color group. Null removes it.',
+          nullable: true,
+          type: 'string',
+          enum: [
+            'white',
+            'black',
+            'silver',
+            'grey',
+            'blue',
+            'red',
+            'green',
+            'brown_beige',
+            'yellow_orange',
+            'other',
+            null,
+          ],
+        },
+        bodyType: {
+          description: 'Vehicle body type. Null removes it.',
+          nullable: true,
+          type: 'string',
+          enum: [
+            'sedan',
+            'hatchback',
+            'suv',
+            'pickup_truck',
+            'van',
+            'box_truck',
+            'bus',
+            'semi_truck',
+            null,
+          ],
+        },
       },
       required: ['id', 'vehicleId'],
       additionalProperties: false,
@@ -26691,6 +26855,8 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
     responseFields: [
       'at',
       'autochargeBlockedAt',
+      'bodyType',
+      'color',
       'createdAt',
       'driverId',
       'evccid',
@@ -27231,6 +27397,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
       'reservationsEnabled',
       'autochargeEnabled',
       'stationMessageLanguage',
+      'siteType',
     ],
     parameters: {
       type: 'object',
@@ -27306,6 +27473,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
           nullable: true,
           type: 'string',
           enum: ['en', 'de', 'es', 'ko', 'zh', 'zh-TW', null],
+        },
+        siteType: {
+          description:
+            'Site type of the layout: parking_lot, office_retail, curbside, depot or custom. Stored in layoutSettings.siteType; every other layout setting is kept, so switching back restores it. A station outside the new layout moves to the nearest free spot; one with no free spot keeps its position (off the layout). Switching to depot puts the stations with an MCS connector into truck lanes and the others into bus bays. Switching to custom gives every station a free position where it stands now (stations whose spots would overlap slide along their row); switching from custom returns the stations to their grid spots. Omitted keeps the type',
+          type: 'string',
+          enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
         },
       },
       required: ['id'],
@@ -27386,6 +27559,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
           nullable: true,
           type: 'string',
           enum: ['en', 'de', 'es', 'ko', 'zh', 'zh-TW', null],
+        },
+        siteType: {
+          description:
+            'Site type of the layout: parking_lot, office_retail, curbside, depot or custom. Stored in layoutSettings.siteType; every other layout setting is kept, so switching back restores it. A station outside the new layout moves to the nearest free spot; one with no free spot keeps its position (off the layout). Switching to depot puts the stations with an MCS connector into truck lanes and the others into bus bays. Switching to custom gives every station a free position where it stands now (stations whose spots would overlap slide along their row); switching from custom returns the stations to their grid spots. Omitted keeps the type',
+          type: 'string',
+          enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
         },
       },
       required: ['id'],
@@ -27583,6 +27762,35 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
               },
               positionX: { type: 'number', description: 'X coordinate on the layout board in px' },
               positionY: { type: 'number', description: 'Y coordinate on the layout board in px' },
+              freePosition: {
+                description:
+                  'Custom site: where the station stands (meters and turn). Omitted keeps the saved one; null clears it (the station then gets one right of the others). Spots that overlap another station answer 400 VALIDATION_ERROR naming the stations (details.stations)',
+                nullable: true,
+                type: 'object',
+                properties: {
+                  x: {
+                    type: 'number',
+                    minimum: -400,
+                    maximum: 400,
+                    description: 'Meters along the site x axis (-400 to 400)',
+                  },
+                  z: {
+                    type: 'number',
+                    minimum: -400,
+                    maximum: 400,
+                    description: 'Meters along the site z axis (-400 to 400)',
+                  },
+                  rotationDeg: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 359.9,
+                    description:
+                      'Turn in degrees, clockwise from above (0 to 359.9; 0: the parking spots lie toward +z)',
+                  },
+                },
+                required: ['x', 'z', 'rotationDeg'],
+                additionalProperties: false,
+              },
             },
             required: ['stationId', 'positionX', 'positionY'],
             additionalProperties: false,
@@ -27591,46 +27799,27 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
         },
         settings: {
           description:
-            'New layout settings of the site (site type, lot and transformers); null resets them to the default, omitted keeps them. A station outside the lot moves to the nearest free spot inside, a transformer on the lot moves to the grass beside it; when the lot has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
+            'New layout settings of the site (the site type and the fields of every type); null resets them to the default, omitted keeps them. A station outside the layout moves to the nearest free spot, a transformer or battery on the lot moves to the grass beside it; when the layout has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
           nullable: true,
           type: 'object',
           properties: {
             siteType: {
               description:
-                'Kind of site: parking_lot (an outdoor hub: a paved lot on grass, transformers shown) or office_retail (the car park in front of a building: wall boxes on the facade, no transformers shown; stored transformers are kept). Absent means parking_lot',
+                'Kind of site: parking_lot (an outdoor hub: a paved lot on grass with transformers, batteries, solar canopies and switchboards), office_retail (one row of spots in front of a building, chargers on the facade or on a post at each spot), curbside (a street with chargers on posts at the curb of one or both sides), depot (a fenced fleet yard: nose-in bus bays of 4.3 by 14 m with pantograph poles or dispensers at their heads, and truck pull-through lanes of 5 by 25 m with a dispenser island beside each, one station per bay or lane) or custom (grass with each station placed and turned freely, with its own car spots). Only a parking lot, a depot and a custom site show transformers, energy assets and load management panels; the other types keep them stored, hidden. Absent means parking_lot',
               type: 'string',
-              enum: ['parking_lot', 'office_retail'],
+              enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
             },
             spotsPerRow: {
               type: 'integer',
               minimum: 1,
               maximum: 100,
-              description: 'Parking spots in each row (1 to 100)',
+              description: 'Parking lot: spots in each row (1 to 100)',
             },
             rows: {
               type: 'integer',
               minimum: 1,
               maximum: 100,
-              description: 'Number of rows (1 to 100)',
-            },
-            spotWidthM: {
-              type: 'number',
-              minimum: 2,
-              maximum: 6,
-              description: 'Spot width in meters (2 to 6, 10 cm steps)',
-            },
-            spotDepthM: {
-              type: 'number',
-              minimum: 4,
-              maximum: 10,
-              description: 'Spot depth in meters (4 to 10, 10 cm steps)',
-            },
-            laneWidthM: {
-              type: 'number',
-              minimum: 0,
-              maximum: 15,
-              description:
-                'Driving lane between two rows in meters (0 to 15, 10 cm steps; 0 puts the rows back to back)',
+              description: 'Parking lot: number of rows (1 to 100)',
             },
             facingDeg: {
               anyOf: [
@@ -27640,7 +27829,48 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                 { type: 'number', enum: [270] },
               ],
               description:
-                'Direction the spots and chargers face, in degrees (0, 90, 180 or 270; 0 is the default)',
+                'Parking lot and depot: direction the spots and chargers face, in degrees (0, 90, 180 or 270; 0 is the default)',
+            },
+            chargers: {
+              description:
+                'Office or retail: charger positions, one spot each, in one row along the building (1 to 100). Absent means one per station at the site',
+              type: 'integer',
+              minimum: 1,
+              maximum: 100,
+            },
+            mounting: {
+              description:
+                'Office or retail: wall (a wall box on the facade, its cable across the sidewalk) or stall (a post at the head of each spot). Absent means wall',
+              type: 'string',
+              enum: ['wall', 'stall'],
+            },
+            chargersLeft: {
+              description:
+                'Curbside: chargers along the left curb (0 to 100; both sides together at least 1). Absent means half the stations at the site, rounded up',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            chargersRight: {
+              description:
+                'Curbside: chargers along the right curb (0 to 100). Absent means the stations the left curb leaves',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            busBays: {
+              description:
+                'Depot: nose-in bus bays, one station each (0 to 100; bus bays and truck lanes together at least 1). Absent means one per station at the site without a Megawatt Charging System connector',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            truckLanes: {
+              description:
+                'Depot: truck pull-through lanes, one station each (0 to 100). Absent means one per station at the site with a Megawatt Charging System connector (MCS, cMCS)',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
             },
             transformers: {
               maxItems: 10,
@@ -27670,15 +27900,15 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                   },
                   x: {
                     type: 'number',
-                    minimum: -800,
-                    maximum: 800,
+                    minimum: -919,
+                    maximum: 919,
                     description:
                       'Position in meters along the rows, from the front left corner of the lot. A point on the lot moves to the grass beside it',
                   },
                   z: {
                     type: 'number',
-                    minimum: -800,
-                    maximum: 800,
+                    minimum: -919,
+                    maximum: 919,
                     description:
                       'Position in meters across the rows, from the front left corner of the lot',
                   },
@@ -27687,11 +27917,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                 additionalProperties: false,
                 description: 'A pad-mounted transformer on the grass next to the lot',
               },
-              description: 'Transformers on the grass (up to 10)',
+              description:
+                'Parking lot, depot and custom site: transformers on the grass (up to 10), information only',
             },
             energyAssets: {
               description:
-                'Batteries and solar canopies, informational (up to 10). Absent means none',
+                'Parking lot, depot and custom site: batteries and solar canopies, informational (up to 10). Absent means none',
               maxItems: 10,
               type: 'array',
               items: {
@@ -27726,15 +27957,15 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                       },
                       x: {
                         type: 'number',
-                        minimum: -800,
-                        maximum: 800,
+                        minimum: -919,
+                        maximum: 919,
                         description:
                           'Position in meters along the rows, from the front left corner of the lot. A point on the lot moves to the grass beside it, like a transformer',
                       },
                       z: {
                         type: 'number',
-                        minimum: -800,
-                        maximum: 800,
+                        minimum: -919,
+                        maximum: 919,
                         description:
                           'Position in meters across the rows, from the front left corner of the lot',
                       },
@@ -27742,7 +27973,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                     required: ['id', 'type', 'name', 'capacityKwh', 'x', 'z'],
                     additionalProperties: false,
                     description:
-                      'A battery storage cabinet on the grass next to the lot, shown on every site type',
+                      'A battery storage cabinet on the grass next to the lot or the depot yard (standing freely on a custom site), shown on a parking lot, a depot and a custom site (kept, hidden, on the other site types)',
                   },
                   {
                     type: 'object',
@@ -27779,26 +28010,39 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                         description:
                           "0-based row of the lot the canopy covers; a row past the lot's last row reads as the last row",
                       },
+                      x: {
+                        description:
+                          'Custom site and depot: the middle of the canopy in meters along x. Absent: over its row of the parking lot grid (a depot: over staff parking behind the yard)',
+                        type: 'number',
+                        minimum: -400,
+                        maximum: 400,
+                      },
+                      z: {
+                        description:
+                          'Custom site and depot: the middle of the canopy in meters along z',
+                        type: 'number',
+                        minimum: -400,
+                        maximum: 400,
+                      },
+                      rotationDeg: {
+                        description:
+                          'Custom site and depot: the turn of the canopy in degrees, clockwise from above',
+                        type: 'number',
+                        minimum: 0,
+                        maximum: 359.9,
+                      },
                     },
                     required: ['id', 'type', 'name', 'capacityKwp', 'row'],
                     additionalProperties: false,
                     description:
-                      'A solar carport canopy over a row of the lot, shown on a parking lot only (kept, hidden, on an office or retail site)',
+                      'A solar carport canopy: over a row of the lot on a parking lot, standing freely on a custom site or a depot (its length follows its peak power); kept, hidden, on the other site types',
                   },
                 ],
                 description: 'An informational energy asset: a battery or a solar canopy',
               },
             },
           },
-          required: [
-            'spotsPerRow',
-            'rows',
-            'spotWidthM',
-            'spotDepthM',
-            'laneWidthM',
-            'facingDeg',
-            'transformers',
-          ],
+          required: ['spotsPerRow', 'rows', 'facingDeg', 'transformers'],
           additionalProperties: false,
         },
       },
@@ -27822,6 +28066,35 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
               },
               positionX: { type: 'number', description: 'X coordinate on the layout board in px' },
               positionY: { type: 'number', description: 'Y coordinate on the layout board in px' },
+              freePosition: {
+                description:
+                  'Custom site: where the station stands (meters and turn). Omitted keeps the saved one; null clears it (the station then gets one right of the others). Spots that overlap another station answer 400 VALIDATION_ERROR naming the stations (details.stations)',
+                nullable: true,
+                type: 'object',
+                properties: {
+                  x: {
+                    type: 'number',
+                    minimum: -400,
+                    maximum: 400,
+                    description: 'Meters along the site x axis (-400 to 400)',
+                  },
+                  z: {
+                    type: 'number',
+                    minimum: -400,
+                    maximum: 400,
+                    description: 'Meters along the site z axis (-400 to 400)',
+                  },
+                  rotationDeg: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 359.9,
+                    description:
+                      'Turn in degrees, clockwise from above (0 to 359.9; 0: the parking spots lie toward +z)',
+                  },
+                },
+                required: ['x', 'z', 'rotationDeg'],
+                additionalProperties: false,
+              },
             },
             required: ['stationId', 'positionX', 'positionY'],
             additionalProperties: false,
@@ -27830,46 +28103,27 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
         },
         settings: {
           description:
-            'New layout settings of the site (site type, lot and transformers); null resets them to the default, omitted keeps them. A station outside the lot moves to the nearest free spot inside, a transformer on the lot moves to the grass beside it; when the lot has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
+            'New layout settings of the site (the site type and the fields of every type); null resets them to the default, omitted keeps them. A station outside the layout moves to the nearest free spot, a transformer or battery on the lot moves to the grass beside it; when the layout has no free spot left for a station, the save answers 400 VALIDATION_ERROR naming those stations (details.stations) and changes nothing',
           nullable: true,
           type: 'object',
           properties: {
             siteType: {
               description:
-                'Kind of site: parking_lot (an outdoor hub: a paved lot on grass, transformers shown) or office_retail (the car park in front of a building: wall boxes on the facade, no transformers shown; stored transformers are kept). Absent means parking_lot',
+                'Kind of site: parking_lot (an outdoor hub: a paved lot on grass with transformers, batteries, solar canopies and switchboards), office_retail (one row of spots in front of a building, chargers on the facade or on a post at each spot), curbside (a street with chargers on posts at the curb of one or both sides), depot (a fenced fleet yard: nose-in bus bays of 4.3 by 14 m with pantograph poles or dispensers at their heads, and truck pull-through lanes of 5 by 25 m with a dispenser island beside each, one station per bay or lane) or custom (grass with each station placed and turned freely, with its own car spots). Only a parking lot, a depot and a custom site show transformers, energy assets and load management panels; the other types keep them stored, hidden. Absent means parking_lot',
               type: 'string',
-              enum: ['parking_lot', 'office_retail'],
+              enum: ['parking_lot', 'office_retail', 'curbside', 'depot', 'custom'],
             },
             spotsPerRow: {
               type: 'integer',
               minimum: 1,
               maximum: 100,
-              description: 'Parking spots in each row (1 to 100)',
+              description: 'Parking lot: spots in each row (1 to 100)',
             },
             rows: {
               type: 'integer',
               minimum: 1,
               maximum: 100,
-              description: 'Number of rows (1 to 100)',
-            },
-            spotWidthM: {
-              type: 'number',
-              minimum: 2,
-              maximum: 6,
-              description: 'Spot width in meters (2 to 6, 10 cm steps)',
-            },
-            spotDepthM: {
-              type: 'number',
-              minimum: 4,
-              maximum: 10,
-              description: 'Spot depth in meters (4 to 10, 10 cm steps)',
-            },
-            laneWidthM: {
-              type: 'number',
-              minimum: 0,
-              maximum: 15,
-              description:
-                'Driving lane between two rows in meters (0 to 15, 10 cm steps; 0 puts the rows back to back)',
+              description: 'Parking lot: number of rows (1 to 100)',
             },
             facingDeg: {
               anyOf: [
@@ -27879,7 +28133,48 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                 { type: 'number', enum: [270] },
               ],
               description:
-                'Direction the spots and chargers face, in degrees (0, 90, 180 or 270; 0 is the default)',
+                'Parking lot and depot: direction the spots and chargers face, in degrees (0, 90, 180 or 270; 0 is the default)',
+            },
+            chargers: {
+              description:
+                'Office or retail: charger positions, one spot each, in one row along the building (1 to 100). Absent means one per station at the site',
+              type: 'integer',
+              minimum: 1,
+              maximum: 100,
+            },
+            mounting: {
+              description:
+                'Office or retail: wall (a wall box on the facade, its cable across the sidewalk) or stall (a post at the head of each spot). Absent means wall',
+              type: 'string',
+              enum: ['wall', 'stall'],
+            },
+            chargersLeft: {
+              description:
+                'Curbside: chargers along the left curb (0 to 100; both sides together at least 1). Absent means half the stations at the site, rounded up',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            chargersRight: {
+              description:
+                'Curbside: chargers along the right curb (0 to 100). Absent means the stations the left curb leaves',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            busBays: {
+              description:
+                'Depot: nose-in bus bays, one station each (0 to 100; bus bays and truck lanes together at least 1). Absent means one per station at the site without a Megawatt Charging System connector',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
+            },
+            truckLanes: {
+              description:
+                'Depot: truck pull-through lanes, one station each (0 to 100). Absent means one per station at the site with a Megawatt Charging System connector (MCS, cMCS)',
+              type: 'integer',
+              minimum: 0,
+              maximum: 100,
             },
             transformers: {
               maxItems: 10,
@@ -27909,15 +28204,15 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                   },
                   x: {
                     type: 'number',
-                    minimum: -800,
-                    maximum: 800,
+                    minimum: -919,
+                    maximum: 919,
                     description:
                       'Position in meters along the rows, from the front left corner of the lot. A point on the lot moves to the grass beside it',
                   },
                   z: {
                     type: 'number',
-                    minimum: -800,
-                    maximum: 800,
+                    minimum: -919,
+                    maximum: 919,
                     description:
                       'Position in meters across the rows, from the front left corner of the lot',
                   },
@@ -27926,11 +28221,12 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                 additionalProperties: false,
                 description: 'A pad-mounted transformer on the grass next to the lot',
               },
-              description: 'Transformers on the grass (up to 10)',
+              description:
+                'Parking lot, depot and custom site: transformers on the grass (up to 10), information only',
             },
             energyAssets: {
               description:
-                'Batteries and solar canopies, informational (up to 10). Absent means none',
+                'Parking lot, depot and custom site: batteries and solar canopies, informational (up to 10). Absent means none',
               maxItems: 10,
               type: 'array',
               items: {
@@ -27965,15 +28261,15 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                       },
                       x: {
                         type: 'number',
-                        minimum: -800,
-                        maximum: 800,
+                        minimum: -919,
+                        maximum: 919,
                         description:
                           'Position in meters along the rows, from the front left corner of the lot. A point on the lot moves to the grass beside it, like a transformer',
                       },
                       z: {
                         type: 'number',
-                        minimum: -800,
-                        maximum: 800,
+                        minimum: -919,
+                        maximum: 919,
                         description:
                           'Position in meters across the rows, from the front left corner of the lot',
                       },
@@ -27981,7 +28277,7 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                     required: ['id', 'type', 'name', 'capacityKwh', 'x', 'z'],
                     additionalProperties: false,
                     description:
-                      'A battery storage cabinet on the grass next to the lot, shown on every site type',
+                      'A battery storage cabinet on the grass next to the lot or the depot yard (standing freely on a custom site), shown on a parking lot, a depot and a custom site (kept, hidden, on the other site types)',
                   },
                   {
                     type: 'object',
@@ -28018,33 +28314,46 @@ export const AI_TOOL_CATALOG: readonly AiCatalogTool[] = [
                         description:
                           "0-based row of the lot the canopy covers; a row past the lot's last row reads as the last row",
                       },
+                      x: {
+                        description:
+                          'Custom site and depot: the middle of the canopy in meters along x. Absent: over its row of the parking lot grid (a depot: over staff parking behind the yard)',
+                        type: 'number',
+                        minimum: -400,
+                        maximum: 400,
+                      },
+                      z: {
+                        description:
+                          'Custom site and depot: the middle of the canopy in meters along z',
+                        type: 'number',
+                        minimum: -400,
+                        maximum: 400,
+                      },
+                      rotationDeg: {
+                        description:
+                          'Custom site and depot: the turn of the canopy in degrees, clockwise from above',
+                        type: 'number',
+                        minimum: 0,
+                        maximum: 359.9,
+                      },
                     },
                     required: ['id', 'type', 'name', 'capacityKwp', 'row'],
                     additionalProperties: false,
                     description:
-                      'A solar carport canopy over a row of the lot, shown on a parking lot only (kept, hidden, on an office or retail site)',
+                      'A solar carport canopy: over a row of the lot on a parking lot, standing freely on a custom site or a depot (its length follows its peak power); kept, hidden, on the other site types',
                   },
                 ],
                 description: 'An informational energy asset: a battery or a solar canopy',
               },
             },
           },
-          required: [
-            'spotsPerRow',
-            'rows',
-            'spotWidthM',
-            'spotDepthM',
-            'laneWidthM',
-            'facingDeg',
-            'transformers',
-          ],
+          required: ['spotsPerRow', 'rows', 'facingDeg', 'transformers'],
           additionalProperties: false,
         },
       },
       required: ['id', 'positions'],
       additionalProperties: false,
     },
-    responseFields: ['positionX', 'positionY', 'stationId'],
+    responseFields: ['positionX', 'positionY', 'rotationDeg', 'stationId', 'x', 'z'],
   },
   {
     name: 'update_site_maintenance_event',

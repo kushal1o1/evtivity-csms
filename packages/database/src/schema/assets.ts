@@ -315,6 +315,11 @@ export const stationLayoutPositions = pgTable(
       .unique(),
     positionX: numeric('position_x').notNull().default('0'),
     positionY: numeric('position_y').notNull().default('0'),
+    // Custom site: the charger point in meters and its turn in degrees
+    // (@evtivity/lib/site-layout FreePlacement); all three or none.
+    freeXM: numeric('free_x_m', { precision: 7, scale: 2 }),
+    freeZM: numeric('free_z_m', { precision: 7, scale: 2 }),
+    freeRotationDeg: numeric('free_rotation_deg', { precision: 4, scale: 1 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

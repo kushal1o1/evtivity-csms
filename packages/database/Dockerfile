@@ -28,13 +28,14 @@ RUN npm ci --ignore-scripts && npm rebuild argon2
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages/lib/ packages/lib/
 COPY packages/database/ packages/database/
+# verify-migrations-applied.mjs and check-migrations.mjs are referenced by
+# `npm run migrate` from packages/database; without scripts/ in the image the
+# migrate-job container fails on a missing script. The lib build below needs it
+# too: a lib test imports scripts/lib/dev-live.mjs.
+COPY scripts/ scripts/
 # sync-admin-permissions (the last step of `npm run migrate`) imports @evtivity/lib,
 # whose package entry is the compiled dist/.
 RUN npm run build --workspace=packages/lib
-# verify-migrations-applied.mjs and check-migrations.mjs are referenced by
-# `npm run migrate` from packages/database; without scripts/ in the image the
-# migrate-job container fails on a missing script.
-COPY scripts/ scripts/
 LABEL org.opencontainers.image.source="https://github.com/EVtivity/evtivity-csms"
 LABEL org.opencontainers.image.licenses="BUSL-1.1"
 LABEL org.opencontainers.image.vendor="EVtivity"

@@ -132,6 +132,8 @@ function renderView(
     editing: boolean;
     onMove: () => void;
     onTransformerMove: () => void;
+    onFreeMove: (...args: unknown[]) => void;
+    onSolarMove: (...args: unknown[]) => void;
     onUnavailable: () => void;
     settings: SiteLayoutSettings;
     terminals: Map<string, LayoutTerminal[]>;
@@ -140,6 +142,8 @@ function renderView(
     insights: Map<string, LayoutInsight[]>;
     replaying: boolean;
     drawKw: (id: string) => number | undefined;
+    fullScreenFooter: React.ReactNode;
+    onFullScreenChange: (on: boolean) => void;
   }> = {},
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -161,8 +165,12 @@ function renderView(
           allocatedLimitKw={() => 120}
           insights={props.insights}
           replaying={props.replaying ?? false}
+          fullScreenFooter={props.fullScreenFooter}
+          onFullScreenChange={props.onFullScreenChange}
           onMove={onMove}
           onTransformerMove={onTransformerMove}
+          onFreeMove={props.onFreeMove}
+          onSolarMove={props.onSolarMove}
           onUnavailable={onUnavailable}
         />
       </MemoryRouter>
@@ -225,6 +233,7 @@ beforeEach(() => {
         scene.editing = e;
       },
       setSelected: vi.fn(),
+      setSelectedSolar: vi.fn(),
       fit: () => {
         scene.fits += 1;
       },
@@ -462,7 +471,7 @@ describe('SiteLayout3D', () => {
     renderView([station()], { hierarchy });
     // Panel to circuit, circuit to station: no link starts at a transformer.
     expect(scene.links.segments).toHaveLength(2);
-    expect(scene.panels).toEqual([expect.objectContaining({ id: 'p1', mount: 'pad' })]);
+    expect(scene.panels).toEqual([expect.objectContaining({ id: 'p1' })]);
     expect(screen.getByTestId('site-layout-3d-link-panel:p1').textContent).toBe(
       'Main Panel · 400 A · 230.4 kW',
     );
@@ -485,7 +494,7 @@ describe('SiteLayout3D', () => {
     expect(scene.links.segments).toEqual([]);
   });
 
-  it('shows an office or retail site with wall boxes and wall panels, and no transformers', () => {
+  it('shows an office or retail site with wall boxes, and no transformers, panels or links', () => {
     const hierarchy: LinkPanel[] = [
       {
         id: 'p1',
@@ -515,6 +524,8 @@ describe('SiteLayout3D', () => {
         settings: {
           ...SETTINGS,
           siteType: 'office_retail',
+          chargers: 2,
+          mounting: 'wall',
           transformers: [{ id: 'tx-9', name: 'Kept', ratedKva: 500, x: 40, z: 3 }],
         },
       },
@@ -523,16 +534,53 @@ describe('SiteLayout3D', () => {
     // The stored transformer stays in the settings but is not shown.
     expect(scene.transformers).toEqual([]);
     expect(screen.queryByTestId('site-layout-3d-transformer-tx-9')).toBeNull();
-    // An AC charger of the first row hangs on the facade; DC and the second row stand at the curb.
+    // An AC charger of the row hangs on the facade; DC and a station off the row stand at the curb.
     expect(scene.stations.map((s) => [s.id, s.wall])).toEqual([
       ['sta_ac', true],
       ['sta_dc', false],
       ['sta_back', false],
     ]);
-    expect(scene.panels).toEqual([expect.objectContaining({ id: 'p1', mount: 'wall' })]);
-    expect(screen.getByTestId('site-layout-3d-link-panel:p1').textContent).toBe(
-      'Retail Panel · 200 A · 57.6 kW',
+    // The panels sit behind the walls: no models and no links.
+    expect(scene.panels).toEqual([]);
+    expect(scene.links).toEqual({ segments: [], labels: [] });
+    expect(screen.queryByTestId('site-layout-3d-link-panel:p1')).toBeNull();
+  });
+
+  it('stands every charger of a stall-mounted office or retail row on a post', () => {
+    renderView([station({ id: 'sta_ac', stationId: 'CS-AC', chargingKind: 'ac' })], {
+      settings: { ...SETTINGS, siteType: 'office_retail', chargers: 4, mounting: 'stall' },
+    });
+    expect(scene.lot).toMatchObject({ siteType: 'office_retail', mounting: 'stall', rows: 1 });
+    expect(scene.stations[0]?.wall).toBe(false);
+  });
+
+  it('shows a curbside street with chargers on both curbs and nothing else', () => {
+    renderView(
+      [
+        station({ id: 'sta_l', stationId: 'CS-L', chargingKind: 'ac' }),
+        station({ id: 'sta_r', stationId: 'CS-R', chargingKind: 'ac', positionY: 160 }),
+      ],
+      {
+        settings: {
+          ...SETTINGS,
+          siteType: 'curbside',
+          chargersLeft: 4,
+          chargersRight: 4,
+          energyAssets: [
+            { id: 'bat-1', type: 'battery', name: null, capacityKwh: 100, x: 4, z: -6 },
+          ],
+        },
+      },
     );
+    expect(scene.lot).toMatchObject({ siteType: 'curbside', rowLengths: [4, 4] });
+    expect(scene.stations.map((s) => [s.id, s.bay, s.wall])).toEqual([
+      ['sta_l', { col: 0, row: 0 }, false],
+      ['sta_r', { col: 0, row: 1 }, false],
+    ]);
+    expect(scene.transformers).toEqual([]);
+    expect(scene.batteries).toEqual([]);
+    expect(scene.solar).toEqual([]);
+    expect(scene.panels).toEqual([]);
   });
 
   it('shows transformers on a parking lot', () => {
@@ -799,7 +847,7 @@ describe('SiteLayout3D', () => {
     expect(screen.getByTestId('site-layout-3d-label-s0').style.visibility).toBe('hidden');
   });
 
-  it('shows batteries on both site types and solar canopies on a parking lot only, with labels', () => {
+  it('shows batteries and solar canopies on a parking lot only, with labels', () => {
     const energy = {
       ...SETTINGS,
       energyAssets: [
@@ -825,8 +873,330 @@ describe('SiteLayout3D', () => {
     );
     unmount();
     renderView([station()], { settings: { ...energy, siteType: 'office_retail' } });
-    expect(scene.batteries).toHaveLength(1);
+    expect(scene.batteries).toEqual([]);
     expect(scene.solar).toEqual([]);
+    expect(screen.queryByTestId('site-layout-3d-energy-bat-1')).toBeNull();
     expect(screen.queryByTestId('site-layout-3d-energy-pv-1')).toBeNull();
+  });
+
+  it('fills the window when the browser has no element full screen, with the footer and a fit button, and leaves on Escape', () => {
+    const onFullScreenChange = vi.fn();
+    renderView([station()], {
+      fullScreenFooter: <div data-testid="replay-footer">Replay</div>,
+      onFullScreenChange,
+    });
+    const stage = screen.getByTestId('site-layout-3d');
+    expect(stage.getAttribute('data-full-screen')).toBe('off');
+    expect(screen.queryByTestId('replay-footer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'sites.layoutView.fullScreen' }));
+    expect(stage.getAttribute('data-full-screen')).toBe('overlay');
+    expect(stage.className).toContain('fixed');
+    expect(screen.getByTestId('replay-footer')).toBeTruthy();
+    expect(onFullScreenChange).toHaveBeenLastCalledWith(true);
+    const fits = scene.fits;
+    fireEvent.click(screen.getByTestId('site-layout-full-screen-fit'));
+    expect(scene.fits).toBe(fits + 1);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(stage.getAttribute('data-full-screen')).toBe('off');
+    expect(onFullScreenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByTestId('site-layout-full-screen-fit')).toBeNull();
+  });
+
+  it('puts the stage itself in full screen where the browser can, and follows the browser leaving it', async () => {
+    const stageEl = (): HTMLElement => screen.getByTestId('site-layout-3d');
+    let current: Element | null = null;
+    Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: true });
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => current,
+    });
+    const exitFullscreen = vi.fn(() => {
+      current = null;
+      document.dispatchEvent(new Event('fullscreenchange'));
+      return Promise.resolve();
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    const enterFullScreen = (el: Element): Promise<void> => {
+      current = el;
+      return Promise.resolve();
+    };
+    const request = vi.fn(function (this: HTMLElement) {
+      return enterFullScreen(this);
+    });
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      configurable: true,
+      value: request,
+    });
+    try {
+      renderView([station()]);
+      fireEvent.click(screen.getByRole('button', { name: 'sites.layoutView.fullScreen' }));
+      await waitFor(() => {
+        expect(stageEl().getAttribute('data-full-screen')).toBe('native');
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(current).toBe(stageEl());
+      fireEvent.click(screen.getByRole('button', { name: 'sites.layoutView.exitFullScreen' }));
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+      expect(stageEl().getAttribute('data-full-screen')).toBe('off');
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).requestFullscreen;
+      Reflect.deleteProperty(document, 'fullscreenEnabled');
+      Reflect.deleteProperty(document, 'fullscreenElement');
+      Reflect.deleteProperty(document, 'exitFullscreen');
+    }
+  });
+
+  describe('custom site', () => {
+    const CUSTOM: SiteLayoutSettings = {
+      ...SETTINGS,
+      siteType: 'custom',
+      energyAssets: [
+        {
+          id: 'pv-1',
+          type: 'solar',
+          name: null,
+          capacityKwp: 50,
+          row: 0,
+          x: -20,
+          z: 0,
+          rotationDeg: 0,
+        },
+      ],
+    };
+    const twoEvses = (id: string, free: { x: number; z: number; rotationDeg: number }) =>
+      station({
+        id,
+        stationId: `CS-${id}`,
+        freePosition: free,
+        evses: [
+          { evseId: 1, status: 'available', connectors: [connector()] },
+          {
+            evseId: 2,
+            status: 'charging',
+            connectors: [connector({ status: 'charging', isPluggedIn: true })],
+          },
+        ],
+      });
+
+    it('stands every station at its free position with its spots, the car in the charging spot', () => {
+      renderView(
+        [
+          twoEvses('a', { x: 0, z: 0, rotationDeg: 0 }),
+          station({ id: 'b', stationId: 'CS-b', freePosition: { x: 10, z: 2, rotationDeg: 45 } }),
+        ],
+        { settings: CUSTOM },
+      );
+      const [a, b] = scene.stations as unknown as Array<{
+        free: unknown;
+        spots: number;
+        carOffsetX: number;
+      }>;
+      expect(a).toMatchObject({ free: { x: 0, z: 0, rotationDeg: 0 }, spots: 2, carOffsetX: 1.3 });
+      expect(b).toMatchObject({ free: { x: 10, z: 2, rotationDeg: 45 }, spots: 1, carOffsetX: 0 });
+      // The solar canopy stands freely, sized from its peak power.
+      expect(scene.solar[0]).toMatchObject({
+        id: 'pv-1',
+        free: { x: -20, z: 0, rotationDeg: 0, lengthM: 41.6, depthM: 6 },
+      });
+    });
+
+    it("refuses a move onto another station's spots with a notice and saves a free one", () => {
+      const onFreeMove = vi.fn();
+      renderView(
+        [
+          twoEvses('a', { x: 0, z: 0, rotationDeg: 0 }),
+          twoEvses('b', { x: 10, z: 0, rotationDeg: 0 }),
+        ],
+        { settings: CUSTOM, editing: true, onFreeMove },
+      );
+      expect(screen.getByText('sites.layoutView.hintEditCustom')).toBeDefined();
+      const state = scene.callbacks?.freeDropState?.('a', { x: 8, z: 0, rotationDeg: 0 });
+      expect(state?.blocked).toBe(true);
+      // Level with b: an alignment guide along z.
+      expect(state?.guides).toEqual([{ axis: 'z', from: { x: 10, z: 0 }, to: { x: 8, z: 0 } }]);
+      act(() => {
+        scene.callbacks?.onFreeDrop?.('a', { x: 8, z: 0, rotationDeg: 0 });
+      });
+      expect(onFreeMove).not.toHaveBeenCalled();
+      expect(screen.getByTestId('site-layout-3d-notice').textContent).toBe(
+        'sites.layoutView.spotsOverlap:CS-a',
+      );
+      act(() => {
+        scene.callbacks?.onFreeDrop?.('a', { x: -3.2, z: 4.1, rotationDeg: 30.04 });
+      });
+      expect(onFreeMove).toHaveBeenCalledWith('a', { x: -3, z: 4, rotationDeg: 30 });
+    });
+
+    it('moves the selected station with the arrow keys and turns it with R', () => {
+      const onFreeMove = vi.fn();
+      renderView([twoEvses('a', { x: 0, z: 0, rotationDeg: 0 })], {
+        settings: CUSTOM,
+        editing: true,
+        onFreeMove,
+      });
+      act(() => {
+        scene.callbacks?.onFrame();
+      });
+      // In Edit Layout the chip selects the station (keyboard access).
+      const chip = screen.getByRole('button', {
+        name: 'sites.layoutView.stateDetailsLabel:CS-a:sites.layoutState.charging',
+      });
+      fireEvent.focus(chip);
+      fireEvent.keyDown(chip, { key: 'ArrowRight' });
+      expect(onFreeMove).toHaveBeenLastCalledWith('a', { x: 0.5, z: 0, rotationDeg: 0 });
+      fireEvent.keyDown(chip, { key: 'r' });
+      expect(onFreeMove).toHaveBeenLastCalledWith('a', { x: 0, z: 0, rotationDeg: 15 });
+      fireEvent.keyDown(chip, { key: 'R', shiftKey: true });
+      expect(onFreeMove).toHaveBeenLastCalledWith('a', { x: 0, z: 0, rotationDeg: 1 });
+      // No popup in edit mode.
+      expect(screen.queryByTestId('station-layout-popup')).toBeNull();
+    });
+
+    it('moves and turns a selected solar canopy', () => {
+      const onSolarMove = vi.fn();
+      renderView([twoEvses('a', { x: 0, z: 0, rotationDeg: 0 })], {
+        settings: CUSTOM,
+        editing: true,
+        onSolarMove,
+      });
+      act(() => {
+        scene.callbacks?.onSolarDrop?.('pv-1', { x: -22.3, z: 1.2 });
+      });
+      expect(onSolarMove).toHaveBeenLastCalledWith('pv-1', { x: -22.5, z: 1, rotationDeg: 0 });
+      act(() => {
+        scene.callbacks?.onSolarPick?.('pv-1');
+      });
+      fireEvent.keyDown(screen.getByTestId('site-layout-3d'), { key: 'r' });
+      expect(onSolarMove).toHaveBeenLastCalledWith('pv-1', { x: -20, z: 0, rotationDeg: 15 });
+    });
+
+    it('shows the active display message on the charger screen', () => {
+      renderView(
+        [
+          station({
+            freePosition: { x: 0, z: 0, rotationDeg: 0 },
+            displayMessage: '<b>Idle fees</b> apply after 15 minutes',
+          }),
+          station({
+            id: 'sta_2',
+            stationId: 'CS-2',
+            freePosition: { x: 10, z: 0, rotationDeg: 0 },
+          }),
+        ],
+        { settings: CUSTOM },
+      );
+      const [first, second] = scene.stations as unknown as Array<{ message: string | null }>;
+      expect(first?.message).toBe('Idle fees apply after 15 minutes');
+      expect(second?.message).toBeNull();
+    });
+  });
+
+  it('shows a label that does not fit as a dot in the state color', () => {
+    // jsdom has no layout: give every label a size, so two at one point collide.
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(80);
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(20);
+    renderView([
+      station(),
+      station({ id: 'sta_2', stationId: 'CS-2', status: 'faulted' }),
+      station({ id: 'sta_3', stationId: 'CS-3' }),
+    ]);
+    act(() => {
+      scene.callbacks?.onFrame();
+    });
+    // Three labels at one screen point: the faulted one places first, the next
+    // one row higher, and the third becomes a dot below them.
+    expect(screen.getByTestId('site-layout-3d-label-sta_2').style.visibility).toBe('visible');
+    expect(screen.getByTestId('site-layout-3d-dot-sta_2').style.visibility).toBe('hidden');
+    expect(screen.getByTestId('site-layout-3d-label-sta_1').style.visibility).toBe('visible');
+    expect(screen.getByTestId('site-layout-3d-label-sta_3').style.visibility).toBe('hidden');
+    expect(screen.getByTestId('site-layout-3d-dot-sta_3').style.visibility).toBe('visible');
+    width.mockRestore();
+    height.mockRestore();
+  });
+
+  describe('depot site', () => {
+    const DEPOT: SiteLayoutSettings = {
+      ...SETTINGS,
+      siteType: 'depot',
+      busBays: 2,
+      truckLanes: 1,
+    };
+    const one = (type: string) =>
+      [
+        {
+          evseId: 1,
+          status: 'charging',
+          connectors: [connector({ connectorType: type, status: 'charging', isPluggedIn: true })],
+        },
+      ] satisfies LayoutStation['evses'];
+    const session = (bodyType: string | null): LayoutStation['session'] => ({
+      id: 'ses_1',
+      startedAt: new Date().toISOString(),
+      energyDeliveredWh: 1000,
+      currentCostCents: 100,
+      currency: 'USD',
+      driver: null,
+      vehicle: bodyType != null ? { color: 'white', bodyType } : null,
+    });
+
+    it('stands each station in its bay or lane with the charger of its connectors and a vehicle that fits', () => {
+      renderView(
+        [
+          station({
+            id: 'bus',
+            stationId: 'CS-bus',
+            positionX: 20,
+            positionY: 20,
+            evses: one('OppCharge'),
+            // A car never stands in a bus bay: the default bus is drawn.
+            session: session('sedan'),
+          }),
+          station({
+            id: 'truck',
+            stationId: 'CS-truck',
+            positionX: 20,
+            positionY: 160,
+            evses: one('cMCS'),
+            session: session('box_truck'),
+          }),
+        ],
+        { settings: DEPOT },
+      );
+      const [bus, truck] = scene.stations as unknown as Array<{
+        free: { spotType?: string; rotationDeg: number };
+        spots: number;
+        charger: string;
+        car: { bodyType: string };
+      }>;
+      expect(bus).toMatchObject({
+        free: { spotType: 'bus_bay', rotationDeg: 0 },
+        spots: 1,
+        charger: 'pantograph_down',
+        car: { bodyType: 'bus' },
+      });
+      expect(truck).toMatchObject({
+        free: { spotType: 'truck_pull_through' },
+        spots: 1,
+        charger: 'truck_mcs',
+        car: { bodyType: 'box_truck' },
+      });
+    });
+
+    it('moves a depot station by slot, not freely', () => {
+      const onMove = vi.fn();
+      renderView([station({ id: 'bus', positionX: 20, positionY: 20 })], {
+        settings: DEPOT,
+        editing: true,
+        onMove,
+      });
+      // The truck lane (row 1) is free: a drop there moves the station to slot (0, 1).
+      act(() => {
+        scene.callbacks?.onDrop('bus', { col: 0, row: 1 });
+      });
+      expect(onMove).toHaveBeenCalledWith('bus', 20, 160);
+    });
   });
 });

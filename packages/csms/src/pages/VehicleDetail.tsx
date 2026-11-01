@@ -30,6 +30,12 @@ import { formatDateTime, useUserTimezone } from '@/lib/timezone';
 import { useTab } from '@/hooks/use-tab';
 import { LoadingLogo } from '@/components/loading-logo';
 import { formatVehicleId, normalizeEvccid } from '@evtivity/lib/vehicle-id';
+import { isVehicleBodyType, isVehicleColor } from '@evtivity/lib/vehicle-appearance';
+import {
+  VehicleAppearanceFields,
+  vehicleAppearanceLabel,
+  type VehicleAppearance,
+} from '@/components/VehicleAppearanceFields';
 
 interface Vehicle {
   id: string;
@@ -39,6 +45,8 @@ interface Vehicle {
   year: string | null;
   vin: string | null;
   licensePlate: string | null;
+  color: string | null;
+  bodyType: string | null;
   evccid: string | null;
   autochargeEnabled: boolean;
   autochargeBlockedAt: string | null;
@@ -80,6 +88,10 @@ export function VehicleDetail(): React.JSX.Element {
   const [year, setYear] = useState('');
   const [vin, setVin] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
+  const [appearance, setAppearance] = useState<VehicleAppearance>({
+    color: null,
+    bodyType: null,
+  });
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -145,6 +157,8 @@ export function VehicleDetail(): React.JSX.Element {
       vin?: string | null;
       licensePlate?: string | null;
       evccid?: string | null;
+      color?: string | null;
+      bodyType?: string | null;
     }) => api.patch<Vehicle>(`/v1/drivers/${id ?? ''}/vehicles/${vehicleId ?? ''}`, body),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['drivers', id, 'vehicles', vehicleId] });
@@ -169,6 +183,10 @@ export function VehicleDetail(): React.JSX.Element {
     setYear(vehicle.year ?? '');
     setVin(vehicle.vin ?? '');
     setLicensePlate(vehicle.licensePlate ?? '');
+    setAppearance({
+      color: isVehicleColor(vehicle.color) ? vehicle.color : null,
+      bodyType: isVehicleBodyType(vehicle.bodyType) ? vehicle.bodyType : null,
+    });
     setEvccid(vehicle.evccid != null ? formatVehicleId(vehicle.evccid) : '');
     setHasSubmitted(false);
     updateMutation.reset();
@@ -214,6 +232,10 @@ export function VehicleDetail(): React.JSX.Element {
       ...(vinValue !== undefined ? { vin: vinValue } : {}),
       ...(plateValue !== undefined ? { licensePlate: plateValue } : {}),
       ...(evccidValue !== undefined ? { evccid: evccidValue } : {}),
+      ...(appearance.color !== (vehicle?.color ?? null) ? { color: appearance.color } : {}),
+      ...(appearance.bodyType !== (vehicle?.bodyType ?? null)
+        ? { bodyType: appearance.bodyType }
+        : {}),
     });
   }
 
@@ -342,6 +364,11 @@ export function VehicleDetail(): React.JSX.Element {
                       }}
                     />
                   </div>
+                  <VehicleAppearanceFields
+                    idPrefix="edit"
+                    value={appearance}
+                    onChange={setAppearance}
+                  />
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="edit-evccid" className="leading-6">
                       {t('vehicles.evccid')}
@@ -399,6 +426,18 @@ export function VehicleDetail(): React.JSX.Element {
                 <div>
                   <dt className="text-muted-foreground">{t('vehicles.licensePlate')}</dt>
                   <dd className="font-medium">{vehicle.licensePlate ?? 'n/a'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('vehicles.color')}</dt>
+                  <dd className="font-medium">
+                    {vehicleAppearanceLabel(t, 'colors', vehicle.color)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{t('vehicles.bodyType')}</dt>
+                  <dd className="font-medium">
+                    {vehicleAppearanceLabel(t, 'bodyTypes', vehicle.bodyType)}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('vehicles.evccid')}</dt>

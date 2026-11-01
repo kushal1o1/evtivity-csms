@@ -4,7 +4,8 @@
 // Generated avatars for the demo drivers, so the site layout shows a face over
 // a charging car and the driver lists look lived in. Demo data only: the demo
 // drivers are the ones the demo seeds create on the reserved example domains
-// (`driverN@example.com`, `*@*.example`). Each avatar is ordinary and fixed per
+// (`driverN@example.com`, `*@*.example`) and the seeded `@evtivity.local`
+// driver accounts (`DEMO_DRIVER_EMAIL_SQL`). Each avatar is ordinary and fixed per
 // driver (a hash of the driver id picks the hair, skin, clothes and colors from
 // a calm subset of the allow-list, no odd accessories), and every one passes
 // `generatedAvatarProblem`.
@@ -19,6 +20,7 @@
 import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
 import { AVATAR_STYLE, generatedAvatarProblem } from '@evtivity/lib/account-avatar';
+import { OCTT_TEST_DRIVER_EMAIL } from '@evtivity/lib';
 import type { GeneratedAvatar } from '@evtivity/lib/account-avatar';
 import { writeAudit } from './lib/audit.js';
 import { driverAuditLog } from './schema/audit.js';
@@ -76,8 +78,15 @@ const GLASSES = ['prescription01', 'prescription02', 'round'] as const;
 const BEARD = ['beardLight', 'beardMedium'] as const;
 const BACKGROUND = ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf', 'e5e7eb'] as const;
 
-/** The demo driver emails: the reserved example domains the demo seeds use. */
-export const DEMO_DRIVER_EMAIL_SQL = `(lower(email) LIKE '%@example.com' OR lower(email) LIKE '%.example')`;
+/**
+ * The demo driver emails: the reserved example domains the demo seeds use, and
+ * the seeded `@evtivity.local` accounts (the portal test driver
+ * `driver@evtivity.local`, the fleet account driver). The simulator charges
+ * with every active driver token, so these drivers show over the cars of the
+ * demo sites too. The OCTT conformance driver belongs to its runs and stays
+ * without one.
+ */
+export const DEMO_DRIVER_EMAIL_SQL = `((lower(email) LIKE '%@example.com' OR lower(email) LIKE '%.example' OR lower(email) LIKE '%@evtivity.local') AND lower(email) <> '${OCTT_TEST_DRIVER_EMAIL}')`;
 
 /**
  * The fixed avatar of a demo driver: the same driver id always gives the same

@@ -4,8 +4,9 @@
 // The batteries and solar canopies of Edit Layout (Site Settings panel):
 // information only, nothing in the CSMS reads storage or solar data. A
 // battery stands on the grass like a transformer (drag it in 3D); a solar
-// carport canopy covers one row of a parking lot (an office or retail site
-// keeps its canopies stored but hidden).
+// carport canopy covers one row of the lot. Shown on a parking lot and a
+// custom site, where a canopy stands freely (drag it in 3D, R turns it); the
+// other site types keep their batteries and canopies stored but hidden.
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,10 +14,11 @@ import { Trash2 } from 'lucide-react';
 import {
   LAYOUT_GRID_LIMITS,
   energyAssetsOf,
-  lotExtentM,
   placeEnergyAsset,
-  showsSolar,
   TRANSFORMER_CLEARANCE_M,
+  layoutEquipmentGround,
+  usesDepotSpots,
+  usesFreePositions,
   type LayoutEnergyAsset,
   type SiteLayoutSettings,
 } from '@evtivity/lib/site-layout';
@@ -48,15 +50,18 @@ function nextId(assets: readonly LayoutEnergyAsset[], prefix: string): string {
 export function newBattery(settings: SiteLayoutSettings): LayoutEnergyAsset {
   const assets = energyAssetsOf(settings);
   const batteries = assets.filter((a) => a.type === 'battery').length;
-  const width = lotExtentM(settings).width;
+  // A custom site: in front of the site origin, left of the others. Else on
+  // the grass behind the lot (a depot: behind its yard).
+  const free = usesFreePositions(settings);
+  const ground = layoutEquipmentGround(settings);
   return placeEnergyAsset(
     {
       id: nextId(assets, 'bat'),
       type: 'battery',
       name: null,
       capacityKwh: null,
-      x: Math.min(width, 6 + 5 * batteries),
-      z: -TRANSFORMER_CLEARANCE_M - 1.5,
+      x: free ? -6 - 5 * batteries : Math.min(ground.maxX, ground.minX + 6 + 5 * batteries),
+      z: free ? -6 : ground.minZ - TRANSFORMER_CLEARANCE_M - 1.5,
     },
     settings,
   );
@@ -68,7 +73,36 @@ export function newSolarCanopy(settings: SiteLayoutSettings): LayoutEnergyAsset 
   const covered = new Set(assets.flatMap((a) => (a.type === 'solar' ? [a.row] : [])));
   let row = 0;
   while (covered.has(row) && row < settings.rows - 1) row++;
-  return { id: nextId(assets, 'pv'), type: 'solar', name: null, capacityKwp: null, row };
+  const id = nextId(assets, 'pv');
+  const canopies = assets.filter((a) => a.type === 'solar').length;
+  if (usesFreePositions(settings)) {
+    // A custom site: standing freely in front of the site origin, below the others.
+    return {
+      id,
+      type: 'solar',
+      name: null,
+      capacityKwp: null,
+      row: 0,
+      x: 0,
+      z: -12 - 8 * canopies,
+      rotationDeg: 0,
+    };
+  }
+  if (usesDepotSpots(settings)) {
+    // A depot: standing freely over staff parking behind the yard, behind the others.
+    const ground = layoutEquipmentGround(settings);
+    return {
+      id,
+      type: 'solar',
+      name: null,
+      capacityKwp: null,
+      row: 0,
+      x: Math.round((ground.minX + ground.maxX) / 2),
+      z: Math.round(ground.minZ - 9 - 8 * canopies),
+      rotationDeg: 0,
+    };
+  }
+  return { id, type: 'solar', name: null, capacityKwp: null, row };
 }
 
 interface EnergyAssetsSettingsProps {
@@ -86,7 +120,8 @@ export function EnergyAssetsSettings({
   const { t } = useTranslation();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const assets = energyAssetsOf(settings);
-  const solarShown = showsSolar(settings);
+  // A custom site and a depot: canopies stand freely (no lot row to cover).
+  const free = usesFreePositions(settings) || usesDepotSpots(settings);
   const id = (name: string): string => `layout-energy-${name}`;
 
   function setAssets(next: LayoutEnergyAsset[]): void {
@@ -113,7 +148,9 @@ export function EnergyAssetsSettings({
         <div>
           <h4 className="text-sm font-semibold">{t('sites.layoutSettings.energyAssets')}</h4>
           <p className="text-xs text-muted-foreground">
-            {t('sites.layoutSettings.energyAssetsHint')}
+            {free
+              ? t('sites.layoutSettings.energyAssetsHintCustom')
+              : t('sites.layoutSettings.energyAssetsHint')}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -125,23 +162,16 @@ export function EnergyAssetsSettings({
               setAssets([...assets, newBattery(settings)]);
             }}
           />
-          {solarShown && (
-            <CreateButton
-              variant="outline"
-              label={t('sites.layoutSettings.addSolar')}
-              disabled={assets.length >= L.energyAssets.max}
-              onClick={() => {
-                setAssets([...assets, newSolarCanopy(settings)]);
-              }}
-            />
-          )}
+          <CreateButton
+            variant="outline"
+            label={t('sites.layoutSettings.addSolar')}
+            disabled={assets.length >= L.energyAssets.max}
+            onClick={() => {
+              setAssets([...assets, newSolarCanopy(settings)]);
+            }}
+          />
         </div>
       </div>
-      {!solarShown && assets.some((a) => a.type === 'solar') && (
-        <p className="text-sm text-muted-foreground" data-testid="layout-solar-hidden">
-          {t('sites.layoutSettings.solarHidden')}
-        </p>
-      )}
       {assets.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('sites.layoutSettings.noEnergyAssets')}</p>
       ) : (
@@ -199,7 +229,11 @@ export function EnergyAssetsSettings({
                   />
                 </div>
                 <div className="col-span-2 row-start-3 space-y-1.5 sm:col-span-1 sm:row-start-auto">
-                  {a.type === 'solar' ? (
+                  {a.type === 'solar' && free ? (
+                    <p className="pb-2.5 text-xs text-muted-foreground">
+                      {t('sites.layoutSettings.solarDragHint')}
+                    </p>
+                  ) : a.type === 'solar' ? (
                     <>
                       <Label htmlFor={id(`row-${a.id}`)}>
                         {t('sites.layoutSettings.solarRow')}

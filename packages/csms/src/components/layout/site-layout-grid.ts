@@ -9,7 +9,7 @@
 // the lane after it (none after the last row). The scene turns the whole lot
 // by the facing; everything here is in lot coordinates.
 //
-// Rows pair around the lanes like a double-row lot (`chargersAtBack`): row 0
+// Parking lot rows pair around the lanes like a double-row lot (`chargersAtBack`): row 0
 // opens onto the lane after it with its chargers at the front edge of the lot,
 // row 1 opens onto the same lane with its chargers at its back edge, and so on
 // for rows 2 and 3 around the next lane but one. An odd last row opens onto the
@@ -17,16 +17,32 @@
 // edges. The lane between two pairs is a through lane with charger backs on
 // both sides.
 //
-// The site type changes the surroundings (`Lot.siteType`): a parking lot is
-// grass around the lot; an office or retail site has a building along the
-// front edge of the lot, past a sidewalk, with the AC chargers of the first
-// row as wall boxes on its facade (`wallMounted`).
+// The site type changes the geometry and the surroundings (`Lot.siteType`):
+// a parking lot is grass around the lot; an office or retail site has one row
+// along a building, past a sidewalk, with its AC chargers as wall boxes on the
+// facade (`wallMounted`) or on posts at the spots; a street has a parallel
+// parking lane along each curb, with the chargers on posts on the sidewalks;
+// a depot is a fenced yard of bus bays (row 0) and truck pull-through lanes
+// (row 1), each slot's station where `depotSlotPlacement` puts it.
 
 import {
-  DEFAULT_SITE_TYPE,
-  lotExtentM,
+  chargerMountingOf,
+  depotLayout,
+  depotSlotPlacement,
+  type DepotLayout,
+  freeFootprint,
+  freeSpotsExtent,
+  freeToSite,
+  snapFreePlacement,
+  type FreePlacement,
+  layoutFacingOf,
+  layoutRowLengths,
+  siteTypeOf,
+  STANDARD_DIMENSIONS,
+  type ChargerMounting,
+  type FreeSpotType,
   type LayoutBay,
-  type SiteLayoutGrid,
+  type LayoutShape,
   type SiteType,
 } from '@evtivity/lib/site-layout';
 import type { StationDisplayState } from '@/lib/station-display-state';
@@ -43,35 +59,129 @@ export const MAX_DISTANCE_MIN = 160;
 /** Grass the camera may pan over around everything on the site, in meters. */
 export const PAN_MARGIN = 30;
 
+/** The width of the curb strip around the lot and along a street, in meters. */
+export const CURB_M = 0.3;
+/** A sidewalk: between the front curb and the building of an office or retail site, and along each side of a street, in meters. */
+export const SIDEWALK_M = 2.4;
+/** How far behind the curb a curbside charger post stands, on the sidewalk, in meters. */
+export const CURB_POST_BACK_M = 0.45;
+/** How far from the front end of its parallel spot a curbside charger post stands, in meters. */
+export const CURB_POST_IN_M = 0.6;
+
 export interface Lot {
+  siteType: SiteType;
+  /** Spots in each row (`layoutRowLengths`): a street has the left curb (row 0) and the right curb (row 1). */
+  rowLengths: readonly number[];
+  /** Spots in the longest row. */
   cols: number;
+  /** Rows of spots. */
   rows: number;
+  /** Spot width along the rows (a parallel spot: its length along the curb), in meters. */
   spotW: number;
+  /** Spot depth across the rows (a parallel spot: the parking lane), in meters. */
   spotD: number;
+  /** The drive aisle after a row (a street: its travel lanes), in meters. */
   lane: number;
   /** Spot depth plus lane: the distance between two rows. */
   pitch: number;
+  /** The paved area: the lot, the row and its aisle, or the street from curb to curb. */
   width: number;
   depth: number;
   /** The facing as a rotation about the vertical axis, in radians (clockwise from above). */
   facing: number;
-  /** Parking lot (grass around) or office or retail (a building along the front edge). */
-  siteType: SiteType;
+  /** Office or retail: wall boxes on the facade or posts at the spots. */
+  mounting: ChargerMounting;
+  /** Depot: the yard, its bays, lanes and roads (null on the other site types). */
+  depot: DepotLayout | null;
 }
 
-export function lotOf(grid: SiteLayoutGrid & { siteType?: SiteType | undefined }): Lot {
-  const { width, depth } = lotExtentM(grid);
+/** The layout shape of a depot lot (its bus bays and truck lanes are its row lengths). */
+function depotShape(lot: Lot): LayoutShape {
   return {
-    siteType: grid.siteType ?? DEFAULT_SITE_TYPE,
-    cols: grid.spotsPerRow,
-    rows: grid.rows,
-    spotW: grid.spotWidthM,
-    spotD: grid.spotDepthM,
-    lane: grid.laneWidthM,
-    pitch: grid.spotDepthM + grid.laneWidthM,
-    width,
-    depth,
-    facing: -(grid.facingDeg * Math.PI) / 180,
+    siteType: 'depot',
+    spotsPerRow: 1,
+    rows: 1,
+    facingDeg: 0,
+    busBays: lot.rowLengths[0] ?? 0,
+    truckLanes: lot.rowLengths[1] ?? 0,
+  };
+}
+
+/** Where the station of a depot slot stands and its spot type (`depotSlotPlacement`). */
+export function depotStationPlacement(bay: LayoutBay, lot: Lot): FreePlacement {
+  return depotSlotPlacement(bay, depotShape(lot));
+}
+
+/**
+ * The geometry of a site's layout in standard real dimensions
+ * (`STANDARD_DIMENSIONS`): a parking lot of `rows` rows with a drive aisle
+ * between each two; an office or retail site's one row along the building,
+ * with the drive aisle in front of it; a street of two parallel parking lanes
+ * (the left and right curb) around two travel lanes.
+ */
+export function lotOf(settings: LayoutShape & { mounting?: ChargerMounting | undefined }): Lot {
+  const d = STANDARD_DIMENSIONS;
+  const siteType = siteTypeOf(settings);
+  const rowLengths = layoutRowLengths(settings);
+  const cols = Math.max(1, ...rowLengths);
+  const facing = -(layoutFacingOf(settings) * Math.PI) / 180;
+  const mounting = chargerMountingOf(settings);
+  if (siteType === 'depot') {
+    const depot = depotLayout(settings);
+    return {
+      siteType,
+      rowLengths,
+      cols,
+      rows: rowLengths.length,
+      spotW: d.spotWidthM,
+      spotD: d.spotDepthM,
+      lane: d.laneWidthM,
+      pitch: d.spotDepthM + d.laneWidthM,
+      width: depot.yard.maxX - depot.yard.minX,
+      depth: depot.yard.maxZ - depot.yard.minZ,
+      facing,
+      mounting,
+      depot,
+    };
+  }
+  if (siteType === 'curbside') {
+    const spotD = d.parallelSpotWidthM;
+    const lane = 2 * d.travelLaneM;
+    return {
+      siteType,
+      rowLengths,
+      cols,
+      rows: rowLengths.length,
+      spotW: d.parallelSpotLengthM,
+      spotD,
+      lane,
+      pitch: spotD + lane,
+      width: cols * d.parallelSpotLengthM,
+      depth: 2 * spotD + lane,
+      facing,
+      mounting,
+      depot: null,
+    };
+  }
+  const rows = rowLengths.length;
+  return {
+    siteType,
+    rowLengths,
+    cols,
+    rows,
+    spotW: d.spotWidthM,
+    spotD: d.spotDepthM,
+    lane: d.laneWidthM,
+    pitch: d.spotDepthM + d.laneWidthM,
+    width: cols * d.spotWidthM,
+    // An office or retail row has its drive aisle in front of it.
+    depth:
+      siteType === 'office_retail'
+        ? d.spotDepthM + d.laneWidthM
+        : rows * d.spotDepthM + (rows - 1) * d.laneWidthM,
+    facing,
+    mounting,
+    depot: null,
   };
 }
 
@@ -80,15 +190,24 @@ export interface Point {
   z: number;
 }
 
+/** Whether a slot is a spot of the layout. */
+export function isSpot(bay: LayoutBay, lot: Lot): boolean {
+  return bay.row >= 0 && bay.col >= 0 && bay.col < (lot.rowLengths[bay.row] ?? 0);
+}
+
 /**
  * Whether the chargers of a row stand at its back edge (larger z) and face
  * the lane before it, instead of standing at its front edge and facing the
- * lane after it. Rows pair around the lanes: every odd row, and an odd last
- * row, is turned. A row outside the lot (a station on the grass) is not.
+ * lane after it. A parking lot pairs its rows around the lanes: every odd
+ * row, and an odd last row, is turned. A street turns its right curb (row
+ * 1). An office or retail row and a row outside the layout (a station on the
+ * grass) are not.
  */
-export function chargersAtBack(row: number, rows: number): boolean {
-  if (row <= 0 || row >= rows) return false;
-  return row % 2 === 1 || row === rows - 1;
+export function chargersAtBack(row: number, lot: Lot): boolean {
+  if (lot.siteType === 'curbside') return row === 1;
+  if (lot.siteType === 'office_retail' || lot.siteType === 'depot') return false;
+  if (row <= 0 || row >= lot.rows) return false;
+  return row % 2 === 1 || row === lot.rows - 1;
 }
 
 /**
@@ -97,42 +216,77 @@ export function chargersAtBack(row: number, rows: number): boolean {
  * for a row whose chargers stand at its back edge.
  */
 export function bayTurn(bay: LayoutBay, lot: Lot): number {
-  return chargersAtBack(bay.row, lot.rows) ? Math.PI : 0;
+  return chargersAtBack(bay.row, lot) ? Math.PI : 0;
 }
 
-/** Where a station in a spot stands, in lot coordinates: at the curb side of its row. */
+/**
+ * Where a station in a spot stands, in lot coordinates. A parking lot or an
+ * office or retail row: at the curb side of its row. A street: on the
+ * sidewalk behind the curb, near the front end of its parallel spot (the left
+ * curb faces +z, the right curb is turned). A slot outside the layout stands
+ * on the grass past it.
+ */
 export function bayToWorld(bay: LayoutBay, lot: Lot): Point {
-  const intoRow = chargersAtBack(bay.row, lot.rows) ? lot.spotD - BAY_STATION_Z : BAY_STATION_Z;
+  if (lot.siteType === 'depot') {
+    const p = depotStationPlacement(bay, lot);
+    return { x: p.x, z: p.z };
+  }
+  if (lot.siteType === 'curbside') {
+    if (bay.row === 0)
+      return { x: lot.spotW * bay.col + CURB_POST_IN_M, z: -(CURB_M + CURB_POST_BACK_M) };
+    if (bay.row === 1) {
+      return {
+        x: lot.spotW * (bay.col + 1) - CURB_POST_IN_M,
+        z: lot.depth + CURB_M + CURB_POST_BACK_M,
+      };
+    }
+    return {
+      x: lot.spotW * (bay.col + 0.5),
+      z: lot.depth + CURB_M + SIDEWALK_M + 3 + (bay.row - 2) * 4,
+    };
+  }
+  const intoRow = chargersAtBack(bay.row, lot) ? lot.spotD - BAY_STATION_Z : BAY_STATION_Z;
   return { x: lot.spotW * (bay.col + 0.5), z: lot.pitch * bay.row + intoRow };
+}
+
+/** The ground of a spot, in lot coordinates: a perpendicular spot of a row, or a parallel spot of a parking lane. */
+export function spotRect(bay: LayoutBay, lot: Lot): Box {
+  if (lot.depot != null) {
+    const r = bay.row === 0 ? lot.depot.bays[bay.col] : lot.depot.lanes[bay.col];
+    if (r != null) return { ...r };
+  }
+  const minX = lot.spotW * bay.col;
+  const minZ =
+    lot.siteType === 'curbside' ? (bay.row === 0 ? 0 : lot.depth - lot.spotD) : lot.pitch * bay.row;
+  return { minX, maxX: minX + lot.spotW, minZ, maxZ: minZ + lot.spotD };
 }
 
 /** How far behind the charger the load management link ends, in meters. */
 export const STATION_BACK_OFFSET = 0.45;
 
-/** The width of the curb strip around the lot, in meters. */
-export const CURB_M = 0.3;
-/** The sidewalk between the front curb and the building of an office or retail site, in meters. */
-export const SIDEWALK_M = 2.4;
 /** The building front (facade) of an office or retail site, in lot z: past the curb and sidewalk. */
 export const FACADE_Z = -(CURB_M + SIDEWALK_M);
 /** Depth and height of the building, in meters. */
 export const BUILDING_DEPTH_M = 16;
 export const BUILDING_HEIGHT_M = 8;
-/** Building past the right end of the lot (the entrance stands there), in meters. */
+/** Building past the right end of the row (the entrance stands there), in meters. */
 export const BUILDING_RIGHT_M = 9;
+/** Building past the left end of the row, in meters. */
+export const BUILDING_LEFT_M = 6;
 
 /**
  * Whether a station is a wall box on the building facade: an AC charger in
- * the first row of an office or retail site (the row along the building).
- * Other rows, DC chargers and every parking lot charger stand at the curb.
+ * the row of an office or retail site that mounts its chargers on the wall.
+ * DC chargers, stall posts, stations off the row and every other site type
+ * stand at the curb.
  */
 export function wallMounted(bay: LayoutBay, lot: Lot, kind: 'ac' | 'dc'): boolean {
   return (
     lot.siteType === 'office_retail' &&
+    lot.mounting === 'wall' &&
     kind === 'ac' &&
     bay.row === 0 &&
-    bay.col >= 0 &&
-    bay.col < lot.cols
+    isSpot(bay, lot)
   );
 }
 
@@ -146,31 +300,23 @@ export function wallBoxOffset(): number {
 
 /**
  * The back of a station in a spot (where its load management link ends), in
- * lot coordinates: behind the charger on the curb side of its row, or at the
- * wall box on the facade.
+ * lot coordinates: behind the charger on the curb side of its row (links show
+ * on a parking lot only).
  */
-export function stationBackPoint(bay: LayoutBay, lot: Lot, kind: 'ac' | 'dc' = 'dc'): Point {
+export function stationBackPoint(bay: LayoutBay, lot: Lot): Point {
   const p = bayToWorld(bay, lot);
-  if (wallMounted(bay, lot, kind)) return { x: p.x, z: FACADE_Z + 0.15 };
-  const back = chargersAtBack(bay.row, lot.rows) ? STATION_BACK_OFFSET : -STATION_BACK_OFFSET;
+  const back = chargersAtBack(bay.row, lot) ? STATION_BACK_OFFSET : -STATION_BACK_OFFSET;
   return { x: p.x, z: p.z + back };
 }
 
-/** Wall panels hang this far apart along the facade, in meters. */
-export const WALL_PANEL_PITCH_M = 1.3;
-/** Room left of the lot for the wall panels, at least, in meters. */
-export const BUILDING_LEFT_MIN_M = 8;
-
 /**
  * The building of an office or retail site, in lot coordinates: along the
- * front edge of the lot past the sidewalk, wider than the lot on both sides
- * (the wall panels hang on the left part, the entrance is on the right part).
- * `wallPanels` widens the left part so every panel fits.
+ * front edge of the row past the sidewalk, wider than the row on both sides
+ * (the entrance is on the right part).
  */
-export function buildingBox(lot: Lot, wallPanels = 0): Box {
-  const left = Math.max(BUILDING_LEFT_MIN_M, 1.6 + wallPanels * WALL_PANEL_PITCH_M + 1.5);
+export function buildingBox(lot: Lot): Box {
   return {
-    minX: -left,
+    minX: -BUILDING_LEFT_M,
     maxX: lot.width + BUILDING_RIGHT_M,
     minZ: FACADE_Z - BUILDING_DEPTH_M,
     maxZ: FACADE_Z,
@@ -179,15 +325,37 @@ export function buildingBox(lot: Lot, wallPanels = 0): Box {
 
 /**
  * The points the framing takes in for the building: the facade line and a
- * strip behind it, not the whole building, so Fit to View stays on the lot
+ * strip behind it, not the whole building, so Fit to View stays on the row
  * with the building as its backdrop.
  */
-export function buildingFramePoints(lot: Lot, wallPanels = 0): Point[] {
-  const b = buildingBox(lot, wallPanels);
+export function buildingFramePoints(lot: Lot): Point[] {
+  const b = buildingBox(lot);
   return [
     { x: b.minX + 2, z: FACADE_Z - 1 },
     { x: b.maxX - 2, z: FACADE_Z - 1 },
   ];
+}
+
+/**
+ * The paved and built ground of the site type, in lot coordinates: the lot,
+ * the row with its aisle and sidewalk, or the street with both sidewalks.
+ */
+export function layoutGroundBox(lot: Lot): Box {
+  switch (lot.siteType) {
+    case 'office_retail':
+      return { minX: 0, maxX: lot.width, minZ: FACADE_Z, maxZ: lot.depth };
+    case 'curbside':
+      return {
+        minX: 0,
+        maxX: lot.width,
+        minZ: -(CURB_M + SIDEWALK_M),
+        maxZ: lot.depth + CURB_M + SIDEWALK_M,
+      };
+    case 'depot':
+      return lot.depot != null ? { ...lot.depot.yard } : { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+    default:
+      return { minX: 0, maxX: lot.width, minZ: 0, maxZ: lot.depth };
+  }
 }
 
 /**
@@ -228,22 +396,68 @@ export function stationLabelInRange(
   return distance <= Math.max(40, viewDistance * 1.4);
 }
 
-/** The spot under a lot point, inside the lot: never negative, never past its last column or row. */
-export function worldToBay(x: number, z: number, lot: Lot): LayoutBay {
-  return {
-    col: Math.min(lot.cols - 1, Math.max(0, Math.floor(x / lot.spotW))),
-    // The nearest row by its spot center, so a charger at either edge maps to its own row.
-    row: Math.min(lot.rows - 1, Math.max(0, Math.round((z - lot.spotD / 2) / lot.pitch))),
-  };
+/**
+ * The spot under a lot point: the nearest spot of the layout (a row with no
+ * spots, such as an empty curb, is never chosen). Null when the layout has
+ * no spot.
+ */
+export function worldToBay(x: number, z: number, lot: Lot): LayoutBay | null {
+  let best: LayoutBay | null = null;
+  let bestDistance = Infinity;
+  if (lot.siteType === 'depot') {
+    // The bay or lane whose ground is nearest the point.
+    for (let row = 0; row < lot.rows; row++) {
+      for (let col = 0; col < (lot.rowLengths[row] ?? 0); col++) {
+        const r = spotRect({ col, row }, lot);
+        const dx = x < r.minX ? r.minX - x : x > r.maxX ? x - r.maxX : 0;
+        const dz = z < r.minZ ? r.minZ - z : z > r.maxZ ? z - r.maxZ : 0;
+        const d = dx * dx + dz * dz;
+        if (d < bestDistance) {
+          best = { col, row };
+          bestDistance = d;
+        }
+      }
+    }
+    return best;
+  }
+  for (let row = 0; row < lot.rows; row++) {
+    const n = lot.rowLengths[row] ?? 0;
+    if (n === 0) continue;
+    const r = spotRect({ col: 0, row }, lot);
+    const dz = z < r.minZ ? r.minZ - z : z > r.maxZ ? z - r.maxZ : 0;
+    const col = Math.min(n - 1, Math.max(0, Math.floor(x / lot.spotW)));
+    const c = spotRect({ col, row }, lot);
+    const dx = x < c.minX ? c.minX - x : x > c.maxX ? x - c.maxX : 0;
+    const d = dx * dx + dz * dz;
+    if (d < bestDistance) {
+      best = { col, row };
+      bestDistance = d;
+    }
+  }
+  return best;
 }
 
-/** Clamps a dragged station's point to the station spots of the lot. */
+/** Clamps a dragged station's point to the station points of the spots of the layout. */
 export function clampToLot(x: number, z: number, lot: Lot): Point {
-  const first = bayToWorld({ col: 0, row: 0 }, lot);
-  const last = bayToWorld({ col: lot.cols - 1, row: lot.rows - 1 }, lot);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let row = 0; row < lot.rows; row++) {
+    const n = lot.rowLengths[row] ?? 0;
+    if (n === 0) continue;
+    for (const col of [0, n - 1]) {
+      const p = bayToWorld({ col, row }, lot);
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minZ = Math.min(minZ, p.z);
+      maxZ = Math.max(maxZ, p.z);
+    }
+  }
+  if (!Number.isFinite(minX)) return { x, z };
   return {
-    x: Math.min(last.x, Math.max(first.x, x)),
-    z: Math.min(last.z, Math.max(first.z, z)),
+    x: Math.min(maxX, Math.max(minX, x)),
+    z: Math.min(maxZ, Math.max(minZ, z)),
   };
 }
 
@@ -254,12 +468,9 @@ export interface Box {
   maxZ: number;
 }
 
-/** The lot plus every point outside it (stations on the grass, transformers), with a small border. */
+/** The ground of the site type plus every point outside it (stations on the grass, transformers), with a small border. */
 export function sceneBox(lot: Lot, points: readonly Point[]): Box {
-  let minX = 0;
-  let maxX = lot.width;
-  let minZ = 0;
-  let maxZ = lot.depth;
+  let { minX, maxX, minZ, maxZ } = layoutGroundBox(lot);
   for (const p of points) {
     minX = Math.min(minX, p.x - 2);
     maxX = Math.max(maxX, p.x + 2);
@@ -459,3 +670,183 @@ export function logoFit(
   const scale = Math.min(w / image.width, h / image.height);
   return { width: image.width * scale, height: image.height * scale };
 }
+
+// Custom sites: no lot, street or building. Every station stands at its free
+// position (@evtivity/lib/site-layout FreePlacement) with its own spots on a
+// paved apron; the framing takes in the spots of every station.
+
+/** The box around a set of points, with a border (null without points). */
+export function pointsBox(points: readonly Point[], border = 2): Box | null {
+  if (points.length === 0) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minZ = Math.min(minZ, p.z);
+    maxZ = Math.max(maxZ, p.z);
+  }
+  return { minX: minX - border, maxX: maxX + border, minZ: minZ - border, maxZ: maxZ + border };
+}
+
+/** The ground of a custom site: the spots of every station and every point outside them. */
+export function customSceneBox(
+  stations: ReadonlyArray<{ placement: FreePlacement; spots: number }>,
+  points: readonly Point[],
+): Box {
+  const corners = stations.flatMap((s) => freeFootprint(s.placement, s.spots));
+  return pointsBox([...corners, ...points]) ?? { minX: -10, maxX: 10, minZ: -10, maxZ: 10 };
+}
+
+/** The back of a station at a free position (where its load management link ends). */
+export function freeBackPoint(p: FreePlacement): Point {
+  return freeToSite(p, 0, -STATION_BACK_OFFSET);
+}
+
+/** How near two stations' points must be on an axis to draw an alignment guide, in meters. */
+export const GUIDE_TOLERANCE_M = 0.05;
+
+export interface AlignmentGuide {
+  /** `x`: the stations share an x (a line along z); `z`: they share a z. */
+  axis: 'x' | 'z';
+  from: Point;
+  to: Point;
+}
+
+/**
+ * The alignment guides of a station being moved: a line to each other
+ * station whose charger point shares its x or its z (within
+ * GUIDE_TOLERANCE_M), at most one per axis (the nearest).
+ */
+export function alignmentGuides(moving: Point, others: readonly Point[]): AlignmentGuide[] {
+  const guides: AlignmentGuide[] = [];
+  for (const axis of ['x', 'z'] as const) {
+    let best: Point | null = null;
+    let bestDistance = Infinity;
+    for (const o of others) {
+      if (Math.abs(o[axis] - moving[axis]) > GUIDE_TOLERANCE_M) continue;
+      const d = Math.hypot(o.x - moving.x, o.z - moving.z);
+      if (d > 0.01 && d < bestDistance) {
+        best = o;
+        bestDistance = d;
+      }
+    }
+    if (best != null) guides.push({ axis, from: best, to: moving });
+  }
+  return guides;
+}
+
+/**
+ * The turn of a station toward the pointer while its rotation handle is
+ * dragged: the handle stands in front of the station (its local +z), so the
+ * turn is the angle from the station to the pointer, clockwise from above.
+ * Snapped to 15 degrees unless `free` (Shift), then one decimal.
+ */
+export function handleRotation(center: Point, pointer: Point, free: boolean): number {
+  // Local +z maps to (sin a, cos a) with a = -rotation (freeToSite).
+  const a = Math.atan2(pointer.x - center.x, pointer.z - center.z);
+  const deg = (-a * 180) / Math.PI;
+  return snapFreePlacement({ x: 0, z: 0, rotationDeg: deg }, { freeRotation: free }).rotationDeg;
+}
+
+/**
+ * Where the rotation handle of a station stands, in its own frame: 1.6 m past
+ * the back of its spots (6.2 m for car spots).
+ */
+export function rotationHandleZ(spots: number, spotType: FreeSpotType = 'car'): number {
+  return Math.round((freeSpotsExtent(spots, spotType).back + 1.6) * 100) / 100;
+}
+
+/**
+ * Fit to View on a narrow stage (a phone) for a wide site: the window of
+ * `windowM` meters along the site's long axis that holds the most stations,
+ * over the full depth, so the stations stay readable; the full site is one
+ * zoom (or a second Fit to View) away. Returns `box` unchanged on a wide
+ * stage, a site that is not wide, or one already narrower than the window.
+ */
+export const NARROW_STAGE_PX = 640;
+export const DENSE_WINDOW_M = 24;
+export function denseFrameBox(
+  box: Box,
+  stations: readonly Point[],
+  stageWidthPx: number,
+  windowM: number = DENSE_WINDOW_M,
+): Box {
+  if (stageWidthPx >= NARROW_STAGE_PX || stations.length === 0) return box;
+  const width = box.maxX - box.minX;
+  const depth = box.maxZ - box.minZ;
+  const alongX = width >= depth;
+  const long = alongX ? width : depth;
+  if (long <= windowM * 1.25 || long < (alongX ? depth : width) * 1.5) return box;
+  const coord = (p: Point): number => (alongX ? p.x : p.z);
+  const sorted = [...stations].map(coord).sort((a, b) => a - b);
+  let bestStart = sorted[0] ?? 0;
+  let bestCount = 0;
+  let j = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const start = sorted[i] ?? 0;
+    while (j < sorted.length && (sorted[j] ?? 0) <= start + windowM) j++;
+    if (j - i > bestCount) {
+      bestCount = j - i;
+      bestStart = start;
+    }
+  }
+  // Center the window on the stations it holds.
+  const inWindow = sorted.filter((v) => v >= bestStart && v <= bestStart + windowM);
+  const mid = ((inWindow[0] ?? bestStart) + (inWindow.at(-1) ?? bestStart)) / 2;
+  const lo = Math.max(alongX ? box.minX : box.minZ, mid - windowM / 2);
+  const hi = Math.min(alongX ? box.maxX : box.maxZ, lo + windowM);
+  return alongX ? { ...box, minX: lo, maxX: hi } : { ...box, minZ: lo, maxZ: hi };
+}
+
+/** A display message as plain text for a charger screen: tags dropped, spaces collapsed, at most 300 characters. */
+export function screenMessageText(content: string): string {
+  const plain = content
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return plain.length > 300 ? `${plain.slice(0, 299)}…` : plain;
+}
+
+export type ScreenTextLayout =
+  | { kind: 'static'; lines: string[] }
+  | { kind: 'scroll'; text: string };
+
+/**
+ * How a message fits a charger screen: wrapped by words into at most
+ * `maxLines` lines no wider than `maxWidth` (`measure` gives a text's width
+ * at the screen font), else one line that scrolls across the screen.
+ */
+export function screenTextLayout(
+  text: string,
+  measure: (s: string) => number,
+  maxWidth: number,
+  maxLines: number,
+): ScreenTextLayout {
+  const words = text.split(' ').filter((w) => w.length > 0);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (measure(word) > maxWidth) return { kind: 'scroll', text };
+    const next = line === '' ? word : `${line} ${word}`;
+    if (measure(next) <= maxWidth) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+      if (lines.length >= maxLines) return { kind: 'scroll', text };
+    }
+  }
+  if (line !== '') lines.push(line);
+  if (lines.length > maxLines) return { kind: 'scroll', text };
+  return { kind: 'static', lines };
+}
+
+/** The charger screens a message shows on: size in meters and the canvas it is drawn on. */
+export const SCREEN_MESSAGE = {
+  dc: { width: 0.42, height: 0.32, canvas: { width: 512, height: 390 }, lines: 4 },
+  ac: { width: 0.13, height: 0.082, canvas: { width: 256, height: 162 }, lines: 2 },
+} as const;

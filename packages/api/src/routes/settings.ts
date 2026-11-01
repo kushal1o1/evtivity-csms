@@ -10,6 +10,7 @@ import {
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AI_INSIGHT_SCOPE_SETTING_KEY } from '@evtivity/lib/ai-insights';
+import { R2_REGION, effectiveStorageRegion } from '@evtivity/lib/object-storage-region';
 import { invalidateAutochargeCaches } from '../lib/autocharge-invalidation.js';
 import { eq, like, or, inArray } from 'drizzle-orm';
 import {
@@ -1349,18 +1350,16 @@ export function settingsRoutes(app: FastifyInstance): void {
       const map = new Map<string, unknown>();
       for (const row of rows) map.set(row.key, row.value);
       const bucket = map.get('s3.bucket') as string | undefined;
-      const region = map.get('s3.region') as string | undefined;
+      const provider = map.get('s3.provider');
       const accessKeyIdEnc = map.get('s3.accessKeyIdEnc') as string | undefined;
       const secretAccessKeyEnc = map.get('s3.secretAccessKeyEnc') as string | undefined;
       const endpoint = map.get('s3.endpoint') as string | undefined;
-      const provider = map.get('s3.provider');
       const needsEndpoint = provider === 's3-compatible' || provider === 'r2';
       const configured =
         (!needsEndpoint || (endpoint != null && endpoint !== '')) &&
         bucket != null &&
         bucket !== '' &&
-        region != null &&
-        region !== '' &&
+        effectiveStorageRegion(provider, map.get('s3.region')) != null &&
         accessKeyIdEnc != null &&
         accessKeyIdEnc !== '' &&
         secretAccessKeyEnc != null &&
@@ -1379,9 +1378,11 @@ export function settingsRoutes(app: FastifyInstance): void {
     bucket: z.string().min(1),
     region: z
       .string()
-      .min(1)
+      .max(64)
       .optional()
-      .describe('Bucket region, required for s3 and s3-compatible. Cloudflare R2 always uses auto'),
+      .describe(
+        'Region of the bucket. Required for s3. Optional for s3-compatible: empty or missing signs with us-east-1. Ignored for r2, which always uses auto',
+      ),
     accessKeyId: z.string().min(1),
     secretAccessKey: z.string().min(1),
     endpoint: z
@@ -1421,16 +1422,16 @@ export function settingsRoutes(app: FastifyInstance): void {
     field: 'endpoint',
   };
 
-  const missingStorageRegionError = {
-    error: 'region is required for AWS S3 and S3-compatible storage',
-    code: 'VALIDATION_ERROR',
-    field: 'region',
-  };
-
   const invalidStorageAllowedHostsError = {
     error: `allowedPrivateHosts must be at most ${String(MAX_ALLOWED_PRIVATE_HOSTS)} hostnames or IP addresses without scheme or port, and no link-local, cloud metadata or other unroutable address`,
     code: 'VALIDATION_ERROR',
     field: 'allowedPrivateHosts',
+  };
+
+  const missingStorageRegionError = {
+    error: 'region is required for AWS S3',
+    code: 'VALIDATION_ERROR',
+    field: 'region',
   };
 
   // Save S3 storage settings (encrypts credentials)
@@ -1457,7 +1458,7 @@ export function settingsRoutes(app: FastifyInstance): void {
                 .enum(['allowedPrivateHosts', 'endpoint', 'region'])
                 .optional()
                 .describe(
-                  'The refused field: the private hosts list, an R2 endpoint, or a missing region',
+                  'The refused field: the private hosts list, an R2 endpoint, or a missing region for AWS S3',
                 ),
             },
           ),
@@ -1483,14 +1484,16 @@ export function settingsRoutes(app: FastifyInstance): void {
 
       // AWS S3 clears the endpoint settings, so a later switch starts empty.
       const provider = body.provider ?? 's3';
-      let endpoint = '';
-      let allowedPrivateHosts: string[] = [];
-      // R2 has a single region, auto; the other providers need one.
-      const region = provider === 'r2' ? 'auto' : body.region;
-      if (region == null) {
+      // An S3-compatible provider may leave the region empty (stored empty,
+      // signed with us-east-1 by the storage loader); AWS S3 needs one, and
+      // Cloudflare R2 always uses auto.
+      const region = provider === 'r2' ? R2_REGION : (body.region ?? '').trim();
+      if (effectiveStorageRegion(provider, region) == null) {
         await reply.status(400).send(missingStorageRegionError);
         return;
       }
+      let endpoint = '';
+      let allowedPrivateHosts: string[] = [];
       if (provider === 'r2') {
         // One public host per account, so no private hosts list applies.
         const validEndpoint = validateR2Endpoint(body.endpoint);

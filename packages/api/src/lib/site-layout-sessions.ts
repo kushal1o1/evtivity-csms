@@ -5,10 +5,12 @@
 // /v1/sites/:id/layout `session`). The route decides what the request may see:
 // the session needs sessions:read, its driver drivers:read too. An erased
 // driver shows as no driver. Avatars go through `withAvatars`, the one avatar
-// read path.
+// read path. The car (`vehicle`: color and body type, no make, model or
+// plate) shows with sessions:read alone: it names nobody.
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, chargingSessions, drivers } from '@evtivity/database';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { db, chargingSessions, drivers, vehicles } from '@evtivity/database';
+import type { VehicleBodyType, VehicleColor } from '@evtivity/lib/vehicle-appearance';
 import { withAvatars } from '../services/account-avatar.js';
 import type { AvatarView } from '../services/account-avatar.js';
 
@@ -18,6 +20,12 @@ export interface LayoutSessionDriver {
   avatar: AvatarView | null;
 }
 
+/** The look of the car a layout session draws. */
+export interface LayoutSessionVehicle {
+  color: VehicleColor | null;
+  bodyType: VehicleBodyType | null;
+}
+
 export interface LayoutStationSession {
   id: string;
   startedAt: string;
@@ -25,6 +33,94 @@ export interface LayoutStationSession {
   currentCostCents: number | null;
   currency: string;
   driver: LayoutSessionDriver | null;
+  vehicle: LayoutSessionVehicle | null;
+}
+
+interface VehicleLook extends LayoutSessionVehicle {
+  id: string;
+  driverId: string;
+}
+
+/**
+ * Which vehicle a session draws: the session's own vehicle, else the
+ * driver's only vehicle, else the driver's most recently used vehicle (the
+ * newest session linked to one of its vehicles), else none.
+ */
+export function chooseLayoutVehicle(
+  session: { vehicleId: string | null; driverId: string | null },
+  vehicleById: ReadonlyMap<string, VehicleLook>,
+  vehiclesByDriver: ReadonlyMap<string, readonly VehicleLook[]>,
+  lastUsedByDriver: ReadonlyMap<string, string>,
+): LayoutSessionVehicle | null {
+  const look = (v: VehicleLook | undefined): LayoutSessionVehicle | null =>
+    v == null ? null : { color: v.color, bodyType: v.bodyType };
+  if (session.vehicleId != null) {
+    const own = vehicleById.get(session.vehicleId);
+    if (own != null) return look(own);
+  }
+  if (session.driverId == null) return null;
+  const list = vehiclesByDriver.get(session.driverId) ?? [];
+  if (list.length === 1) return look(list[0]);
+  const lastUsed = lastUsedByDriver.get(session.driverId);
+  if (lastUsed != null) return look(list.find((v) => v.id === lastUsed));
+  return null;
+}
+
+/** The vehicle each session draws, keyed by session id. */
+async function readSessionVehicles(
+  rows: readonly { id: string; vehicleId: string | null; driverId: string | null }[],
+): Promise<Map<string, LayoutSessionVehicle | null>> {
+  const out = new Map<string, LayoutSessionVehicle | null>();
+  if (rows.length === 0) return out;
+  const vehicleIds = [...new Set(rows.flatMap((r) => (r.vehicleId != null ? [r.vehicleId] : [])))];
+  const driverIds = [
+    ...new Set(
+      rows.flatMap((r) => (r.vehicleId == null && r.driverId != null ? [r.driverId] : [])),
+    ),
+  ];
+  const cols = {
+    id: vehicles.id,
+    driverId: vehicles.driverId,
+    color: vehicles.color,
+    bodyType: vehicles.bodyType,
+  };
+  const [own, byDriver] = await Promise.all([
+    vehicleIds.length > 0
+      ? db.select(cols).from(vehicles).where(inArray(vehicles.id, vehicleIds))
+      : Promise.resolve([]),
+    driverIds.length > 0
+      ? db.select(cols).from(vehicles).where(inArray(vehicles.driverId, driverIds))
+      : Promise.resolve([]),
+  ]);
+  const vehicleById = new Map<string, VehicleLook>();
+  const vehiclesByDriver = new Map<string, VehicleLook[]>();
+  for (const v of own) vehicleById.set(v.id, v);
+  for (const v of byDriver) {
+    vehicleById.set(v.id, v);
+    const list = vehiclesByDriver.get(v.driverId) ?? [];
+    list.push(v);
+    vehiclesByDriver.set(v.driverId, list);
+  }
+  // Only drivers with more than one vehicle need the last used one.
+  const multi = [...vehiclesByDriver.entries()].filter(([, l]) => l.length > 1).map(([d]) => d);
+  const lastUsedByDriver = new Map<string, string>();
+  if (multi.length > 0) {
+    const used = await db
+      .selectDistinctOn([chargingSessions.driverId], {
+        driverId: chargingSessions.driverId,
+        vehicleId: chargingSessions.vehicleId,
+      })
+      .from(chargingSessions)
+      .where(and(inArray(chargingSessions.driverId, multi), isNotNull(chargingSessions.vehicleId)))
+      .orderBy(chargingSessions.driverId, desc(chargingSessions.createdAt));
+    for (const u of used) {
+      if (u.driverId != null && u.vehicleId != null) lastUsedByDriver.set(u.driverId, u.vehicleId);
+    }
+  }
+  for (const r of rows) {
+    out.set(r.id, chooseLayoutVehicle(r, vehicleById, vehiclesByDriver, lastUsedByDriver));
+  }
+  return out;
 }
 
 /** A driver's display name: first and last name, null when both are blank. */
@@ -55,6 +151,7 @@ export async function readLayoutStationSessions(
       currentCostCents: chargingSessions.currentCostCents,
       currency: chargingSessions.currency,
       driverId: chargingSessions.driverId,
+      vehicleId: chargingSessions.vehicleId,
     })
     .from(chargingSessions)
     .where(
@@ -69,6 +166,7 @@ export async function readLayoutStationSessions(
       desc(chargingSessions.createdAt),
     );
 
+  const vehicleBySession = await readSessionVehicles(rows);
   const driverIds = includeDriver
     ? [...new Set(rows.flatMap((r) => (r.driverId != null ? [r.driverId] : [])))]
     : [];
@@ -108,6 +206,7 @@ export async function readLayoutStationSessions(
       currentCostCents: r.currentCostCents,
       currency: r.currency.toUpperCase(),
       driver: r.driverId != null ? (driverById.get(r.driverId) ?? null) : null,
+      vehicle: vehicleBySession.get(r.id) ?? null,
     });
   }
   return out;

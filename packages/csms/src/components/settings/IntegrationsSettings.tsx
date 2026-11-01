@@ -1,7 +1,8 @@
 // Copyright (c) 2024-2026 EVtivity. All rights reserved.
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTab } from '@/hooks/use-tab';
 import { AutochargeSettings } from '@/components/settings/AutochargeSettings';
@@ -22,7 +23,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select } from '@/components/ui/select';
 import { api, ApiError } from '@/lib/api';
 import { PORTAL_BASE_URL } from '@/lib/config';
-import { buildS3CorsExample } from '@/lib/s3-cors-example';
+import {
+  S3_COMPATIBLE_SETUP_DOCS_URL,
+  STORAGE_ACCESS_ACTIONS,
+  buildS3CorsExample,
+  storageBrowserOrigins,
+} from '@/lib/s3-cors-example';
+import { S3_COMPATIBLE_DEFAULT_REGION } from '@evtivity/lib/object-storage-region';
+import { Collapsible } from '@/components/ui/collapsible';
+import { CopyButton } from '@/components/ui/copy-button';
 import { ReservationSettings } from '@/components/settings/ReservationSettings';
 import { GoogleMapPicker } from '@/components/GoogleMapPicker';
 import { StationMessageSettings } from '@/components/settings/StationMessageSettings';
@@ -37,6 +46,7 @@ import {
   type ProofRejection,
 } from '@/components/FactorProofField';
 import { useMfaStatus } from '@/components/profile/mfa-status';
+import { useLoadedValues } from '@/hooks/use-loaded-values';
 
 /** The endpoint as the API stores it (the origin), to tell whether it changed. */
 function storedEndpointForm(value: string): string {
@@ -57,6 +67,16 @@ function s3RefusedField(err: unknown): unknown {
   return body?.code === 'VALIDATION_ERROR' ? body.field : undefined;
 }
 
+/** A setter for one field of a card's values. */
+function field<T extends object, K extends keyof T>(
+  set: Dispatch<SetStateAction<T>>,
+  key: K,
+): (value: T[K]) => void {
+  return (value) => {
+    set((prev) => ({ ...prev, [key]: value }));
+  };
+}
+
 interface IntegrationsSettingsProps {
   settings: Record<string, unknown> | undefined;
 }
@@ -67,22 +87,77 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
 
   const [integrationsSubTab, setIntegrationsSubTab] = useTab('ocppDefaults', 'sub');
 
+  const str = (key: string): string => {
+    const v = settings?.[key];
+    return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+  };
+  const hostList = (v: unknown): string =>
+    Array.isArray(v) ? v.filter((h) => typeof h === 'string').join('\n') : '';
+  const numberText = (key: string, fallback: string): string => {
+    const v = settings?.[key];
+    return v != null ? Number(v).toString() : fallback;
+  };
+  const textOr = (key: string, fallback: string): string => {
+    const v = settings?.[key];
+    return typeof v === 'string' || typeof v === 'number' ? String(v) : fallback;
+  };
+
+  // Each card holds the stored values until it is edited: a settings reload
+  // (another card's save, window focus) replaces a card only while it is clean.
+
   // FTP state
-  const [ftpHost, setFtpHost] = useState('');
-  const [ftpPort, setFtpPort] = useState('21');
-  const [ftpUsername, setFtpUsername] = useState('');
-  const [ftpPassword, setFtpPassword] = useState('');
-  const [ftpPath, setFtpPath] = useState('');
+  const [ftp, setFtp, takeFtpLoad] = useLoadedValues({
+    host: str('ftp.host'),
+    port: str('ftp.port'),
+    username: str('ftp.username'),
+    password: str('ftp.passwordEnc'),
+    path: str('ftp.path'),
+  });
+  const {
+    host: ftpHost,
+    port: ftpPort,
+    username: ftpUsername,
+    password: ftpPassword,
+    path: ftpPath,
+  } = ftp;
+  const setFtpHost = field(setFtp, 'host');
+  const setFtpPort = field(setFtp, 'port');
+  const setFtpUsername = field(setFtp, 'username');
+  const setFtpPassword = field(setFtp, 'password');
+  const setFtpPath = field(setFtp, 'path');
 
   // S3 state
-  const [s3Provider, setS3Provider] = useState<StorageProvider>('s3');
-  const [s3Endpoint, setS3Endpoint] = useState('');
-  const [s3ForcePathStyle, setS3ForcePathStyle] = useState(false);
-  const [s3AllowedHosts, setS3AllowedHosts] = useState('');
-  const [s3Bucket, setS3Bucket] = useState('');
-  const [s3Region, setS3Region] = useState('');
-  const [s3AccessKeyId, setS3AccessKeyId] = useState('');
-  const [s3SecretAccessKey, setS3SecretAccessKey] = useState('');
+  const storedS3Provider = storageProviderOf(settings?.['s3.provider']);
+  const storedS3Endpoint =
+    typeof settings?.['s3.endpoint'] === 'string' ? settings['s3.endpoint'] : '';
+  const [s3, setS3, takeS3Load] = useLoadedValues({
+    provider: storedS3Provider,
+    endpoint: str('s3.endpoint'),
+    forcePathStyle: settings?.['s3.forcePathStyle'] === true,
+    allowedHosts: hostList(settings?.['s3.allowedPrivateHosts']),
+    bucket: str('s3.bucket'),
+    region: str('s3.region'),
+    accessKeyId: str('s3.accessKeyIdEnc'),
+    secretAccessKey: str('s3.secretAccessKeyEnc'),
+  });
+  const {
+    provider: s3Provider,
+    endpoint: s3Endpoint,
+    forcePathStyle: s3ForcePathStyle,
+    allowedHosts: s3AllowedHosts,
+    bucket: s3Bucket,
+    region: s3Region,
+    accessKeyId: s3AccessKeyId,
+    secretAccessKey: s3SecretAccessKey,
+  } = s3;
+  const setS3Provider = field(setS3, 'provider');
+  const setS3Endpoint = field(setS3, 'endpoint');
+  const setS3ForcePathStyle = field(setS3, 'forcePathStyle');
+  const setS3AllowedHosts = field(setS3, 'allowedHosts');
+  const setS3Bucket = field(setS3, 'bucket');
+  const setS3Region = field(setS3, 'region');
+  const setS3AccessKeyId = field(setS3, 'accessKeyId');
+  const setS3SecretAccessKey = field(setS3, 'secretAccessKey');
   const [s3PolicyOpen, setS3PolicyOpen] = useState(false);
   // Changing the provider or the endpoint takes a fresh proof (the server asks for it).
   const { data: mfaStatus } = useMfaStatus();
@@ -91,48 +166,122 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
   const [s3ProofFailure, setS3ProofFailure] = useState<ProofRejection | null>(null);
   const [s3ProofAsked, setS3ProofAsked] = useState(false);
   const [s3ProofRound, setS3ProofRound] = useState(0);
-  const storedS3Provider = storageProviderOf(settings?.['s3.provider']);
   // An S3-compatible service and Cloudflare R2 are reached at s3.endpoint.
   const s3HasEndpoint = s3Provider !== 's3';
-  const storedS3Endpoint =
-    typeof settings?.['s3.endpoint'] === 'string' ? settings['s3.endpoint'] : '';
   const s3DestinationChanged =
     s3Provider !== storedS3Provider ||
     (s3HasEndpoint && storedEndpointForm(s3Endpoint) !== storedS3Endpoint);
   const s3NeedsProof = s3ProofKinds.length > 0 && s3DestinationChanged;
   const [s3CorsOpen, setS3CorsOpen] = useState(false);
+  // The closed Advanced section still says what is set in it.
+  const s3PrivateHostCount = s3AllowedHosts.split(/[\s,]+/).filter((h) => h.trim() !== '').length;
+  const s3AdvancedParts = [
+    ...(s3ForcePathStyle ? [t('settings.s3AdvancedPathStyle')] : []),
+    ...(s3PrivateHostCount > 0
+      ? [t('settings.s3AdvancedPrivateHosts', { count: s3PrivateHostCount })]
+      : []),
+  ];
+  const s3AdvancedSummary =
+    s3AdvancedParts.length > 0 ? s3AdvancedParts.join(', ') : t('settings.s3AdvancedNone');
 
-  // Feature toggles
-  const [reservationEnabled, setReservationEnabled] = useState(true);
-  const [supportEnabled, setSupportEnabled] = useState(true);
-  const [fleetEnabled, setFleetEnabled] = useState(true);
-  const [guestChargingEnabled, setGuestChargingEnabled] = useState(true);
-  const [guestStartsPerIp, setGuestStartsPerIp] = useState('30');
-  const [guestDeclinesPerIp, setGuestDeclinesPerIp] = useState('5');
+  // Feature toggles: each saves at once, and shows the new state while its save runs.
+  const [features, setFeatures] = useLoadedValues({
+    reservation: settings?.['reservation.enabled'] !== false,
+    support: settings?.['support.enabled'] !== false,
+    fleet: settings?.['fleet.enabled'] !== false,
+    guest: settings?.['guest.enabled'] !== false,
+  });
+  const {
+    reservation: reservationEnabled,
+    support: supportEnabled,
+    fleet: fleetEnabled,
+    guest: guestChargingEnabled,
+  } = features;
+  const setReservationEnabled = field(setFeatures, 'reservation');
+  const setSupportEnabled = field(setFeatures, 'support');
+  const setFleetEnabled = field(setFeatures, 'fleet');
+  const setGuestChargingEnabled = field(setFeatures, 'guest');
+
+  const storedGuestStarts = settings?.['guest.startsPerIpPerHour'];
+  const storedGuestDeclines = settings?.['guest.declinesPerIpPerHour'];
+  const [guestLimits, setGuestLimits, takeGuestLimitsLoad] = useLoadedValues({
+    starts: typeof storedGuestStarts === 'number' ? String(storedGuestStarts) : '30',
+    declines: typeof storedGuestDeclines === 'number' ? String(storedGuestDeclines) : '5',
+  });
+  const { starts: guestStartsPerIp, declines: guestDeclinesPerIp } = guestLimits;
+  const setGuestStartsPerIp = field(setGuestLimits, 'starts');
+  const setGuestDeclinesPerIp = field(setGuestLimits, 'declines');
 
   // Idling and session
-  const [idlingGracePeriod, setIdlingGracePeriod] = useState('30');
-  const [staleSessionTimeout, setStaleSessionTimeout] = useState('24');
-  const [evConnectionTimeout, setEvConnectionTimeout] = useState('180');
+  const [idling, setIdling, takeIdlingLoad] = useLoadedValues({
+    gracePeriod: numberText('idling.gracePeriodMinutes', '30'),
+  });
+  const idlingGracePeriod = idling.gracePeriod;
+  const setIdlingGracePeriod = field(setIdling, 'gracePeriod');
+  const [staleSession, setStaleSession, takeStaleSessionLoad] = useLoadedValues({
+    hours: numberText('session.staleTimeoutHours', '24'),
+  });
+  const staleSessionTimeout = staleSession.hours;
+  const setStaleSessionTimeout = field(setStaleSession, 'hours');
+  const [evConnection, setEvConnection, takeEvConnectionLoad] = useLoadedValues({
+    seconds: numberText('session.evConnectionTimeoutSeconds', '180'),
+  });
+  const evConnectionTimeout = evConnection.seconds;
+  const setEvConnectionTimeout = field(setEvConnection, 'seconds');
 
-  // Pricing
-  const [splitBillingEnabled, setSplitBillingEnabled] = useState(true);
+  // Pricing: on unless stored as false, as the server reads it (isSplitBillingEnabled).
+  const [pricing, setPricing, takePricingLoad] = useLoadedValues({
+    splitBilling: settings?.['pricing.splitBillingEnabled'] !== false,
+  });
+  const splitBillingEnabled = pricing.splitBilling;
+  const setSplitBillingEnabled = field(setPricing, 'splitBilling');
 
   // Google Maps
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('');
-  const [googleMapsDefaultLat, setGoogleMapsDefaultLat] = useState('39.8283');
-  const [googleMapsDefaultLng, setGoogleMapsDefaultLng] = useState('-98.5795');
-  const [googleMapsDefaultZoom, setGoogleMapsDefaultZoom] = useState('4');
+  const storedMapsKey = settings?.['googleMaps.apiKeyEnc'];
+  const [maps, setMaps, takeMapsLoad] = useLoadedValues({
+    apiKey: typeof storedMapsKey === 'string' ? storedMapsKey : '',
+    lat: textOr('googleMaps.defaultLat', '39.8283'),
+    lng: textOr('googleMaps.defaultLng', '-98.5795'),
+    zoom: textOr('googleMaps.defaultZoom', '4'),
+  });
+  const {
+    apiKey: googleMapsApiKey,
+    lat: googleMapsDefaultLat,
+    lng: googleMapsDefaultLng,
+    zoom: googleMapsDefaultZoom,
+  } = maps;
+  const setGoogleMapsApiKey = field(setMaps, 'apiKey');
+  const setGoogleMapsDefaultLat = field(setMaps, 'lat');
+  const setGoogleMapsDefaultLng = field(setMaps, 'lng');
+  const setGoogleMapsDefaultZoom = field(setMaps, 'zoom');
 
   // Sentry
-  const [sentryEnabled, setSentryEnabled] = useState(false);
-  const [sentryDsn, setSentryDsn] = useState('');
-  const [sentryEnvironment, setSentryEnvironment] = useState('production');
+  const storedSentryDsn = settings?.['sentry.dsn'];
+  const storedSentryEnv = settings?.['sentry.environment'];
+  const [sentry, setSentry, takeSentryLoad] = useLoadedValues({
+    enabled: settings?.['sentry.enabled'] === true,
+    dsn: typeof storedSentryDsn === 'string' ? storedSentryDsn : '',
+    environment: typeof storedSentryEnv === 'string' ? storedSentryEnv : 'production',
+  });
+  const { enabled: sentryEnabled, dsn: sentryDsn, environment: sentryEnvironment } = sentry;
+  const setSentryEnabled = field(setSentry, 'enabled');
+  const setSentryDsn = field(setSentry, 'dsn');
+  const setSentryEnvironment = field(setSentry, 'environment');
 
   // OCPP defaults
-  const [ocppConnectionTimeout, setOcppConnectionTimeout] = useState('120');
-  const [ocppResetRetries, setOcppResetRetries] = useState('3');
-  const [ocppApprovalRequired, setOcppApprovalRequired] = useState(true);
+  const [ocppDefaults, setOcppDefaults, takeOcppDefaultsLoad] = useLoadedValues({
+    connectionTimeout: numberText('ocpp.connectionTimeout', '120'),
+    resetRetries: numberText('ocpp.resetRetries', '3'),
+    approvalRequired: settings?.['ocpp.registrationPolicy'] !== 'open',
+  });
+  const {
+    connectionTimeout: ocppConnectionTimeout,
+    resetRetries: ocppResetRetries,
+    approvalRequired: ocppApprovalRequired,
+  } = ocppDefaults;
+  const setOcppConnectionTimeout = field(setOcppDefaults, 'connectionTimeout');
+  const setOcppResetRetries = field(setOcppDefaults, 'resetRetries');
+  const setOcppApprovalRequired = field(setOcppDefaults, 'approvalRequired');
 
   // PnC
   const { data: pncSettings } = useQuery({
@@ -141,106 +290,47 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
   });
 
   const pncEnabled = pncSettings != null && pncSettings['pnc.enabled'] === true;
-  const [pncProvider, setPncProvider] = useState('manual');
-  const [pncHubjectBaseUrl, setPncHubjectBaseUrl] = useState('');
-  const [pncHubjectClientId, setPncHubjectClientId] = useState('');
-  const [pncHubjectClientSecret, setPncHubjectClientSecret] = useState('');
-  const [loadedPncClientSecret, setLoadedPncClientSecret] = useState('');
-  const [pncHubjectTokenUrl, setPncHubjectTokenUrl] = useState('');
-  const [pncWarningDays, setPncWarningDays] = useState('30');
-  const [pncCriticalDays, setPncCriticalDays] = useState('7');
-  const [pncOcspAllowedHosts, setPncOcspAllowedHosts] = useState('');
-  const [pncEmaidCountry, setPncEmaidCountry] = useState('');
-  const [pncEmaidProviderId, setPncEmaidProviderId] = useState('');
+  const pncStr = (key: string): string => {
+    const v = pncSettings?.[key];
+    return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
+  };
+  const loadedPncClientSecret = pncStr('pnc.hubject.clientSecretEnc');
+  const [pnc, setPnc, takePncLoad] = useLoadedValues({
+    provider: pncStr('pnc.provider') || 'manual',
+    hubjectBaseUrl: pncStr('pnc.hubject.baseUrl'),
+    hubjectClientId: pncStr('pnc.hubject.clientId'),
+    hubjectClientSecret: loadedPncClientSecret,
+    hubjectTokenUrl: pncStr('pnc.hubject.tokenUrl'),
+    warningDays: pncStr('pnc.expirationWarningDays') || '30',
+    criticalDays: pncStr('pnc.expirationCriticalDays') || '7',
+    ocspAllowedHosts: hostList(pncSettings?.['pnc.ocsp.allowedPrivateHosts']),
+    emaidCountry: pncStr('pnc.local.emaidCountry'),
+    emaidProviderId: pncStr('pnc.local.emaidProviderId'),
+  });
+  const {
+    provider: pncProvider,
+    hubjectBaseUrl: pncHubjectBaseUrl,
+    hubjectClientId: pncHubjectClientId,
+    hubjectClientSecret: pncHubjectClientSecret,
+    hubjectTokenUrl: pncHubjectTokenUrl,
+    warningDays: pncWarningDays,
+    criticalDays: pncCriticalDays,
+    ocspAllowedHosts: pncOcspAllowedHosts,
+    emaidCountry: pncEmaidCountry,
+    emaidProviderId: pncEmaidProviderId,
+  } = pnc;
+  const setPncProvider = field(setPnc, 'provider');
+  const setPncHubjectBaseUrl = field(setPnc, 'hubjectBaseUrl');
+  const setPncHubjectClientId = field(setPnc, 'hubjectClientId');
+  const setPncHubjectClientSecret = field(setPnc, 'hubjectClientSecret');
+  const setPncHubjectTokenUrl = field(setPnc, 'hubjectTokenUrl');
+  const setPncWarningDays = field(setPnc, 'warningDays');
+  const setPncCriticalDays = field(setPnc, 'criticalDays');
+  const setPncOcspAllowedHosts = field(setPnc, 'ocspAllowedHosts');
+  const setPncEmaidCountry = field(setPnc, 'emaidCountry');
+  const setPncEmaidProviderId = field(setPnc, 'emaidProviderId');
 
   const roamingEnabled = settings != null && settings['roaming.enabled'] === true;
-
-  useEffect(() => {
-    if (pncSettings == null) return;
-    const s = (key: string): string => {
-      const v = pncSettings[key];
-      return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
-    };
-    setPncProvider(s('pnc.provider') || 'manual');
-    setPncHubjectBaseUrl(s('pnc.hubject.baseUrl'));
-    setPncHubjectClientId(s('pnc.hubject.clientId'));
-    setPncHubjectClientSecret(s('pnc.hubject.clientSecretEnc'));
-    setLoadedPncClientSecret(s('pnc.hubject.clientSecretEnc'));
-    setPncHubjectTokenUrl(s('pnc.hubject.tokenUrl'));
-    setPncWarningDays(s('pnc.expirationWarningDays') || '30');
-    setPncCriticalDays(s('pnc.expirationCriticalDays') || '7');
-    setPncEmaidCountry(s('pnc.local.emaidCountry'));
-    setPncEmaidProviderId(s('pnc.local.emaidProviderId'));
-    const hosts = pncSettings['pnc.ocsp.allowedPrivateHosts'];
-    setPncOcspAllowedHosts(
-      Array.isArray(hosts) ? hosts.filter((h) => typeof h === 'string').join('\n') : '',
-    );
-  }, [pncSettings]);
-
-  useEffect(() => {
-    if (settings == null) return;
-    const s = (key: string): string => {
-      const v = settings[key];
-      return typeof v === 'string' || typeof v === 'number' ? String(v) : '';
-    };
-    setFtpHost(s('ftp.host'));
-    setFtpPort(s('ftp.port'));
-    setFtpUsername(s('ftp.username'));
-    setFtpPassword(s('ftp.passwordEnc'));
-    setFtpPath(s('ftp.path'));
-    setS3Provider(storageProviderOf(settings['s3.provider']));
-    setS3Endpoint(s('s3.endpoint'));
-    setS3ForcePathStyle(settings['s3.forcePathStyle'] === true);
-    const s3Hosts = settings['s3.allowedPrivateHosts'];
-    setS3AllowedHosts(
-      Array.isArray(s3Hosts) ? s3Hosts.filter((h) => typeof h === 'string').join('\n') : '',
-    );
-    setS3Bucket(s('s3.bucket'));
-    setS3Region(s('s3.region'));
-    setS3AccessKeyId(s('s3.accessKeyIdEnc'));
-    setS3SecretAccessKey(s('s3.secretAccessKeyEnc'));
-    setReservationEnabled(settings['reservation.enabled'] !== false);
-    setSupportEnabled(settings['support.enabled'] !== false);
-    setFleetEnabled(settings['fleet.enabled'] !== false);
-    setGuestChargingEnabled(settings['guest.enabled'] !== false);
-    const gsl = settings['guest.startsPerIpPerHour'];
-    setGuestStartsPerIp(typeof gsl === 'number' ? String(gsl) : '30');
-    const gdl = settings['guest.declinesPerIpPerHour'];
-    setGuestDeclinesPerIp(typeof gdl === 'number' ? String(gdl) : '5');
-    const gp = settings['idling.gracePeriodMinutes'];
-    setIdlingGracePeriod(gp != null ? Number(gp).toString() : '30');
-    const sst = settings['session.staleTimeoutHours'];
-    setStaleSessionTimeout(sst != null ? Number(sst).toString() : '24');
-    const ect = settings['session.evConnectionTimeoutSeconds'];
-    setEvConnectionTimeout(ect != null ? Number(ect).toString() : '180');
-    // On unless stored as false, as the server reads it (isSplitBillingEnabled).
-    setSplitBillingEnabled(settings['pricing.splitBillingEnabled'] !== false);
-    const mapsKey = settings['googleMaps.apiKeyEnc'];
-    setGoogleMapsApiKey(typeof mapsKey === 'string' ? mapsKey : '');
-    const mapsLat = settings['googleMaps.defaultLat'];
-    setGoogleMapsDefaultLat(
-      typeof mapsLat === 'string' || typeof mapsLat === 'number' ? String(mapsLat) : '39.8283',
-    );
-    const mapsLng = settings['googleMaps.defaultLng'];
-    setGoogleMapsDefaultLng(
-      typeof mapsLng === 'string' || typeof mapsLng === 'number' ? String(mapsLng) : '-98.5795',
-    );
-    const mapsZoom = settings['googleMaps.defaultZoom'];
-    setGoogleMapsDefaultZoom(
-      typeof mapsZoom === 'string' || typeof mapsZoom === 'number' ? String(mapsZoom) : '4',
-    );
-    setSentryEnabled(settings['sentry.enabled'] === true);
-    const sDsn = settings['sentry.dsn'];
-    setSentryDsn(typeof sDsn === 'string' ? sDsn : '');
-    const sEnv = settings['sentry.environment'];
-    setSentryEnvironment(typeof sEnv === 'string' ? sEnv : 'production');
-    const ct = settings['ocpp.connectionTimeout'];
-    setOcppConnectionTimeout(ct != null ? Number(ct).toString() : '120');
-    const rr = settings['ocpp.resetRetries'];
-    setOcppResetRetries(rr != null ? Number(rr).toString() : '3');
-    const rp = settings['ocpp.registrationPolicy'];
-    setOcppApprovalRequired(rp !== 'open');
-  }, [settings]);
 
   // Mutations
   const ftpMutation = useMutation({
@@ -543,11 +633,18 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
             const ct = parseInt(ocppConnectionTimeout, 10);
             const rr = parseInt(ocppResetRetries, 10);
             if (!isNaN(ct) && !isNaN(rr)) {
-              ocppDefaultsMutation.mutate({
-                connectionTimeout: ct,
-                resetRetries: rr,
-                approvalRequired: ocppApprovalRequired,
-              });
+              ocppDefaultsMutation.mutate(
+                {
+                  connectionTimeout: ct,
+                  resetRetries: rr,
+                  approvalRequired: ocppApprovalRequired,
+                },
+                {
+                  onSuccess: () => {
+                    takeOcppDefaultsLoad(ocppDefaults);
+                  },
+                },
+              );
             }
           }}
         />
@@ -755,29 +852,36 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                     isPending={pncSaveMutation.isPending}
                     type="button"
                     onClick={() => {
-                      pncSaveMutation.mutate({
-                        provider: pncProvider,
-                        hubjectBaseUrl: pncHubjectBaseUrl,
-                        hubjectClientId: pncHubjectClientId,
-                        // Sent only when typed: the GET returns the stored
-                        // secret only with settings.system:read (P12).
-                        ...(pncHubjectClientSecret !== loadedPncClientSecret
-                          ? { hubjectClientSecret: pncHubjectClientSecret }
-                          : {}),
-                        hubjectTokenUrl: pncHubjectTokenUrl,
-                        expirationWarningDays: Number(pncWarningDays),
-                        expirationCriticalDays: Number(pncCriticalDays),
-                        ocspAllowedPrivateHosts: pncOcspAllowedHosts
-                          .split(/[\s,]+/)
-                          .map((h) => h.trim())
-                          .filter((h) => h !== ''),
-                        ...(pncProvider === 'local'
-                          ? {
-                              localEmaidCountry: pncEmaidCountry,
-                              localEmaidProviderId: pncEmaidProviderId,
-                            }
-                          : {}),
-                      });
+                      pncSaveMutation.mutate(
+                        {
+                          provider: pncProvider,
+                          hubjectBaseUrl: pncHubjectBaseUrl,
+                          hubjectClientId: pncHubjectClientId,
+                          // Sent only when typed: the GET returns the stored
+                          // secret only with settings.system:read (P12).
+                          ...(pncHubjectClientSecret !== loadedPncClientSecret
+                            ? { hubjectClientSecret: pncHubjectClientSecret }
+                            : {}),
+                          hubjectTokenUrl: pncHubjectTokenUrl,
+                          expirationWarningDays: Number(pncWarningDays),
+                          expirationCriticalDays: Number(pncCriticalDays),
+                          ocspAllowedPrivateHosts: pncOcspAllowedHosts
+                            .split(/[\s,]+/)
+                            .map((h) => h.trim())
+                            .filter((h) => h !== ''),
+                          ...(pncProvider === 'local'
+                            ? {
+                                localEmaidCountry: pncEmaidCountry,
+                                localEmaidProviderId: pncEmaidProviderId,
+                              }
+                            : {}),
+                        },
+                        {
+                          onSuccess: () => {
+                            takePncLoad(pnc);
+                          },
+                        },
+                      );
                     }}
                   />
                   <Button
@@ -974,7 +1078,14 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                   const declines = Number(guestDeclinesPerIp);
                   const valid = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 10000;
                   if (valid(starts) && valid(declines)) {
-                    guestLimitsMutation.mutate({ starts, declines });
+                    guestLimitsMutation.mutate(
+                      { starts, declines },
+                      {
+                        onSuccess: () => {
+                          takeGuestLimitsLoad(guestLimits);
+                        },
+                      },
+                    );
                   }
                 }}
               />
@@ -1012,7 +1123,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               onClick={() => {
                 const minutes = parseInt(idlingGracePeriod, 10);
                 if (!isNaN(minutes) && minutes >= 0) {
-                  idlingGracePeriodMutation.mutate(minutes);
+                  idlingGracePeriodMutation.mutate(minutes, {
+                    onSuccess: () => {
+                      takeIdlingLoad(idling);
+                    },
+                  });
                 }
               }}
             />
@@ -1053,7 +1168,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               onClick={() => {
                 const hours = parseInt(staleSessionTimeout, 10);
                 if (!isNaN(hours) && hours >= 0) {
-                  staleSessionTimeoutMutation.mutate(hours);
+                  staleSessionTimeoutMutation.mutate(hours, {
+                    onSuccess: () => {
+                      takeStaleSessionLoad(staleSession);
+                    },
+                  });
                 }
               }}
             />
@@ -1084,7 +1203,11 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               onClick={() => {
                 const seconds = parseInt(evConnectionTimeout, 10);
                 if (!isNaN(seconds) && seconds >= 1) {
-                  evConnectionTimeoutMutation.mutate(seconds);
+                  evConnectionTimeoutMutation.mutate(seconds, {
+                    onSuccess: () => {
+                      takeEvConnectionLoad(evConnection);
+                    },
+                  });
                 }
               }}
             />
@@ -1113,7 +1236,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 size="lg"
                 checked={splitBillingEnabled}
                 onCheckedChange={() => {
-                  setSplitBillingEnabled((v) => !v);
+                  setSplitBillingEnabled(!splitBillingEnabled);
                 }}
               />
             </div>
@@ -1122,7 +1245,14 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               isPending={pricingSettingsMutation.isPending}
               type="button"
               onClick={() => {
-                pricingSettingsMutation.mutate({ splitBillingEnabled });
+                pricingSettingsMutation.mutate(
+                  { splitBillingEnabled },
+                  {
+                    onSuccess: () => {
+                      takePricingLoad(pricing);
+                    },
+                  },
+                );
               }}
             />
             {pricingSettingsMutation.isSuccess && (
@@ -1218,12 +1348,19 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               isPending={googleMapsMutation.isPending}
               type="button"
               onClick={() => {
-                googleMapsMutation.mutate({
-                  apiKey: googleMapsApiKey.trim(),
-                  defaultLat: googleMapsDefaultLat,
-                  defaultLng: googleMapsDefaultLng,
-                  defaultZoom: googleMapsDefaultZoom,
-                });
+                googleMapsMutation.mutate(
+                  {
+                    apiKey: googleMapsApiKey.trim(),
+                    defaultLat: googleMapsDefaultLat,
+                    defaultLng: googleMapsDefaultLng,
+                    defaultZoom: googleMapsDefaultZoom,
+                  },
+                  {
+                    onSuccess: () => {
+                      takeMapsLoad(maps);
+                    },
+                  },
+                );
               }}
             />
             {googleMapsMutation.isSuccess && (
@@ -1323,8 +1460,15 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                     onChange={(e) => {
                       setS3Region(e.target.value);
                     }}
-                    placeholder="us-east-1"
+                    placeholder={S3_COMPATIBLE_DEFAULT_REGION}
                   />
+                  {s3Provider === 's3-compatible' && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings.s3RegionCompatibleHint', {
+                        region: S3_COMPATIBLE_DEFAULT_REGION,
+                      })}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1363,44 +1507,44 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
             </div>
 
             {s3Provider === 's3-compatible' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="s3-force-path-style"
-                    checked={s3ForcePathStyle}
-                    onChange={(e) => {
-                      setS3ForcePathStyle(e.target.checked);
-                    }}
-                  />
-                  <Label htmlFor="s3-force-path-style" className="font-normal">
-                    {t('settings.s3ForcePathStyle')}
-                  </Label>
+              <Collapsible
+                title={t('settings.s3Advanced')}
+                summary={s3AdvancedSummary}
+                data-testid="s3-advanced"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="s3-force-path-style"
+                      checked={s3ForcePathStyle}
+                      onChange={(e) => {
+                        setS3ForcePathStyle(e.target.checked);
+                      }}
+                    />
+                    <Label htmlFor="s3-force-path-style" className="font-normal">
+                      {t('settings.s3ForcePathStyle')}
+                    </Label>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="s3-allowed-hosts" className="leading-6">
+                      {t('settings.s3AllowedPrivateHosts')}
+                    </Label>
+                    <Textarea
+                      id="s3-allowed-hosts"
+                      rows={3}
+                      value={s3AllowedHosts}
+                      onChange={(e) => {
+                        setS3AllowedHosts(e.target.value);
+                      }}
+                      placeholder="minio.internal.example"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings.s3AllowedPrivateHostsHint')}
+                    </p>
+                  </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="s3-allowed-hosts" className="leading-6">
-                    {t('settings.s3AllowedPrivateHosts')}
-                  </Label>
-                  <Textarea
-                    id="s3-allowed-hosts"
-                    rows={3}
-                    value={s3AllowedHosts}
-                    onChange={(e) => {
-                      setS3AllowedHosts(e.target.value);
-                    }}
-                    placeholder="minio.internal.example"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t('settings.s3AllowedPrivateHostsHint')}
-                  </p>
-                </div>
-
-                <p className="text-sm text-muted-foreground">{t('settings.s3ImageOriginHint')}</p>
-              </>
-            )}
-
-            {s3Provider === 'r2' && (
-              <p className="text-sm text-muted-foreground">{t('settings.s3R2ImageOriginHint')}</p>
+              </Collapsible>
             )}
 
             {s3NeedsProof && (
@@ -1422,7 +1566,7 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                 type="button"
                 disabled={
                   s3Bucket === '' ||
-                  (s3Provider !== 'r2' && s3Region === '') ||
+                  (s3Provider === 's3' && s3Region.trim() === '') ||
                   s3AccessKeyId === '' ||
                   s3SecretAccessKey === '' ||
                   (s3HasEndpoint && s3Endpoint.trim() === '')
@@ -1432,26 +1576,33 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
                     setS3ProofAsked(true);
                     return;
                   }
-                  s3Mutation.mutate({
-                    ...(s3NeedsProof && s3Proof != null ? { proof: s3Proof } : {}),
-                    provider: s3Provider,
-                    bucket: s3Bucket,
-                    // R2 has a single region (auto), which the server sets.
-                    ...(s3Provider !== 'r2' ? { region: s3Region } : {}),
-                    accessKeyId: s3AccessKeyId,
-                    secretAccessKey: s3SecretAccessKey,
-                    ...(s3Provider === 'r2' ? { endpoint: s3Endpoint.trim() } : {}),
-                    ...(s3Provider === 's3-compatible'
-                      ? {
-                          endpoint: s3Endpoint.trim(),
-                          forcePathStyle: s3ForcePathStyle,
-                          allowedPrivateHosts: s3AllowedHosts
-                            .split(/[\s,]+/)
-                            .map((h) => h.trim())
-                            .filter((h) => h !== ''),
-                        }
-                      : {}),
-                  });
+                  s3Mutation.mutate(
+                    {
+                      ...(s3NeedsProof && s3Proof != null ? { proof: s3Proof } : {}),
+                      provider: s3Provider,
+                      bucket: s3Bucket,
+                      // R2 has a single region (auto), which the server sets.
+                      ...(s3Provider !== 'r2' ? { region: s3Region.trim() } : {}),
+                      accessKeyId: s3AccessKeyId,
+                      secretAccessKey: s3SecretAccessKey,
+                      ...(s3Provider === 'r2' ? { endpoint: s3Endpoint.trim() } : {}),
+                      ...(s3Provider === 's3-compatible'
+                        ? {
+                            endpoint: s3Endpoint.trim(),
+                            forcePathStyle: s3ForcePathStyle,
+                            allowedPrivateHosts: s3AllowedHosts
+                              .split(/[\s,]+/)
+                              .map((h) => h.trim())
+                              .filter((h) => h !== ''),
+                          }
+                        : {}),
+                    },
+                    {
+                      onSuccess: () => {
+                        takeS3Load(s3);
+                      },
+                    },
+                  );
                 }}
               />
               <Button
@@ -1487,36 +1638,80 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               <p className="text-sm text-destructive text-right">{t('settings.s3TestFailed')}</p>
             )}
 
-            <div className="border-t pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setS3PolicyOpen((prev) => !prev);
-                }}
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform ${s3PolicyOpen ? 'rotate-180' : ''}`}
-                />
-                {s3Provider === 'r2' ? t('settings.s3R2TokenTitle') : t('settings.s3PolicyTitle')}
-              </button>
-              {s3PolicyOpen && s3Provider === 'r2' && (
-                <div className="mt-3 space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.s3R2TokenDescription')}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.s3BucketPrivateNote')}
-                  </p>
-                </div>
-              )}
-              {s3PolicyOpen && s3Provider !== 'r2' && (
-                <div className="mt-3 space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.s3PolicyDescription')}
-                  </p>
-                  <pre className="overflow-x-auto rounded-md bg-muted p-4 text-xs">
-                    {`{
+            {s3Provider === 's3-compatible' ? (
+              <div className="space-y-3 border-t pt-4" data-testid="s3-compatible-setup">
+                <h3 className="text-sm font-medium">{t('settings.s3SetupTitle')}</h3>
+                <p className="text-sm text-muted-foreground">{t('settings.s3SetupPermissions')}</p>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {STORAGE_ACCESS_ACTIONS.map(({ id, action }) => (
+                    <li key={id}>
+                      {t(`settings.s3Permission.${id}`)}{' '}
+                      <code className="rounded bg-muted px-1 py-0.5 text-xs">{action}</code>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-sm text-muted-foreground">{t('settings.s3SetupCors')}</p>
+                <ul className="space-y-1" data-testid="s3-cors-origins">
+                  {storageBrowserOrigins(window.location.origin, PORTAL_BASE_URL).map(
+                    ({ origin, placeholder }) => (
+                      <li key={origin} className="flex min-w-0 items-center gap-2">
+                        <code className="min-w-0 rounded bg-muted px-1 py-0.5 text-xs wrap-anywhere">
+                          {origin}
+                        </code>
+                        {!placeholder && <CopyButton value={origin} />}
+                      </li>
+                    ),
+                  )}
+                </ul>
+                <p className="text-sm text-muted-foreground">{t('settings.s3BucketPrivateNote')}</p>
+                <p className="text-sm text-muted-foreground">{t('settings.s3ImageOriginHint')}</p>
+                <a
+                  href={S3_COMPATIBLE_SETUP_DOCS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-sm text-link hover:underline"
+                >
+                  {t('settings.s3SetupDocsLink')}
+                </a>
+              </div>
+            ) : s3Provider === 'r2' ? (
+              <div className="space-y-3 border-t pt-4" data-testid="s3-r2-setup">
+                <h3 className="text-sm font-medium">{t('settings.s3R2TokenTitle')}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.s3R2TokenDescription')}
+                </p>
+                <p className="text-sm text-muted-foreground">{t('settings.s3R2CorsDescription')}</p>
+                <pre
+                  className="overflow-x-auto rounded-md bg-muted p-4 text-xs"
+                  data-testid="s3-cors-example"
+                >
+                  {buildS3CorsExample(window.location.origin, PORTAL_BASE_URL, 'PUT')}
+                </pre>
+                <p className="text-sm text-muted-foreground">{t('settings.s3BucketPrivateNote')}</p>
+                <p className="text-sm text-muted-foreground">{t('settings.s3R2ImageOriginHint')}</p>
+              </div>
+            ) : (
+              <>
+                <div className="border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setS3PolicyOpen((prev) => !prev);
+                    }}
+                    className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${s3PolicyOpen ? 'rotate-180' : ''}`}
+                    />
+                    {t('settings.s3PolicyTitle')}
+                  </button>
+                  {s3PolicyOpen && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        {t('settings.s3PolicyDescription')}
+                      </p>
+                      <pre className="overflow-x-auto rounded-md bg-muted p-4 text-xs">
+                        {`{
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -1535,46 +1730,42 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
     }
   ]
 }`}
-                  </pre>
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings.s3BucketPrivateNote')}
-                  </p>
+                      </pre>
+                      <p className="text-sm text-muted-foreground">
+                        {t('settings.s3BucketPrivateNote')}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="border-t pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setS3CorsOpen((prev) => !prev);
-                }}
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform ${s3CorsOpen ? 'rotate-180' : ''}`}
-                />
-                {t('settings.s3CorsTitle')}
-              </button>
-              {s3CorsOpen && (
-                <div className="mt-3 space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    {s3Provider === 'r2'
-                      ? t('settings.s3R2CorsDescription')
-                      : t('settings.s3CorsDescription')}
-                  </p>
-                  <pre
-                    className="overflow-x-auto rounded-md bg-muted p-4 text-xs"
-                    data-testid="s3-cors-example"
+                <div className="border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setS3CorsOpen((prev) => !prev);
+                    }}
+                    className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    {buildS3CorsExample(
-                      window.location.origin,
-                      PORTAL_BASE_URL,
-                      s3Provider === 'r2' ? 'PUT' : 'POST',
-                    )}
-                  </pre>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${s3CorsOpen ? 'rotate-180' : ''}`}
+                    />
+                    {t('settings.s3CorsTitle')}
+                  </button>
+                  {s3CorsOpen && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        {t('settings.s3CorsDescription')}
+                      </p>
+                      <pre
+                        className="overflow-x-auto rounded-md bg-muted p-4 text-xs"
+                        data-testid="s3-cors-example"
+                      >
+                        {buildS3CorsExample(window.location.origin, PORTAL_BASE_URL)}
+                      </pre>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
@@ -1658,13 +1849,20 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               isPending={ftpMutation.isPending}
               type="button"
               onClick={() => {
-                ftpMutation.mutate({
-                  host: ftpHost,
-                  port: ftpPort,
-                  username: ftpUsername,
-                  password: ftpPassword,
-                  path: ftpPath,
-                });
+                ftpMutation.mutate(
+                  {
+                    host: ftpHost,
+                    port: ftpPort,
+                    username: ftpUsername,
+                    password: ftpPassword,
+                    path: ftpPath,
+                  },
+                  {
+                    onSuccess: () => {
+                      takeFtpLoad(ftp);
+                    },
+                  },
+                );
               }}
             />
             {ftpMutation.isSuccess && (
@@ -1733,11 +1931,18 @@ export function IntegrationsSettings({ settings }: IntegrationsSettingsProps): R
               isPending={sentryMutation.isPending}
               type="button"
               onClick={() => {
-                sentryMutation.mutate({
-                  enabled: sentryEnabled,
-                  dsn: sentryDsn.trim(),
-                  environment: sentryEnvironment.trim(),
-                });
+                sentryMutation.mutate(
+                  {
+                    enabled: sentryEnabled,
+                    dsn: sentryDsn.trim(),
+                    environment: sentryEnvironment.trim(),
+                  },
+                  {
+                    onSuccess: () => {
+                      takeSentryLoad(sentry);
+                    },
+                  },
+                );
               }}
             />
             {sentryMutation.isSuccess && (

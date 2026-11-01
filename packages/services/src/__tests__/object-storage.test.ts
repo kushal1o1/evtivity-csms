@@ -382,6 +382,21 @@ describe('object storage', () => {
       );
     });
 
+    it('signs with us-east-1 when the region is empty, and with a stored region otherwise', async () => {
+      setupDbResults(compatibleRows({ 's3.region': '' }));
+      await expect(getStorage()).resolves.not.toBeNull();
+      expect(mockS3ClientCtor).toHaveBeenLastCalledWith(
+        expect.objectContaining({ region: 'us-east-1' }),
+      );
+
+      clearObjectStorageCache();
+      setupDbResults(compatibleRows({ 's3.region': 'eu-central-1' }));
+      await getStorage();
+      expect(mockS3ClientCtor).toHaveBeenLastCalledWith(
+        expect.objectContaining({ region: 'eu-central-1' }),
+      );
+    });
+
     it('needs access keys: the default credential chain only reaches AWS', async () => {
       setupDbResults(compatibleRows({ 's3.accessKeyIdEnc': '', 's3.secretAccessKeyEnc': '' }));
       await expect(getStorage()).resolves.toBeNull();

@@ -727,6 +727,8 @@ describe('Driver routes (operator), uncovered paths', () => {
         year: null,
         vin: null,
         licensePlate: null,
+        color: null,
+        bodyType: null,
         evccid: '92D50A693F80',
         autochargeEnabled: true,
         autochargeBlockedAt: null,
